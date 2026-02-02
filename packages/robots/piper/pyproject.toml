@@ -9,7 +9,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "forge_msgs",
-    "forge_robots_core"
+    "forge_robots_core",
+    "piper-sdk>=0.6.1",
 ]
 
 [tool.uv.sources]
