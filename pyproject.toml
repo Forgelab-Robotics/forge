@@ -9,5 +9,6 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "packages/msgs",
+    "packages/common",
     "packages/robots/*",
 ]

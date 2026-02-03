@@ -1,5 +1,5 @@
 [project]
-name = "forge-robots-piper"
+name = "forge_robots_piper"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,14 +8,14 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "forge_msgs",
+    "forge_common",
     "forge_robots_core",
     "piper-sdk>=0.6.1",
 ]
 
 [tool.uv.sources]
-forge_msgs = { workspace = true }
 forge_robots_core = { workspace = true }
+forge_common = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
