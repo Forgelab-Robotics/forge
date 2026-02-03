@@ -6,11 +6,11 @@ from dataclasses import dataclass
 class JointValue:
     name: str
     value: float
-    type: Literal["radians", "millimeters"]
+    type: Literal["radians", "meters"]
 
 
 @dataclass
 class ActuatorValue:
     name: str
     value: float
-    type: Literal["radians", "millimeters"]
+    type: Literal["radians", "meters"]

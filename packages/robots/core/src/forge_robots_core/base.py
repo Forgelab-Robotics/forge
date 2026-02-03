@@ -2,8 +2,8 @@ from __future__ import annotations
 import abc
 from typing import Any
 
-from packages.robots.core.src.forge_robots_core.utils import ensure_safe_actuator_values
-from packages.robots.core.src.forge_robots_core.value import ActuatorValue, JointValue
+from forge_robots_core.utils import ensure_safe_actuator_values
+from forge_robots_core.value import ActuatorValue, JointValue
 
 
 class BaseJoint(abc.ABC):
@@ -87,13 +87,5 @@ class BaseRobot(abc.ABC):
 
 
 class BaseTaskRobot(abc.ABC):
-    def __init__(self, robot: BaseRobot):
-        self.robot = robot
-
-    @abc.abstractmethod
-    def step(self, action: list[ActuatorValue]):
-        pass
-
-    @abc.abstractmethod
-    def get_observation(self) -> list[JointValue]:
-        pass
+    def __init__(self, robots: list[BaseRobot]):
+        self.robots = robots

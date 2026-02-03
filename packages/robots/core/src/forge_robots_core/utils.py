@@ -1,5 +1,5 @@
-from packages.robots.core.src.forge_robots_core.base import BaseActuator
-from packages.robots.core.src.forge_robots_core.value import ActuatorValue
+from forge_robots_core.value import ActuatorValue
+from forge_robots_core.base import BaseActuator
 
 
 def ensure_safe_actuator_values(
