@@ -13,6 +13,8 @@ def ensure_safe_actuator_values(
             continue
 
         clipped_val = max(min(val.value, actuator.max_value), actuator.min_value)
-        safe_action.append(ActuatorValue(name=val.name, value=clipped_val))
+        safe_action.append(
+            ActuatorValue(name=val.name, value=clipped_val, type=val.type)
+        )
 
     return safe_action

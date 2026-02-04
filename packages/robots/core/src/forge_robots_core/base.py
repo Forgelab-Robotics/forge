@@ -45,12 +45,18 @@ class BaseRobotDriver(abc.ABC):
         self._joint_map = {j.name: j for j in joints}
         self._actuator_map = {a.name: a for a in actuators}
 
+    def connect(self) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        pass
+
     @abc.abstractmethod
     def get_joint_positions(self) -> list[JointValue]:
         pass
 
     @abc.abstractmethod
-    def set_actuators(self, action: list[ActuatorValue]):
+    def set_actuators(self, action: list[ActuatorValue]) -> None:
         pass
 
     def get_safe_actuator_values(
