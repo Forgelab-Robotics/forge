@@ -88,7 +88,7 @@ class BaseRobot(abc.ABC):
         return self.driver.get_safe_actuator_values(action)
 
     @abc.abstractmethod
-    def set_safety_position(self):
+    def reset(self):
         pass
 
 

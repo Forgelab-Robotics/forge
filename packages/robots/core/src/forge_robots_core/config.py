@@ -30,10 +30,3 @@ class SensorConfig:
     type: Literal["camera", "speed", "position"]
     # 适用范围："all"（通用），"sim"（仅仿真），"real"（仅实物）
     scope: Literal["all", "sim", "real"] = "all"
-
-
-@dataclass
-class RobotConfig:
-    joints: List[JointConfig]
-    actuators: List[ActuatorConfig]
-    sensors: List[SensorConfig]
