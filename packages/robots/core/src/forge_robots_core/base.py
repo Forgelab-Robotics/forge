@@ -1,6 +1,6 @@
 from __future__ import annotations
 import abc
-from typing import Any, Protocol
+from typing import Any
 
 from forge_robots_core.value import ActuatorValue, JointValue
 
@@ -31,17 +31,46 @@ class BaseSensor(abc.ABC):
         pass
 
 
-class RobotDriverProtocol(Protocol):
-    """Protocol defining the driver interface. BaseRobot uses this to avoid depending on forge_robots_drivers_core."""
+class BaseRobotDriver(abc.ABC):
+    def __init__(
+        self,
+        joints: list[BaseJoint],
+        actuators: list[BaseActuator],
+        type: str,
+    ):
+        self.type = type
+        self.joints = joints
+        self.actuators = actuators
+        self._joint_map = {j.name: j for j in joints}
+        self._actuator_map = {a.name: a for a in actuators}
 
-    joints: list[BaseJoint]
-    actuators: list[BaseActuator]
+    def connect(self) -> None:
+        pass
 
-    def get_joint_positions(self) -> list[JointValue]: ...
-    def set_actuators(self, action: list[ActuatorValue]) -> None: ...
+    def disconnect(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    def get_joint_positions(self) -> list[JointValue]:
+        pass
+
+    @abc.abstractmethod
+    def set_actuators(self, action: list[ActuatorValue]) -> None:
+        pass
+
     def get_safe_actuator_values(
         self, action: list[ActuatorValue]
-    ) -> list[ActuatorValue]: ...
+    ) -> list[ActuatorValue]:
+        safe_action = []
+        for val in action:
+            actuator = self._actuator_map.get(val.name)
+            if not actuator:
+                continue
+            clipped_val = max(min(val.value, actuator.max_value), actuator.min_value)
+            safe_action.append(
+                ActuatorValue(name=val.name, value=clipped_val, type=val.type)
+            )
+        return safe_action
 
 
 class BaseRobot(abc.ABC):
@@ -50,12 +79,12 @@ class BaseRobot(abc.ABC):
         name: str,
         joints: list[BaseJoint],
         actuators: list[BaseActuator],
-        driver: RobotDriverProtocol,
+        driver: BaseRobotDriver,
     ):
         self.name: str = name
         self.joints: list[BaseJoint] = joints
         self.actuators: list[BaseActuator] = actuators
-        self.driver: RobotDriverProtocol = driver
+        self.driver: BaseRobotDriver = driver
 
     def set_actuators(self, action: list[ActuatorValue]):
         self.driver.set_actuators(action)

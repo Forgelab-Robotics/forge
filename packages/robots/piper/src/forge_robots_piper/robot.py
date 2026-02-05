@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from forge_robots_core.base import BaseRobot, RobotDriverProtocol
+from forge_robots_core.base import BaseRobot, BaseRobotDriver
 from forge_robots_core.value import ActuatorValue
 
 from forge_common import get_logger
@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 class PiperRobot(BaseRobot):
     def __init__(
         self,
-        driver: RobotDriverProtocol,
+        driver: BaseRobotDriver,
         name: str = "piper",
     ):
         super().__init__(
