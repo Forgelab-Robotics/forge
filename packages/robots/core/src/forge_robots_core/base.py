@@ -1,8 +1,7 @@
 from __future__ import annotations
 import abc
-from typing import Any
+from typing import Any, Protocol
 
-from forge_robots_core.utils import ensure_safe_actuator_values
 from forge_robots_core.value import ActuatorValue, JointValue
 
 
@@ -32,37 +31,17 @@ class BaseSensor(abc.ABC):
         pass
 
 
-class BaseRobotDriver(abc.ABC):
-    def __init__(
-        self,
-        joints: list[BaseJoint],
-        actuators: list[BaseActuator],
-        type: str,
-    ):
-        self.type = type
-        self.joints = joints
-        self.actuators = actuators
-        self._joint_map = {j.name: j for j in joints}
-        self._actuator_map = {a.name: a for a in actuators}
+class RobotDriverProtocol(Protocol):
+    """Protocol defining the driver interface. BaseRobot uses this to avoid depending on forge_robots_drivers_core."""
 
-    def connect(self) -> None:
-        pass
+    joints: list[BaseJoint]
+    actuators: list[BaseActuator]
 
-    def disconnect(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    def get_joint_positions(self) -> list[JointValue]:
-        pass
-
-    @abc.abstractmethod
-    def set_actuators(self, action: list[ActuatorValue]) -> None:
-        pass
-
+    def get_joint_positions(self) -> list[JointValue]: ...
+    def set_actuators(self, action: list[ActuatorValue]) -> None: ...
     def get_safe_actuator_values(
         self, action: list[ActuatorValue]
-    ) -> list[ActuatorValue]:
-        return ensure_safe_actuator_values(action, self._actuator_map)
+    ) -> list[ActuatorValue]: ...
 
 
 class BaseRobot(abc.ABC):
@@ -71,12 +50,12 @@ class BaseRobot(abc.ABC):
         name: str,
         joints: list[BaseJoint],
         actuators: list[BaseActuator],
-        driver: BaseRobotDriver,
+        driver: RobotDriverProtocol,
     ):
         self.name: str = name
         self.joints: list[BaseJoint] = joints
         self.actuators: list[BaseActuator] = actuators
-        self.driver: BaseRobotDriver = driver
+        self.driver: RobotDriverProtocol = driver
 
     def set_actuators(self, action: list[ActuatorValue]):
         self.driver.set_actuators(action)

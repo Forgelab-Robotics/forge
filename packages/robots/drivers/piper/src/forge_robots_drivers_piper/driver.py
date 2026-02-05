@@ -3,13 +3,80 @@ from __future__ import annotations
 import math
 import time
 
-from forge_robots_core.base import BaseActuator, BaseJoint, BaseRobotDriver
-from forge_robots_core.value import JointValue, ActuatorValue
+from forge_robots_core.base import BaseActuator, BaseJoint
+from forge_robots_core.value import ActuatorValue, JointValue
+from forge_robots_drivers_core.base import BaseRobotDriver
 from piper_sdk import C_PiperInterface_V2
 
 from forge_common import get_logger
 
 logger = get_logger(__name__)
+
+
+def _default_joints() -> list[BaseJoint]:
+    return [
+        BaseJoint(name="joint1", mode="position"),
+        BaseJoint(name="joint2", mode="position"),
+        BaseJoint(name="joint3", mode="position"),
+        BaseJoint(name="joint4", mode="position"),
+        BaseJoint(name="joint5", mode="position"),
+        BaseJoint(name="joint6", mode="position"),
+        BaseJoint(name="gripper", mode="position"),
+    ]
+
+
+def _default_actuators() -> list[BaseActuator]:
+    return [
+        BaseActuator(
+            name="joint1",
+            id=1,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="joint2",
+            id=2,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="joint3",
+            id=3,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="joint4",
+            id=4,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="joint5",
+            id=5,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="joint6",
+            id=6,
+            control_mode="position",
+            min_value=-3.14159,
+            max_value=3.14159,
+        ),
+        BaseActuator(
+            name="gripper",
+            id=7,
+            control_mode="position",
+            min_value=0.0,
+            max_value=0.1,
+        ),
+    ]
 
 
 class PiperDriver(BaseRobotDriver):
@@ -18,12 +85,14 @@ class PiperDriver(BaseRobotDriver):
 
     def __init__(
         self,
-        joints: list[BaseJoint],
-        actuators: list[BaseActuator],
+        joints: list[BaseJoint] | None = None,
+        actuators: list[BaseActuator] | None = None,
         port: str = "can0",
         is_follower: bool = True,
         auto_connect: bool = True,
     ):
+        joints = joints or _default_joints()
+        actuators = actuators or _default_actuators()
         super().__init__(type="piper", joints=joints, actuators=actuators)
         self.is_follower = is_follower
         self.port = port

@@ -1,7 +1,7 @@
 [project]
-name = "forge_robots_piper"
+name = "forge_robots_drivers_piper"
 version = "0.1.0"
-description = "Add your description here"
+description = "Piper robot hardware driver"
 readme = "README.md"
 authors = [
     { name = "chipunderblade", email = "pfjhyyj@qq.com" }
@@ -9,11 +9,12 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "forge_common",
-    "forge_robots_core",
+    "forge_robots_drivers_core",
+    "piper-sdk>=0.6.1",
 ]
 
 [tool.uv.sources]
-forge_robots_core = { workspace = true }
+forge_robots_drivers_core = { workspace = true }
 forge_common = { workspace = true }
 
 [build-system]
