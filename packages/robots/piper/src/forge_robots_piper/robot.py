@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from forge_robots_core.base import BaseRobot, BaseRobotDriver
-from forge_robots_core.value import ActuatorValue
+from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver
 
 from forge_common import get_logger
 

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from forge_robots_core.base import BaseActuator, BaseJoint, BaseRobotDriver
-from forge_robots_core.value import ActuatorValue, JointValue
+from forge_robots_core import (
+    ActuatorValue,
+    BaseActuator,
+    BaseJoint,
+    BaseRobotDriver,
+    JointValue,
+)
 
 from forge_common import get_logger
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 import abc
 from typing import Any
 
-from forge_robots_core.value import ActuatorValue, JointValue
+from forge_robots_core.value import ActuatorValue, JointValue  # noqa: F401 - for internal use
 
 
 class BaseJoint(abc.ABC):
