@@ -2,6 +2,16 @@
 
 MuJoCo simulator driver for the Forge robotics framework.
 
+## Units
+
+All values use unified units:
+- **Angles**: radians
+- **Distances**: meters
+- **Velocities**: radians/s (for revolute joints) or meters/s (for prismatic joints)
+
+MuJoCo natively uses radians for angles and meters for distances, so no conversion is needed.
+The driver directly uses MuJoCo's native units, which match the unified unit system.
+
 ## Usage
 
 ```python
@@ -18,4 +28,8 @@ driver = MuJoCoDriver(env=env, joints=joints, actuators=actuators, prefix="robot
 
 # Use with robot model
 robot = PiperRobot(driver=driver)
+
+# All values are in unified units (radians, meters)
+positions = robot.get_joint_positions()  # Returns radians/meters
+robot.set_actuators([...])  # Input in radians/meters
 ```

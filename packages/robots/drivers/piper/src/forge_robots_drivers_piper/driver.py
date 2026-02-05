@@ -79,6 +79,22 @@ def _default_actuators() -> list[BaseActuator]:
 
 
 class PiperDriver(BaseRobotDriver):
+    """
+    Piper robot hardware driver.
+
+    This driver interfaces with Piper robot hardware via CAN bus using piper-sdk.
+    It converts between hardware-specific units and unified units.
+
+    Units:
+    - Angles: radians (converted from hardware units: degrees * 1000)
+    - Distances: meters (converted from hardware units: millimeters)
+    - Velocities: radians/s (for revolute joints) or meters/s (for prismatic joints)
+
+    Hardware units:
+    - Joint angles: degrees * ANGLE_SCALE (where ANGLE_SCALE = 1000.0)
+    - Gripper: millimeters * GRIPPER_SCALE (where GRIPPER_SCALE = 1000.0)
+    """
+
     ANGLE_SCALE = 1000.0
     GRIPPER_SCALE = 1000.0
 
@@ -161,6 +177,17 @@ class PiperDriver(BaseRobotDriver):
         logger.info("Homing sequence should be completed.")
 
     def get_joint_positions(self) -> list[JointValue]:
+        """
+        Get joint positions from Piper hardware.
+
+        Converts hardware units to unified units:
+        - Joint angles: (degrees * ANGLE_SCALE) -> radians
+        - Gripper: (millimeters * GRIPPER_SCALE) -> meters
+
+        Returns list of JointValue in unified units:
+        - Angles in radians
+        - Distances in meters
+        """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
 
@@ -212,6 +239,20 @@ class PiperDriver(BaseRobotDriver):
         return joint_positions
 
     def set_actuators(self, action: list[ActuatorValue]) -> None:
+        """
+        Set actuator values on Piper hardware.
+
+        Input values should be in unified units:
+        - Position control: radians (revolute joints) or meters (gripper)
+        - Velocity control: radians/s (revolute) or meters/s (prismatic)
+
+        Converts unified units to hardware units:
+        - Joint angles: radians -> (degrees * ANGLE_SCALE)
+        - Gripper: meters -> (millimeters * GRIPPER_SCALE)
+
+        Args:
+            action: List of ActuatorValue in unified units (radians or meters)
+        """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
 
