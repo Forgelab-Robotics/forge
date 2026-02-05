@@ -11,7 +11,6 @@ members = [
     "forge-robots-drivers-mujoco",
     "forge-robots-drivers-piper",
     "forge-robots-piper",
-    "forge-simulators-mujoco",
 ]
 
 [[package]]
@@ -95,11 +94,6 @@ requires-dist = [
     { name = "forge-common", editable = "packages/common" },
     { name = "forge-robots-core", editable = "packages/robots/core" },
 ]
-
-[[package]]
-name = "forge-simulators-mujoco"
-version = "0.1.0"
-source = { editable = "packages/simulators/mujoco" }
 
 [[package]]
 name = "packaging"

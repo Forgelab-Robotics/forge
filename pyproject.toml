@@ -13,5 +13,4 @@ members = [
     "packages/robots/core",
     "packages/robots/piper",
     "packages/robots/drivers/*",
-    "packages/simulators/*",
 ]
