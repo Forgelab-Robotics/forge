@@ -74,6 +74,21 @@ class BaseRobotDriver(abc.ABC):
 
 
 class BaseRobot(abc.ABC):
+    """
+    Base class for robot models.
+
+    Robot layer represents the robot model and its behaviors (reset strategy,
+    kinematics, trajectory planning, etc.), while Driver layer handles hardware
+    communication. This separation allows:
+
+    - Driver switching: Same robot model can work with different drivers
+      (real hardware, simulator, mock, etc.)
+    - Model logic: Robot-specific behaviors stay in Robot layer, independent
+      of hardware implementation
+    - Future extension: Easy to add kinematics, trajectory planning, etc.
+      without touching driver code
+    """
+
     def __init__(
         self,
         name: str,
@@ -87,16 +102,25 @@ class BaseRobot(abc.ABC):
         self.driver: BaseRobotDriver = driver
 
     def set_actuators(self, action: list[ActuatorValue]):
+        """Set actuator values via driver."""
         self.driver.set_actuators(action)
 
     def get_joint_positions(self) -> list[JointValue]:
+        """Get joint positions from driver."""
         return self.driver.get_joint_positions()
 
     def get_safe_action(self, action: list[ActuatorValue]) -> list[ActuatorValue]:
+        """Get safe actuator values (clipped to limits) via driver."""
         return self.driver.get_safe_actuator_values(action)
 
     @abc.abstractmethod
     def reset(self):
+        """
+        Reset robot to a safe state.
+
+        This is robot model logic, not driver logic. Different robots
+        may have different reset strategies.
+        """
         pass
 
 
