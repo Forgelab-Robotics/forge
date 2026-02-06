@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
 from forge_robots_core import (
     ActuatorValue,
@@ -15,27 +15,12 @@ from forge_common import get_logger
 logger = get_logger(__name__)
 
 
-class MuJoCoEnv(Protocol):
-    """Protocol for MuJoCo environment interface."""
-
-    model: Any  # mjModel
-
-    def name2id(self, obj_type: str, name: str) -> int:
-        """Get ID by name and type."""
-        ...
-
-    def get_data(self) -> Any:
-        """Get MuJoCo data (with qpos and ctrl)."""
-        ...
-
-
 class MuJoCoDriver(BaseRobotDriver):
     """
-    MuJoCo simulator driver.
+    MuJoCo simulator driver (local/in-process).
 
-    This driver interfaces with MuJoCo physics simulator through a DmControlEnv-like
-    interface. It maps logical joint/actuator names to MuJoCo model names using
-    an optional prefix.
+    Interfaces directly with MuJoCo model and data. Maps logical joint/actuator
+    names to MuJoCo model names using an optional prefix.
 
     Units:
     - Angles: radians
@@ -47,7 +32,8 @@ class MuJoCoDriver(BaseRobotDriver):
 
     def __init__(
         self,
-        env: MuJoCoEnv,
+        model: Any,
+        data: Any,
         joints: list[BaseJoint] | None = None,
         actuators: list[BaseActuator] | None = None,
         prefix: str = "",
@@ -56,19 +42,20 @@ class MuJoCoDriver(BaseRobotDriver):
         Initialize MuJoCo driver.
 
         Args:
-            env: MuJoCo environment with model, name2id, and get_data methods
+            model: MuJoCo MjModel
+            data: MuJoCo MjData (caller keeps this updated)
             joints: List of joints (if None, will be set by caller)
             actuators: List of actuators (if None, will be set by caller)
             prefix: Prefix for joint/actuator names in MuJoCo model
                    (e.g., "robot1/" for "robot1/joint1")
         """
-        # Initialize with empty lists if not provided (will be set later)
         super().__init__(
             type="mujoco",
             joints=joints or [],
             actuators=actuators or [],
         )
-        self.env = env
+        self._model = model
+        self._data = data
 
         if prefix and not prefix.endswith("/"):
             prefix += "/"
@@ -78,43 +65,37 @@ class MuJoCoDriver(BaseRobotDriver):
         self._qpos_addrs: dict[str, int] = {}
         self._ctrl_indices: dict[str, int] = {}
 
-        model = self.env.model
-
-        # Cache joint indices
+        # Cache joint indices (use mujoco name2id)
         for joint in self.joints:
             logical_name = joint.name
-            prefixed_phys_joint_name = prefix + logical_name
-
+            prefixed_name = prefix + logical_name
             try:
-                joint_id = self.env.name2id("JOINT", prefixed_phys_joint_name)
+                joint_id = model.joint_name2id(prefixed_name)
                 qpos_addr = model.jnt_qposadr[joint_id]
                 self._qpos_addrs[logical_name] = qpos_addr
                 logger.info(
-                    f"  - Mapped Joint '{logical_name}' -> '{prefixed_phys_joint_name}' "
+                    f"  - Mapped Joint '{logical_name}' -> '{prefixed_name}' "
                     f"at qpos_addr: {qpos_addr}"
                 )
-            except (KeyError, ValueError):
+            except Exception:
                 logger.warning(
-                    f"  - WARNING: Joint '{prefixed_phys_joint_name}' not found in mjModel. "
-                    f"Cannot get its position."
+                    f"  - WARNING: Joint '{prefixed_name}' not found in mjModel."
                 )
 
         # Cache actuator indices
         for actuator in self.actuators:
             logical_name = actuator.name
-            prefixed_actuator_name = prefix + logical_name
-
+            prefixed_name = prefix + logical_name
             try:
-                actuator_id = self.env.name2id("ACTUATOR", prefixed_actuator_name)
-                self._ctrl_indices[logical_name] = actuator_id
+                act_id = model.actuator_name2id(prefixed_name)
+                self._ctrl_indices[logical_name] = act_id
                 logger.info(
-                    f"  - Mapped Actuator '{logical_name}' -> '{prefixed_actuator_name}' "
-                    f"with ctrl_idx: {actuator_id}"
+                    f"  - Mapped Actuator '{logical_name}' -> '{prefixed_name}' "
+                    f"with ctrl_idx: {act_id}"
                 )
-            except (KeyError, ValueError):
+            except Exception:
                 logger.warning(
-                    f"  - WARNING: Actuator '{prefixed_actuator_name}' not found in mjModel. "
-                    f"Cannot set its position."
+                    f"  - WARNING: Actuator '{prefixed_name}' not found in mjModel."
                 )
 
     def connect(self) -> None:
@@ -134,7 +115,7 @@ class MuJoCoDriver(BaseRobotDriver):
 
         Returns list of JointValue with logical names (without prefix).
         """
-        qpos = self.env.get_data().qpos
+        qpos = self._data.qpos
         joint_positions = []
 
         for logical_name, addr in self._qpos_addrs.items():
@@ -177,7 +158,7 @@ class MuJoCoDriver(BaseRobotDriver):
         safe_action = self.get_safe_actuator_values(action)
 
         # Execute control
-        ctrl = self.env.get_data().ctrl
+        ctrl = self._data.ctrl
 
         for act_val in safe_action:
             logical_name = act_val.name

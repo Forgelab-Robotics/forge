@@ -1,3 +1,3 @@
-from forge_robots_drivers_mujoco.driver import MuJoCoDriver, MuJoCoEnv
+from forge_robots_drivers_mujoco.driver import MuJoCoDriver
 
-__all__ = ["MuJoCoDriver", "MuJoCoEnv"]
+__all__ = ["MuJoCoDriver"]

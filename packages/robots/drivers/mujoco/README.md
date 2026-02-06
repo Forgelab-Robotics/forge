@@ -2,6 +2,15 @@
 
 MuJoCo simulator driver for the Forge robotics framework.
 
+## Architecture
+
+This package provides `MuJoCoDriver` - a local/in-process driver that interfaces directly with MuJoCo model/data.
+
+- **No mujoco dependency** - this is a pure library
+- MuJoCo dependency is maintained by the caller (e.g., simulator node)
+- Used by MuJoCo simulator nodes in `forge_nodes`
+- Can also be used for local simulation scenarios
+
 ## Units
 
 All values use unified units:
@@ -14,17 +23,39 @@ The driver directly uses MuJoCo's native units, which match the unified unit sys
 
 ## Usage
 
-```python
-from forge_robots_drivers_mujoco import MuJoCoDriver
-from forge_robots_piper import PiperRobot
+### In Simulator Node (forge_nodes)
 
-# Create MuJoCo environment (DmControlEnv-like interface)
-env = create_mujoco_env(...)
+```python
+import mujoco
+from forge_robots_drivers_mujoco import MuJoCoDriver
+
+# Load MuJoCo model and data
+model = mujoco.MjModel.from_xml_path("scene.xml")
+data = mujoco.MjData(model)
 
 # Create driver with joints and actuators
 joints = [...]
 actuators = [...]
-driver = MuJoCoDriver(env=env, joints=joints, actuators=actuators, prefix="robot1/")
+driver = MuJoCoDriver(model=model, data=data, joints=joints, actuators=actuators, prefix="robot1/")
+
+# Use driver to set actuators and get joint positions
+driver.set_actuators([...])
+positions = driver.get_joint_positions()
+```
+
+### In Local Simulation
+
+```python
+import mujoco
+from forge_robots_drivers_mujoco import MuJoCoDriver
+from forge_robots_piper import PiperRobot
+
+# Load MuJoCo model and data
+model = mujoco.MjModel.from_xml_path("scene.xml")
+data = mujoco.MjData(model)
+
+# Create driver
+driver = MuJoCoDriver(model=model, data=data, joints=joints, actuators=actuators)
 
 # Use with robot model
 robot = PiperRobot(driver=driver)
