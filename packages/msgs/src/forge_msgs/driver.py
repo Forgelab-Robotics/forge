@@ -1,4 +1,4 @@
-from forge.packages.msgs.src.forge_msgs.value import ActuatorValue
+from forge_msgs.value import ActuatorValue
 from pydantic import BaseModel
 from typing import Dict
 
