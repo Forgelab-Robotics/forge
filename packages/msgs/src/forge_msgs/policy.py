@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import numpy as np
+import pyarrow as pa
 
-from forge_msgs.value import JointValue
+from forge_msgs.value import (
+    JointValue,
+    MODE_INT_TO_STR,
+    MODE_STR_TO_INT,
+    UNIT_INT_TO_STR,
+    UNIT_STR_TO_INT,
+)
 from pydantic import BaseModel
-from typing import Dict, Literal, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pyarrow as pa
+from typing import Dict, Literal
 
 
 class PolicyObservation(BaseModel):
@@ -24,25 +28,72 @@ class PolicyObservation(BaseModel):
             dtype=np.float32,
         )
 
-    def to_arrow(self) -> "pa.Array":
-        """转换为 dora-rs 使用的 Apache Arrow 格式，可直接用于 node.send_output()."""
-        import pyarrow as pa
-        return pa.array([self.model_dump()])
+    def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
+        """列式 Arrow 格式，支持零拷贝接收。"""
+        mode_int = MODE_STR_TO_INT.get(
+            next((j.mode for j in self.joints.values()), "position"), 0
+        )
+        unit_int = UNIT_STR_TO_INT.get(
+            next((j.unit for j in self.joints.values()), "radians"), 0
+        )
+        columns = {
+            "timestamp": pa.array([self.timestamp], type=pa.float64()),
+            "mode": pa.array([mode_int], type=pa.int8()),
+            "unit": pa.array([unit_int], type=pa.int8()),
+        }
+        for name in joint_order:
+            v = self.joints[name].value if name in self.joints else 0.0
+            columns[name] = pa.array([v], type=pa.float32())
+        return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
-    def from_arrow(cls, array: "pa.Array") -> "PolicyObservation":
-        """从 dora-rs 接收的 Arrow 数组解析为 PolicyObservation。"""
-        return cls.model_validate(array[0].as_py())
+    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "PolicyObservation":
+        """从列式 Arrow 解析。"""
+        timestamp = float(batch["timestamp"][0].as_py())
+        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
+        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        joints = {}
+        for name in joint_order:
+            if name in batch.schema.names:
+                v = float(batch[name][0].as_py())
+                joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
+        return cls(timestamp=timestamp, joints=joints)
+
+    @classmethod
+    def to_np_from_arrow(
+        cls, batch: pa.RecordBatch, joint_order: list[str]
+    ) -> np.ndarray:
+        """从 Arrow 零拷贝转 numpy，供策略直接使用。"""
+        return np.concatenate(
+            [
+                batch.column(name).to_numpy(zero_copy_only=True)
+                for name in joint_order
+                if name in batch.schema.names
+            ]
+        ).astype(np.float32)
 
 
 class PolicyAction(BaseModel):
     ref_timestamp: float
     joints: Dict[str, JointValue]
 
-    def to_arrow(self) -> "pa.Array":
-        """转换为 dora-rs 使用的 Apache Arrow 格式，可直接用于 node.send_output()."""
-        import pyarrow as pa
-        return pa.array([self.model_dump()])
+    def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
+        """列式 Arrow 格式。"""
+        mode_int = MODE_STR_TO_INT.get(
+            next((j.mode for j in self.joints.values()), "position"), 0
+        )
+        unit_int = UNIT_STR_TO_INT.get(
+            next((j.unit for j in self.joints.values()), "radians"), 0
+        )
+        columns = {
+            "ref_timestamp": pa.array([self.ref_timestamp], type=pa.float64()),
+            "mode": pa.array([mode_int], type=pa.int8()),
+            "unit": pa.array([unit_int], type=pa.int8()),
+        }
+        for name in joint_order:
+            v = self.joints[name].value if name in self.joints else 0.0
+            columns[name] = pa.array([v], type=pa.float32())
+        return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
     def from_np(
@@ -67,6 +118,14 @@ class PolicyAction(BaseModel):
         )
 
     @classmethod
-    def from_arrow(cls, array: "pa.Array") -> "PolicyAction":
-        """从 dora-rs 接收的 Arrow 数组解析为 PolicyAction。"""
-        return cls.model_validate(array[0].as_py())
+    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "PolicyAction":
+        """从列式 Arrow 解析。"""
+        ref_timestamp = float(batch["ref_timestamp"][0].as_py())
+        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
+        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        joints = {}
+        for name in joint_order:
+            if name in batch.schema.names:
+                v = float(batch[name][0].as_py())
+                joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
+        return cls(ref_timestamp=ref_timestamp, joints=joints)
