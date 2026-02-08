@@ -8,8 +8,7 @@ members = [
     "forge-common",
     "forge-msgs",
     "forge-robots-core",
-    "forge-robots-drivers-mujoco",
-    "forge-robots-drivers-piper",
+    "forge-robots-mujoco",
     "forge-robots-piper",
 ]
 
@@ -53,28 +52,32 @@ requires-dist = [
 name = "forge-robots-core"
 version = "0.1.0"
 source = { editable = "packages/robots/core" }
+dependencies = [
+    { name = "forge-msgs" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "forge-msgs", editable = "packages/msgs" }]
 
 [[package]]
-name = "forge-robots-drivers-mujoco"
+name = "forge-robots-mujoco"
 version = "0.1.0"
-source = { editable = "packages/robots/drivers/mujoco" }
+source = { editable = "packages/robots/mujoco" }
 dependencies = [
     { name = "forge-common" },
-    { name = "forge-msgs" },
     { name = "forge-robots-core" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "forge-common", editable = "packages/common" },
-    { name = "forge-msgs", editable = "packages/msgs" },
     { name = "forge-robots-core", editable = "packages/robots/core" },
 ]
 
 [[package]]
-name = "forge-robots-drivers-piper"
+name = "forge-robots-piper"
 version = "0.1.0"
-source = { editable = "packages/robots/drivers/piper" }
+source = { editable = "packages/robots/piper" }
 dependencies = [
     { name = "forge-common" },
     { name = "forge-robots-core" },
@@ -86,21 +89,6 @@ requires-dist = [
     { name = "forge-common", editable = "packages/common" },
     { name = "forge-robots-core", editable = "packages/robots/core" },
     { name = "piper-sdk", specifier = ">=0.6.1" },
-]
-
-[[package]]
-name = "forge-robots-piper"
-version = "0.1.0"
-source = { editable = "packages/robots/piper" }
-dependencies = [
-    { name = "forge-common" },
-    { name = "forge-robots-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-common", editable = "packages/common" },
-    { name = "forge-robots-core", editable = "packages/robots/core" },
 ]
 
 [[package]]
