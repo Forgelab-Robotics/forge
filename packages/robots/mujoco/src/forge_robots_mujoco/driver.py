@@ -7,7 +7,8 @@ from forge_robots_core import (
     BaseActuator,
     BaseJoint,
     BaseRobotDriver,
-    JointValue,
+    RobotCommand,
+    RobotFeedback,
 )
 
 from forge_common import get_logger
@@ -106,62 +107,56 @@ class MuJoCoDriver(BaseRobotDriver):
         """MuJoCo driver doesn't need explicit disconnection."""
         pass
 
-    def get_joint_positions(self) -> list[JointValue]:
+    def reset(self) -> None:
         """
-        Get joint positions from MuJoCo simulator.
+        Reset simulation state to model initial (qpos0, zero velocity).
 
-        MuJoCo units: angles in radians, distances in meters.
-        Returns values in unified units: angles in radians, distances in meters.
+        Resets qpos for controlled joints to model defaults, zeros all qvel.
+        """
+        for logical_name, addr in self._qpos_addrs.items():
+            self._data.qpos[addr] = self._model.qpos0[addr]
+        self._data.qvel[:] = 0
+        logger.debug("[MuJoCoDriver] Reset to initial state")
 
-        Returns list of JointValue with logical names (without prefix).
+    def get_feedback(self, timestamp: float = 0.0) -> RobotFeedback:
+        """
+        Get actuator feedback from MuJoCo simulator.
+
+        Returns RobotFeedback in msgs format (radians/meters).
         """
         qpos = self._data.qpos
-        joint_positions = []
+        actuator_values: dict[str, ActuatorValue] = {}
 
         for logical_name, addr in self._qpos_addrs.items():
+            actuator = self._actuator_map.get(logical_name)
             joint = self._joint_map.get(logical_name)
-            if not joint:
-                logger.warning(f"Joint '{logical_name}' not found in joint_map.")
+            if actuator:
+                unit = actuator.unit
+            elif joint:
+                unit = "radians" if joint.mode == "position" else "meters"
+            else:
+                logger.warning(f"Joint/actuator '{logical_name}' not found.")
                 continue
 
             qpos_value = qpos[addr]
+            actuator_values[logical_name] = ActuatorValue(
+                value=float(qpos_value),
+                mode="position",
+                unit=unit,
+            )
 
-            if joint.mode == "position":
-                # MuJoCo qpos for revolute joints is already in radians
-                joint_positions.append(
-                    JointValue(name=logical_name, value=qpos_value, type="radians")
-                )
-            elif joint.mode == "prismatic":
-                # MuJoCo qpos for prismatic joints is already in meters
-                joint_positions.append(
-                    JointValue(name=logical_name, value=qpos_value, type="meters")
-                )
-            else:
-                logger.warning(
-                    f"Unsupported joint mode '{joint.mode}' for joint '{logical_name}'"
-                )
+        return RobotFeedback(timestamp=timestamp, actuators=actuator_values)
 
-        return joint_positions
-
-    def set_actuators(self, action: list[ActuatorValue]) -> None:
+    def set_actuators(self, command: RobotCommand) -> None:
         """
         Set actuator values in MuJoCo simulator.
 
-        Input values should be in unified units:
-        - Position control: radians (revolute) or meters (prismatic)
-        - Velocity control: radians/s (revolute) or meters/s (prismatic)
-
-        Args:
-            action: List of ActuatorValue with logical names (without prefix)
+        Input: RobotCommand in msgs format (radians/meters).
         """
-        # Get safe values (clipped to limits)
-        safe_action = self.get_safe_actuator_values(action)
-
-        # Execute control
+        safe_cmd = self.get_safe_command(command)
         ctrl = self._data.ctrl
 
-        for act_val in safe_action:
-            logical_name = act_val.name
+        for logical_name, act_val in safe_cmd.actuators.items():
             actuator = self._actuator_map.get(logical_name)
             if not actuator:
                 logger.warning(
@@ -175,21 +170,8 @@ class MuJoCoDriver(BaseRobotDriver):
                 )
                 continue
 
-            # Convert value based on control mode
-            # All values should be in unified units: angles in radians, distances in meters, velocities in rad/s or m/s
-            # MuJoCo ctrl units match qpos units: radians for revolute, meters for prismatic
-            if actuator.control_mode == "position":
-                # Position control: radians for revolute joints, meters for prismatic joints
-                # Input value is already in correct unit (radians or meters)
-                ctrl_value = act_val.value
-            elif actuator.control_mode == "prismatic":
-                # Prismatic control: input value should be in meters
-                ctrl_value = act_val.value
-            elif actuator.control_mode == "velocity":
-                # Velocity control: radians/s for revolute joints, meters/s for prismatic joints
-                # Input value is already in correct unit
-                ctrl_value = act_val.value
-            else:
+            ctrl_value = act_val.value
+            if actuator.control_mode not in ("position", "prismatic", "velocity"):
                 logger.warning(
                     f"Unsupported control mode '{actuator.control_mode}' "
                     f"for actuator '{logical_name}'. Skipping."

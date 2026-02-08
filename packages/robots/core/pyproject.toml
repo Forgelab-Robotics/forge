@@ -7,10 +7,10 @@ authors = [
     { name = "chipunderblade", email = "pfjhyyj@qq.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
-
+dependencies = ["forge_msgs"]
 
 [tool.uv.sources]
+forge_msgs = { workspace = true }
 
 
 [build-system]

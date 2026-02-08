@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver
+from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver, RobotCommand
 
 from forge_common import get_logger
 
@@ -15,15 +15,16 @@ class PiperRobot(BaseRobot):
     It can work with any compatible driver (real hardware, simulator, etc.):
 
     Example:
-        # Real hardware driver
-        from forge_robots_drivers_piper import PiperDriver
-        real_driver = PiperDriver(port="can0")
-        robot = PiperRobot(driver=real_driver)
+        # Real hardware driver (same package)
+        from forge_robots_piper import PiperDriver, PiperRobot
+        driver = PiperDriver(port="can0")
+        robot = PiperRobot(driver=driver)
 
-        # Simulator driver (when available)
-        # from forge_robots_drivers_piper_sim import PiperSimDriver
-        # sim_driver = PiperSimDriver()
-        # robot = PiperRobot(driver=sim_driver)
+        # Simulator driver (MuJoCo)
+        from forge_robots_piper import PiperRobot
+        from forge_robots_mujoco import MuJoCoDriver
+        driver = MuJoCoDriver(model=model, data=data, joints=..., actuators=...)
+        robot = PiperRobot(driver=driver)
     """
 
     def __init__(
@@ -46,15 +47,18 @@ class PiperRobot(BaseRobot):
         )
         # Robot model can define model-specific attributes
         # (e.g., home position, workspace limits, etc.)
-        self._home_position = [
-            ActuatorValue(name="joint1", value=0.0, type="radians"),
-            ActuatorValue(name="joint2", value=0.0, type="radians"),
-            ActuatorValue(name="joint3", value=0.0, type="radians"),
-            ActuatorValue(name="joint4", value=0.0, type="radians"),
-            ActuatorValue(name="joint5", value=0.0, type="radians"),
-            ActuatorValue(name="joint6", value=0.0, type="radians"),
-            ActuatorValue(name="gripper", value=0.0, type="meters"),
-        ]
+        self._home_command = RobotCommand(
+            timestamp=0.0,
+            actuators={
+                "joint1": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "joint2": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "joint3": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "joint4": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "joint5": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "joint6": ActuatorValue(value=0.0, mode="position", unit="radians"),
+                "gripper": ActuatorValue(value=0.0, mode="position", unit="meters"),
+            },
+        )
 
     def reset(self) -> None:
         """
@@ -63,4 +67,4 @@ class PiperRobot(BaseRobot):
         This is robot model logic - defines what "reset" means for Piper.
         The actual hardware control is handled by the driver.
         """
-        self.set_actuators(self._home_position)
+        self.set_actuators(self._home_command)

@@ -12,5 +12,5 @@ members = [
     "packages/common",
     "packages/robots/core",
     "packages/robots/piper",
-    "packages/robots/drivers/*",
+    "packages/robots/mujoco",
 ]

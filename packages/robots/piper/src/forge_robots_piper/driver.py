@@ -8,7 +8,8 @@ from forge_robots_core import (
     BaseActuator,
     BaseJoint,
     BaseRobotDriver,
-    JointValue,
+    RobotCommand,
+    RobotFeedback,
 )
 from piper_sdk import C_PiperInterface_V2
 
@@ -37,6 +38,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="joint2",
@@ -44,6 +46,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="joint3",
@@ -51,6 +54,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="joint4",
@@ -58,6 +62,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="joint5",
@@ -65,6 +70,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="joint6",
@@ -72,6 +78,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=-3.14159,
             max_value=3.14159,
+            unit="radians",
         ),
         BaseActuator(
             name="gripper",
@@ -79,6 +86,7 @@ def _default_actuators() -> list[BaseActuator]:
             control_mode="position",
             min_value=0.0,
             max_value=0.1,
+            unit="meters",
         ),
     ]
 
@@ -181,17 +189,12 @@ class PiperDriver(BaseRobotDriver):
         time.sleep(1)
         logger.info("Homing sequence should be completed.")
 
-    def get_joint_positions(self) -> list[JointValue]:
+    def get_feedback(self, timestamp: float = 0.0) -> RobotFeedback:
         """
-        Get joint positions from Piper hardware.
+        Get actuator feedback from Piper hardware.
 
-        Converts hardware units to unified units:
-        - Joint angles: (degrees * ANGLE_SCALE) -> radians
-        - Gripper: (millimeters * GRIPPER_SCALE) -> meters
-
-        Returns list of JointValue in unified units:
-        - Angles in radians
-        - Distances in meters
+        Converts hardware units to unified units (radians/meters).
+        Returns RobotFeedback in msgs format.
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
@@ -203,67 +206,57 @@ class PiperDriver(BaseRobotDriver):
             joints = self.bus.GetArmJointCtrl().joint_ctrl
             gripper = self.bus.GetArmGripperCtrl().gripper_ctrl
 
-        joint_positions = [
-            JointValue(
-                name="joint1",
+        actuator_values = {
+            "joint1": ActuatorValue(
                 value=math.radians(joints.joint_1 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="joint2",
+            "joint2": ActuatorValue(
                 value=math.radians(joints.joint_2 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="joint3",
+            "joint3": ActuatorValue(
                 value=math.radians(joints.joint_3 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="joint4",
+            "joint4": ActuatorValue(
                 value=math.radians(joints.joint_4 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="joint5",
+            "joint5": ActuatorValue(
                 value=math.radians(joints.joint_5 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="joint6",
+            "joint6": ActuatorValue(
                 value=math.radians(joints.joint_6 / self.ANGLE_SCALE),
-                type="radians",
+                mode="position",
+                unit="radians",
             ),
-            JointValue(
-                name="gripper",
+            "gripper": ActuatorValue(
                 value=gripper.grippers_angle / self.GRIPPER_SCALE / 1000.0,
-                type="meters",
+                mode="position",
+                unit="meters",
             ),
-        ]
+        }
+        return RobotFeedback(timestamp=timestamp, actuators=actuator_values)
 
-        return joint_positions
-
-    def set_actuators(self, action: list[ActuatorValue]) -> None:
+    def set_actuators(self, command: RobotCommand) -> None:
         """
         Set actuator values on Piper hardware.
 
-        Input values should be in unified units:
-        - Position control: radians (revolute joints) or meters (gripper)
-        - Velocity control: radians/s (revolute) or meters/s (prismatic)
-
-        Converts unified units to hardware units:
-        - Joint angles: radians -> (degrees * ANGLE_SCALE)
-        - Gripper: meters -> (millimeters * GRIPPER_SCALE)
-
-        Args:
-            action: List of ActuatorValue in unified units (radians or meters)
+        Input: RobotCommand in msgs format (radians/meters).
+        Converts to hardware units for CAN bus.
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
 
-        safe_action = self.get_safe_actuator_values(action)
-
-        action_dict = {act.name: act.value for act in safe_action}
+        safe_cmd = self.get_safe_command(command)
+        action_dict = {name: act.value for name, act in safe_cmd.actuators.items()}
 
         joint_1 = int(math.degrees(action_dict.get("joint1", 0.0)) * self.ANGLE_SCALE)
         joint_2 = int(math.degrees(action_dict.get("joint2", 0.0)) * self.ANGLE_SCALE)

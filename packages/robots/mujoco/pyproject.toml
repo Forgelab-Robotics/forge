@@ -1,7 +1,7 @@
 [project]
-name = "forge_robots_drivers_mujoco"
+name = "forge_robots_mujoco"
 version = "0.1.0"
-description = "MuJoCo simulator driver for Forge robotics framework"
+description = "MuJoCo robot and driver for Forge robotics framework"
 readme = "README.md"
 authors = [
     { name = "chipunderblade", email = "pfjhyyj@qq.com" }
@@ -9,13 +9,11 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "forge_common",
-    "forge_msgs",
     "forge_robots_core",
 ]
 
 [tool.uv.sources]
 forge_common = { workspace = true }
-forge_msgs = { workspace = true }
 forge_robots_core = { workspace = true }
 
 [build-system]

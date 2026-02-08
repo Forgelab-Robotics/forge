@@ -1,8 +1,9 @@
 from __future__ import annotations
 import abc
-from typing import Any
+from typing import TYPE_CHECKING
 
-from forge_robots_core.value import ActuatorValue, JointValue  # noqa: F401 - for internal use
+if TYPE_CHECKING:
+    from forge_msgs import RobotCommand, RobotFeedback
 
 
 class BaseJoint(abc.ABC):
@@ -13,13 +14,20 @@ class BaseJoint(abc.ABC):
 
 class BaseActuator(abc.ABC):
     def __init__(
-        self, name: str, id: int, control_mode: str, min_value: float, max_value: float
+        self,
+        name: str,
+        id: int,
+        control_mode: str,
+        min_value: float,
+        max_value: float,
+        unit: str = "radians",
     ):
         self.name = name
         self.id = id
         self.control_mode = control_mode
         self.min_value = min_value
         self.max_value = max_value
+        self.unit = unit
 
 
 class BaseSensor(abc.ABC):
@@ -27,7 +35,7 @@ class BaseSensor(abc.ABC):
         self.name = name
 
     @abc.abstractmethod
-    def read(self) -> Any:
+    def read(self) -> object:
         pass
 
 
@@ -51,26 +59,33 @@ class BaseRobotDriver(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_joint_positions(self) -> list[JointValue]:
+    def get_feedback(self, timestamp: float = 0.0) -> "RobotFeedback":
+        """Return robot feedback (actuator state) in msgs format."""
         pass
 
     @abc.abstractmethod
-    def set_actuators(self, action: list[ActuatorValue]) -> None:
+    def set_actuators(self, command: "RobotCommand") -> None:
+        """Set actuator values from command in msgs format."""
         pass
 
-    def get_safe_actuator_values(
-        self, action: list[ActuatorValue]
-    ) -> list[ActuatorValue]:
-        safe_action = []
-        for val in action:
-            actuator = self._actuator_map.get(val.name)
+    def get_safe_command(self, command: "RobotCommand") -> "RobotCommand":
+        """Return command with values clipped to actuator limits."""
+        from forge_msgs import ActuatorValue, RobotCommand
+
+        safe_actuators = {}
+        for name, act_val in command.actuators.items():
+            actuator = self._actuator_map.get(name)
             if not actuator:
                 continue
-            clipped_val = max(min(val.value, actuator.max_value), actuator.min_value)
-            safe_action.append(
-                ActuatorValue(name=val.name, value=clipped_val, type=val.type)
+            clipped_val = max(
+                min(act_val.value, actuator.max_value), actuator.min_value
             )
-        return safe_action
+            safe_actuators[name] = ActuatorValue(
+                value=clipped_val,
+                mode=act_val.mode,
+                unit=act_val.unit,
+            )
+        return RobotCommand(timestamp=command.timestamp, actuators=safe_actuators)
 
 
 class BaseRobot(abc.ABC):
@@ -79,14 +94,7 @@ class BaseRobot(abc.ABC):
 
     Robot layer represents the robot model and its behaviors (reset strategy,
     kinematics, trajectory planning, etc.), while Driver layer handles hardware
-    communication. This separation allows:
-
-    - Driver switching: Same robot model can work with different drivers
-      (real hardware, simulator, mock, etc.)
-    - Model logic: Robot-specific behaviors stay in Robot layer, independent
-      of hardware implementation
-    - Future extension: Easy to add kinematics, trajectory planning, etc.
-      without touching driver code
+    communication. Communication uses forge_msgs format (RobotFeedback, RobotCommand).
     """
 
     def __init__(
@@ -101,20 +109,20 @@ class BaseRobot(abc.ABC):
         self.actuators: list[BaseActuator] = actuators
         self.driver: BaseRobotDriver = driver
 
-    def set_actuators(self, action: list[ActuatorValue]):
+    def set_actuators(self, command: "RobotCommand") -> None:
         """Set actuator values via driver."""
-        self.driver.set_actuators(action)
+        self.driver.set_actuators(command)
 
-    def get_joint_positions(self) -> list[JointValue]:
-        """Get joint positions from driver."""
-        return self.driver.get_joint_positions()
+    def get_feedback(self, timestamp: float = 0.0) -> "RobotFeedback":
+        """Get robot feedback (actuator state) from driver."""
+        return self.driver.get_feedback(timestamp)
 
-    def get_safe_action(self, action: list[ActuatorValue]) -> list[ActuatorValue]:
-        """Get safe actuator values (clipped to limits) via driver."""
-        return self.driver.get_safe_actuator_values(action)
+    def get_safe_command(self, command: "RobotCommand") -> "RobotCommand":
+        """Get safe command (clipped to limits) via driver."""
+        return self.driver.get_safe_command(command)
 
     @abc.abstractmethod
-    def reset(self):
+    def reset(self) -> None:
         """
         Reset robot to a safe state.
 
