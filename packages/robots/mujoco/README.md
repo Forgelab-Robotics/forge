@@ -41,8 +41,8 @@ robot = MuJoCoRobot(
 )
 
 robot.reset()  # Reset to model qpos0, zero velocity
-feedback = robot.get_feedback(timestamp=0.0)  # RobotFeedback (msgs format)
-robot.set_actuators(command)  # RobotCommand (msgs format)
+state = robot.get_state(timestamp=0.0)  # RobotState (msgs format)
+robot.set_actuators(action)  # RobotAction (msgs format)
 ```
 
 ### MuJoCoDriver with PiperRobot (Piper in simulation)
@@ -60,8 +60,8 @@ actuators = [...]
 driver = MuJoCoDriver(model=model, data=data, joints=joints, actuators=actuators, prefix="robot1/")
 
 robot = PiperRobot(driver=driver)
-feedback = robot.get_feedback(timestamp=0.0)  # RobotFeedback
-robot.set_actuators(command)  # RobotCommand
+state = robot.get_state(timestamp=0.0)  # RobotState
+robot.set_actuators(action)  # RobotAction
 ```
 
 ### MuJoCoDriver standalone (low-level)
@@ -72,6 +72,6 @@ from forge_robots_mujoco import MuJoCoDriver
 
 driver = MuJoCoDriver(model=model, data=data, joints=joints, actuators=actuators, prefix="robot1/")
 
-driver.set_actuators(command)  # RobotCommand
-feedback = driver.get_feedback(timestamp=0.0)  # RobotFeedback
+driver.set_actuators(action)  # RobotAction
+state = driver.get_state(timestamp=0.0)  # RobotState
 ```

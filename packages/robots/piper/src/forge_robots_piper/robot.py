@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver, RobotCommand
+from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver, RobotAction
 
 from forge_common import get_logger
 
@@ -47,7 +47,7 @@ class PiperRobot(BaseRobot):
         )
         # Robot model can define model-specific attributes
         # (e.g., home position, workspace limits, etc.)
-        self._home_command = RobotCommand(
+        self._home_action = RobotAction(
             timestamp=0.0,
             actuators={
                 "joint1": ActuatorValue(value=0.0, mode="position", unit="radians"),
@@ -67,4 +67,4 @@ class PiperRobot(BaseRobot):
         This is robot model logic - defines what "reset" means for Piper.
         The actual hardware control is handled by the driver.
         """
-        self.set_actuators(self._home_command)
+        self.set_actuators(self._home_action)

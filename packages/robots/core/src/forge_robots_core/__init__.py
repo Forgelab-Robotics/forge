@@ -11,7 +11,7 @@ from forge_robots_core.base import (
 from forge_robots_core.config import ActuatorConfig, JointConfig, SensorConfig
 
 # Re-export msgs types for convenience
-from forge_msgs import ActuatorValue, JointValue, RobotCommand, RobotFeedback
+from forge_msgs import ActuatorValue, JointValue, RobotAction, RobotState
 
 __all__ = [
     # Base classes
@@ -24,8 +24,8 @@ __all__ = [
     # Value types (from forge_msgs)
     "JointValue",
     "ActuatorValue",
-    "RobotCommand",
-    "RobotFeedback",
+    "RobotAction",
+    "RobotState",
     # Config types
     "JointConfig",
     "ActuatorConfig",

@@ -1,12 +1,12 @@
 """Forge message definitions for Dora dataflow."""
 
 from forge_msgs.robot import (
-    RobotFeedback,
-    RobotCommand,
+    RobotAction,
+    RobotState,
 )
-from forge_msgs.policy import (
-    PolicyObservation,
-    PolicyAction,
+from forge_msgs.task_robot import (
+    Action,
+    ProprioState,
 )
 from forge_msgs.value import (
     ActuatorValue,
@@ -16,12 +16,12 @@ from forge_msgs.value import (
 )
 
 __all__ = [
+    "Action",
     "ActuatorValue",
-    "RobotCommand",
-    "RobotFeedback",
     "JointMode",
     "JointUnit",
     "JointValue",
-    "PolicyAction",
-    "PolicyObservation",
+    "ProprioState",
+    "RobotAction",
+    "RobotState",
 ]

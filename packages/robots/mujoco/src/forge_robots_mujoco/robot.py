@@ -32,8 +32,8 @@ class MuJoCoRobot(BaseRobot):
         )
 
         robot.reset()
-        feedback = robot.get_feedback(timestamp=0.0)
-        robot.set_actuators(command)
+        state = robot.get_state(timestamp=0.0)
+        robot.set_actuators(action)
     """
 
     def __init__(

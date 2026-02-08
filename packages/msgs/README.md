@@ -23,23 +23,23 @@ pip install forge-msgs
 
 - **`JointMode`** / **`JointUnit`**：IntEnum，用于 Arrow 列式格式的零拷贝（mode/unit 以 int8 存储）
 
-### 策略消息
+### TaskRobot 层
 
-- **`PolicyObservation`**：策略观测
+- **`ProprioState`**：TaskRobot 产出，本体状态（joints，不含图像）
   - `timestamp`: float
   - `joints`: Dict[str, JointValue]
 
-- **`PolicyAction`**：策略动作
+- **`Action`**：输入 TaskRobot 的动作
   - `ref_timestamp`: float
   - `joints`: Dict[str, JointValue]
 
-### 驱动消息
+### Robot 层
 
-- **`RobotFeedback`**：驱动反馈
+- **`RobotState`**：Robot 产出，机器人状态
   - `timestamp`: float
   - `actuators`: Dict[str, ActuatorValue]
 
-- **`RobotCommand`**：驱动指令
+- **`RobotAction`**：输入 Robot 的动作
   - `timestamp`: float
   - `actuators`: Dict[str, ActuatorValue]
 
@@ -52,10 +52,10 @@ pip install forge-msgs
 ```python
 from dora import Node
 from forge_msgs import (
-    PolicyObservation,
-    PolicyAction,
-    RobotFeedback,
-    RobotCommand,
+    ProprioState,
+    Action,
+    RobotState,
+    RobotAction,
     JointValue,
     ActuatorValue,
 )
@@ -64,36 +64,36 @@ node = Node()
 joint_order = ["joint1", "joint2"]
 actuator_order = ["act1"]
 
-# 发送 PolicyObservation
-obs = PolicyObservation(
+# 发送 ProprioState（TaskRobot 产出）
+state = ProprioState(
     timestamp=1.0,
     joints={
         "joint1": JointValue(value=0.5, mode="position", unit="radians"),
         "joint2": JointValue(value=0.1, mode="velocity", unit="radians/s"),
     },
 )
-node.send_output("observation", obs.to_arrow(joint_order))
+node.send_output("proprio_state", state.to_arrow(joint_order))
 
-# 发送 PolicyAction
-action = PolicyAction(
+# 发送 Action（输入 TaskRobot）
+action = Action(
     ref_timestamp=2.0,
     joints={"joint1": JointValue(value=0.6, mode="position", unit="radians")},
 )
 node.send_output("action", action.to_arrow(joint_order))
 
-# 发送 RobotFeedback
-feedback = RobotFeedback(
+# 发送 RobotState（Robot 产出）
+robot_state = RobotState(
     timestamp=1.0,
     actuators={"act1": ActuatorValue(value=0.5, mode="position", unit="radians")},
 )
-node.send_output("feedback", feedback.to_arrow(actuator_order))
+node.send_output("robot_state", robot_state.to_arrow(actuator_order))
 
-# 发送 RobotCommand
-command = RobotCommand(
+# 发送 RobotAction（输入 Robot）
+robot_action = RobotAction(
     timestamp=2.0,
     actuators={"act1": ActuatorValue(value=0.6, mode="torque", unit="Nm")},
 )
-node.send_output("command", command.to_arrow(actuator_order))
+node.send_output("robot_action", robot_action.to_arrow(actuator_order))
 ```
 
 ### 接收数据
@@ -101,10 +101,10 @@ node.send_output("command", command.to_arrow(actuator_order))
 ```python
 from dora import Node
 from forge_msgs import (
-    PolicyObservation,
-    PolicyAction,
-    RobotFeedback,
-    RobotCommand,
+    ProprioState,
+    Action,
+    RobotState,
+    RobotAction,
 )
 
 node = Node()
@@ -116,35 +116,35 @@ for event in node:
         continue
 
     match event["id"]:
-        case "observation":
-            obs = PolicyObservation.from_arrow(event["value"], joint_order)
+        case "proprio_state":
+            state = ProprioState.from_arrow(event["value"], joint_order)
             # 或零拷贝直接得到 numpy：
-            obs_np = PolicyObservation.to_np_from_arrow(event["value"], joint_order)
+            state_np = ProprioState.to_np_from_arrow(event["value"], joint_order)
 
         case "action":
-            action = PolicyAction.from_arrow(event["value"], joint_order)
+            action = Action.from_arrow(event["value"], joint_order)
             # 使用 action.ref_timestamp, action.joints ...
 
-        case "feedback":
-            feedback = RobotFeedback.from_arrow(event["value"], actuator_order)
-            # 或零拷贝：fb_np = RobotFeedback.to_np_from_arrow(event["value"], actuator_order)
+        case "robot_state":
+            robot_state = RobotState.from_arrow(event["value"], actuator_order)
+            # 或零拷贝：state_np = RobotState.to_np_from_arrow(event["value"], actuator_order)
 
-        case "command":
-            command = RobotCommand.from_arrow(event["value"], actuator_order)
+        case "robot_action":
+            robot_action = RobotAction.from_arrow(event["value"], actuator_order)
 ```
 
 ### 零拷贝与 numpy 互转
 
 ```python
-# 观测 -> numpy（零拷贝）
-obs_np = PolicyObservation.to_np_from_arrow(event["value"], joint_order)
+# ProprioState -> numpy（零拷贝）
+state_np = ProprioState.to_np_from_arrow(event["value"], joint_order)
 
-# 反馈 -> numpy（零拷贝）
-fb_np = RobotFeedback.to_np_from_arrow(event["value"], actuator_order)
+# RobotState -> numpy（零拷贝）
+state_np = RobotState.to_np_from_arrow(event["value"], actuator_order)
 
-# numpy -> 动作
-action = PolicyAction.from_np(action_np, joint_order, ref_timestamp=2.0)
+# numpy -> Action
+action = Action.from_np(action_np, joint_order, ref_timestamp=2.0)
 
-# numpy -> 指令
-command = RobotCommand.from_np(cmd_np, actuator_order, timestamp=2.0)
+# numpy -> RobotAction
+robot_action = RobotAction.from_np(action_np, actuator_order, timestamp=2.0)
 ```

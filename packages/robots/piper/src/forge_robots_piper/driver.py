@@ -8,8 +8,8 @@ from forge_robots_core import (
     BaseActuator,
     BaseJoint,
     BaseRobotDriver,
-    RobotCommand,
-    RobotFeedback,
+    RobotAction,
+    RobotState,
 )
 from piper_sdk import C_PiperInterface_V2
 
@@ -189,12 +189,12 @@ class PiperDriver(BaseRobotDriver):
         time.sleep(1)
         logger.info("Homing sequence should be completed.")
 
-    def get_feedback(self, timestamp: float = 0.0) -> RobotFeedback:
+    def get_state(self, timestamp: float = 0.0) -> RobotState:
         """
-        Get actuator feedback from Piper hardware.
+        Get robot state from Piper hardware.
 
         Converts hardware units to unified units (radians/meters).
-        Returns RobotFeedback in msgs format.
+        Returns RobotState in msgs format.
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
@@ -243,20 +243,20 @@ class PiperDriver(BaseRobotDriver):
                 unit="meters",
             ),
         }
-        return RobotFeedback(timestamp=timestamp, actuators=actuator_values)
+        return RobotState(timestamp=timestamp, actuators=actuator_values)
 
-    def set_actuators(self, command: RobotCommand) -> None:
+    def set_actuators(self, action: RobotAction) -> None:
         """
         Set actuator values on Piper hardware.
 
-        Input: RobotCommand in msgs format (radians/meters).
+        Input: RobotAction in msgs format (radians/meters).
         Converts to hardware units for CAN bus.
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
 
-        safe_cmd = self.get_safe_command(command)
-        action_dict = {name: act.value for name, act in safe_cmd.actuators.items()}
+        safe_action = self.get_safe_action(action)
+        action_dict = {name: act.value for name, act in safe_action.actuators.items()}
 
         joint_1 = int(math.degrees(action_dict.get("joint1", 0.0)) * self.ANGLE_SCALE)
         joint_2 = int(math.degrees(action_dict.get("joint2", 0.0)) * self.ANGLE_SCALE)

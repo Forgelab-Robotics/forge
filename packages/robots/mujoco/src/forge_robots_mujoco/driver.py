@@ -7,8 +7,8 @@ from forge_robots_core import (
     BaseActuator,
     BaseJoint,
     BaseRobotDriver,
-    RobotCommand,
-    RobotFeedback,
+    RobotAction,
+    RobotState,
 )
 
 from forge_common import get_logger
@@ -118,11 +118,11 @@ class MuJoCoDriver(BaseRobotDriver):
         self._data.qvel[:] = 0
         logger.debug("[MuJoCoDriver] Reset to initial state")
 
-    def get_feedback(self, timestamp: float = 0.0) -> RobotFeedback:
+    def get_state(self, timestamp: float = 0.0) -> RobotState:
         """
-        Get actuator feedback from MuJoCo simulator.
+        Get robot state from MuJoCo simulator.
 
-        Returns RobotFeedback in msgs format (radians/meters).
+        Returns RobotState in msgs format (radians/meters).
         """
         qpos = self._data.qpos
         actuator_values: dict[str, ActuatorValue] = {}
@@ -145,18 +145,18 @@ class MuJoCoDriver(BaseRobotDriver):
                 unit=unit,
             )
 
-        return RobotFeedback(timestamp=timestamp, actuators=actuator_values)
+        return RobotState(timestamp=timestamp, actuators=actuator_values)
 
-    def set_actuators(self, command: RobotCommand) -> None:
+    def set_actuators(self, action: RobotAction) -> None:
         """
         Set actuator values in MuJoCo simulator.
 
-        Input: RobotCommand in msgs format (radians/meters).
+        Input: RobotAction in msgs format (radians/meters).
         """
-        safe_cmd = self.get_safe_command(command)
+        safe_action = self.get_safe_action(action)
         ctrl = self._data.ctrl
 
-        for logical_name, act_val in safe_cmd.actuators.items():
+        for logical_name, act_val in safe_action.actuators.items():
             actuator = self._actuator_map.get(logical_name)
             if not actuator:
                 logger.warning(

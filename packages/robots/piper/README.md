@@ -24,7 +24,7 @@ driver = PiperDriver(port="can0", is_follower=True)
 # Use with robot model
 robot = PiperRobot(driver=driver)
 
-# Communication uses forge_msgs format (RobotFeedback, RobotCommand)
-feedback = robot.get_feedback(timestamp=0.0)  # RobotFeedback
-robot.set_actuators(command)  # RobotCommand
+# Communication uses forge_msgs format (RobotState, RobotAction)
+state = robot.get_state(timestamp=0.0)  # RobotState
+robot.set_actuators(action)  # RobotAction
 ```

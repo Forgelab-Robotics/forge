@@ -14,12 +14,14 @@ from pydantic import BaseModel
 from typing import Dict, Literal
 
 
-class RobotFeedback(BaseModel):
+class RobotState(BaseModel):
+    """Robot 产出，机器人状态。"""
+
     timestamp: float
     actuators: Dict[str, ActuatorValue]
 
     def to_np(self, actuator_order: list[str]) -> np.ndarray:
-        """将反馈数据编码为数组。"""
+        """将状态数据编码为数组。"""
         return np.array(
             [
                 self.actuators[name].value if name in self.actuators else 0.0
@@ -49,7 +51,7 @@ class RobotFeedback(BaseModel):
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch, actuator_order: list[str]
-    ) -> "RobotFeedback":
+    ) -> "RobotState":
         """从列式 Arrow 解析。"""
         timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
@@ -75,12 +77,14 @@ class RobotFeedback(BaseModel):
         ).astype(np.float32)
 
 
-class RobotCommand(BaseModel):
+class RobotAction(BaseModel):
+    """输入 Robot 的动作。"""
+
     timestamp: float
     actuators: Dict[str, ActuatorValue]
 
     def to_np(self, actuator_order: list[str]) -> np.ndarray:
-        """将指令数据编码为数组。"""
+        """将动作数据编码为数组。"""
         return np.array(
             [
                 self.actuators[name].value if name in self.actuators else 0.0
@@ -110,18 +114,18 @@ class RobotCommand(BaseModel):
     @classmethod
     def from_np(
         cls,
-        command_np: np.ndarray,
+        action_np: np.ndarray,
         actuator_order: list[str],
         timestamp: float = 0.0,
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
         unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians",
-    ) -> "RobotCommand":
-        """从数组解码为 RobotCommand。"""
+    ) -> "RobotAction":
+        """从数组解码为 RobotAction。"""
         return cls(
             timestamp=timestamp,
             actuators={
                 name: ActuatorValue(
-                    value=float(command_np[i]) if i < len(command_np) else 0.0,
+                    value=float(action_np[i]) if i < len(action_np) else 0.0,
                     mode=mode,
                     unit=unit,
                 )
@@ -132,7 +136,7 @@ class RobotCommand(BaseModel):
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch, actuator_order: list[str]
-    ) -> "RobotCommand":
+    ) -> "RobotAction":
         """从列式 Arrow 解析。"""
         timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")

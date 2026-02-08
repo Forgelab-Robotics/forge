@@ -14,12 +14,14 @@ from pydantic import BaseModel
 from typing import Dict, Literal
 
 
-class PolicyObservation(BaseModel):
+class ProprioState(BaseModel):
+    """TaskRobot 产出，本体状态（joints，不含图像）。"""
+
     timestamp: float
     joints: Dict[str, JointValue]
 
     def to_np(self, joint_order: list[str]) -> np.ndarray:
-        """将观测数据编码为数组，供算法使用。"""
+        """将本体状态编码为数组，供算法使用。"""
         return np.array(
             [
                 self.joints[name].value if name in self.joints else 0.0
@@ -47,7 +49,7 @@ class PolicyObservation(BaseModel):
         return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
-    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "PolicyObservation":
+    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "ProprioState":
         """从列式 Arrow 解析。"""
         timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
@@ -63,7 +65,7 @@ class PolicyObservation(BaseModel):
     def to_np_from_arrow(
         cls, batch: pa.RecordBatch, joint_order: list[str]
     ) -> np.ndarray:
-        """从 Arrow 零拷贝转 numpy，供策略直接使用。"""
+        """从 Arrow 零拷贝转 numpy。"""
         return np.concatenate(
             [
                 batch.column(name).to_numpy(zero_copy_only=True)
@@ -73,7 +75,9 @@ class PolicyObservation(BaseModel):
         ).astype(np.float32)
 
 
-class PolicyAction(BaseModel):
+class Action(BaseModel):
+    """输入 TaskRobot 的动作。"""
+
     ref_timestamp: float
     joints: Dict[str, JointValue]
 
@@ -103,8 +107,8 @@ class PolicyAction(BaseModel):
         ref_timestamp: float = 0.0,
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
         unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians",
-    ) -> "PolicyAction":
-        """从算法输出的动作数组解码为 PolicyAction。"""
+    ) -> "Action":
+        """从算法输出的动作数组解码为 Action。"""
         return cls(
             ref_timestamp=ref_timestamp,
             joints={
@@ -118,7 +122,7 @@ class PolicyAction(BaseModel):
         )
 
     @classmethod
-    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "PolicyAction":
+    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "Action":
         """从列式 Arrow 解析。"""
         ref_timestamp = float(batch["ref_timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")

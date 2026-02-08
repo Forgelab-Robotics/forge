@@ -3,7 +3,7 @@ import abc
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from forge_msgs import RobotCommand, RobotFeedback
+    from forge_msgs import RobotAction, RobotState
 
 
 class BaseJoint(abc.ABC):
@@ -59,21 +59,21 @@ class BaseRobotDriver(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_feedback(self, timestamp: float = 0.0) -> "RobotFeedback":
-        """Return robot feedback (actuator state) in msgs format."""
+    def get_state(self, timestamp: float = 0.0) -> "RobotState":
+        """Return robot state (actuator state) in msgs format."""
         pass
 
     @abc.abstractmethod
-    def set_actuators(self, command: "RobotCommand") -> None:
-        """Set actuator values from command in msgs format."""
+    def set_actuators(self, action: "RobotAction") -> None:
+        """Set actuator values from action in msgs format."""
         pass
 
-    def get_safe_command(self, command: "RobotCommand") -> "RobotCommand":
-        """Return command with values clipped to actuator limits."""
-        from forge_msgs import ActuatorValue, RobotCommand
+    def get_safe_action(self, action: "RobotAction") -> "RobotAction":
+        """Return action with values clipped to actuator limits."""
+        from forge_msgs import ActuatorValue, RobotAction
 
         safe_actuators = {}
-        for name, act_val in command.actuators.items():
+        for name, act_val in action.actuators.items():
             actuator = self._actuator_map.get(name)
             if not actuator:
                 continue
@@ -85,7 +85,7 @@ class BaseRobotDriver(abc.ABC):
                 mode=act_val.mode,
                 unit=act_val.unit,
             )
-        return RobotCommand(timestamp=command.timestamp, actuators=safe_actuators)
+        return RobotAction(timestamp=action.timestamp, actuators=safe_actuators)
 
 
 class BaseRobot(abc.ABC):
@@ -94,7 +94,7 @@ class BaseRobot(abc.ABC):
 
     Robot layer represents the robot model and its behaviors (reset strategy,
     kinematics, trajectory planning, etc.), while Driver layer handles hardware
-    communication. Communication uses forge_msgs format (RobotFeedback, RobotCommand).
+    communication. Communication uses forge_msgs format (RobotState, RobotAction).
     """
 
     def __init__(
@@ -109,17 +109,17 @@ class BaseRobot(abc.ABC):
         self.actuators: list[BaseActuator] = actuators
         self.driver: BaseRobotDriver = driver
 
-    def set_actuators(self, command: "RobotCommand") -> None:
+    def set_actuators(self, action: "RobotAction") -> None:
         """Set actuator values via driver."""
-        self.driver.set_actuators(command)
+        self.driver.set_actuators(action)
 
-    def get_feedback(self, timestamp: float = 0.0) -> "RobotFeedback":
-        """Get robot feedback (actuator state) from driver."""
-        return self.driver.get_feedback(timestamp)
+    def get_state(self, timestamp: float = 0.0) -> "RobotState":
+        """Get robot state (actuator state) from driver."""
+        return self.driver.get_state(timestamp)
 
-    def get_safe_command(self, command: "RobotCommand") -> "RobotCommand":
-        """Get safe command (clipped to limits) via driver."""
-        return self.driver.get_safe_command(command)
+    def get_safe_action(self, action: "RobotAction") -> "RobotAction":
+        """Get safe action (clipped to limits) via driver."""
+        return self.driver.get_safe_action(action)
 
     @abc.abstractmethod
     def reset(self) -> None:
