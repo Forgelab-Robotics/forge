@@ -10,7 +10,5 @@ dependencies = []
 members = [
     "packages/msgs",
     "packages/common",
-    "packages/robots/core",
-    "packages/robots/piper",
-    "packages/robots/mujoco",
+    "packages/robots/*",
 ]
