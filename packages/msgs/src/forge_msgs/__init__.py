@@ -1,8 +1,8 @@
 """Forge message definitions for Dora dataflow."""
 
-from forge_msgs.driver import (
-    DriverFeedback,
-    DriverCommand,
+from forge_msgs.robot import (
+    RobotFeedback,
+    RobotCommand,
 )
 from forge_msgs.policy import (
     PolicyObservation,
@@ -17,8 +17,8 @@ from forge_msgs.value import (
 
 __all__ = [
     "ActuatorValue",
-    "DriverCommand",
-    "DriverFeedback",
+    "RobotCommand",
+    "RobotFeedback",
     "JointMode",
     "JointUnit",
     "JointValue",

@@ -35,11 +35,11 @@ pip install forge-msgs
 
 ### 驱动消息
 
-- **`DriverFeedback`**：驱动反馈
+- **`RobotFeedback`**：驱动反馈
   - `timestamp`: float
   - `actuators`: Dict[str, ActuatorValue]
 
-- **`DriverCommand`**：驱动指令
+- **`RobotCommand`**：驱动指令
   - `timestamp`: float
   - `actuators`: Dict[str, ActuatorValue]
 
@@ -54,8 +54,8 @@ from dora import Node
 from forge_msgs import (
     PolicyObservation,
     PolicyAction,
-    DriverFeedback,
-    DriverCommand,
+    RobotFeedback,
+    RobotCommand,
     JointValue,
     ActuatorValue,
 )
@@ -81,15 +81,15 @@ action = PolicyAction(
 )
 node.send_output("action", action.to_arrow(joint_order))
 
-# 发送 DriverFeedback
-feedback = DriverFeedback(
+# 发送 RobotFeedback
+feedback = RobotFeedback(
     timestamp=1.0,
     actuators={"act1": ActuatorValue(value=0.5, mode="position", unit="radians")},
 )
 node.send_output("feedback", feedback.to_arrow(actuator_order))
 
-# 发送 DriverCommand
-command = DriverCommand(
+# 发送 RobotCommand
+command = RobotCommand(
     timestamp=2.0,
     actuators={"act1": ActuatorValue(value=0.6, mode="torque", unit="Nm")},
 )
@@ -103,8 +103,8 @@ from dora import Node
 from forge_msgs import (
     PolicyObservation,
     PolicyAction,
-    DriverFeedback,
-    DriverCommand,
+    RobotFeedback,
+    RobotCommand,
 )
 
 node = Node()
@@ -126,11 +126,11 @@ for event in node:
             # 使用 action.ref_timestamp, action.joints ...
 
         case "feedback":
-            feedback = DriverFeedback.from_arrow(event["value"], actuator_order)
-            # 或零拷贝：fb_np = DriverFeedback.to_np_from_arrow(event["value"], actuator_order)
+            feedback = RobotFeedback.from_arrow(event["value"], actuator_order)
+            # 或零拷贝：fb_np = RobotFeedback.to_np_from_arrow(event["value"], actuator_order)
 
         case "command":
-            command = DriverCommand.from_arrow(event["value"], actuator_order)
+            command = RobotCommand.from_arrow(event["value"], actuator_order)
 ```
 
 ### 零拷贝与 numpy 互转
@@ -140,11 +140,11 @@ for event in node:
 obs_np = PolicyObservation.to_np_from_arrow(event["value"], joint_order)
 
 # 反馈 -> numpy（零拷贝）
-fb_np = DriverFeedback.to_np_from_arrow(event["value"], actuator_order)
+fb_np = RobotFeedback.to_np_from_arrow(event["value"], actuator_order)
 
 # numpy -> 动作
 action = PolicyAction.from_np(action_np, joint_order, ref_timestamp=2.0)
 
 # numpy -> 指令
-command = DriverCommand.from_np(cmd_np, actuator_order, timestamp=2.0)
+command = RobotCommand.from_np(cmd_np, actuator_order, timestamp=2.0)
 ```

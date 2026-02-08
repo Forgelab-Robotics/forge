@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from typing import Dict, Literal
 
 
-class DriverFeedback(BaseModel):
+class RobotFeedback(BaseModel):
     timestamp: float
     actuators: Dict[str, ActuatorValue]
 
@@ -49,7 +49,7 @@ class DriverFeedback(BaseModel):
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch, actuator_order: list[str]
-    ) -> "DriverFeedback":
+    ) -> "RobotFeedback":
         """从列式 Arrow 解析。"""
         timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
@@ -75,7 +75,7 @@ class DriverFeedback(BaseModel):
         ).astype(np.float32)
 
 
-class DriverCommand(BaseModel):
+class RobotCommand(BaseModel):
     timestamp: float
     actuators: Dict[str, ActuatorValue]
 
@@ -115,8 +115,8 @@ class DriverCommand(BaseModel):
         timestamp: float = 0.0,
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
         unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians",
-    ) -> "DriverCommand":
-        """从数组解码为 DriverCommand。"""
+    ) -> "RobotCommand":
+        """从数组解码为 RobotCommand。"""
         return cls(
             timestamp=timestamp,
             actuators={
@@ -132,7 +132,7 @@ class DriverCommand(BaseModel):
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch, actuator_order: list[str]
-    ) -> "DriverCommand":
+    ) -> "RobotCommand":
         """从列式 Arrow 解析。"""
         timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
