@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "forge_common",
+    "forge_msgs",
     "forge_robots_core",
     "piper-sdk>=0.6.1",
 ]
@@ -16,6 +17,7 @@ dependencies = [
 [tool.uv.sources]
 forge_robots_core = { workspace = true }
 forge_common = { workspace = true }
+forge_msgs = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]

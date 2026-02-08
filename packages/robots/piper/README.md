@@ -16,15 +16,18 @@ The driver automatically converts between hardware-specific units and unified un
 ## Usage
 
 ```python
-from forge_robots_piper import PiperDriver, PiperRobot
+from forge_robots_piper import PiperRobot
 
-# Create driver (uses default joints/actuators if not specified)
-driver = PiperDriver(port="can0", is_follower=True)
+robot = PiperRobot(port="can0")
 
-# Use with robot model
-robot = PiperRobot(driver=driver)
+# RobotState / RobotAction (forge_msgs)
+state = robot.get_state(timestamp=0.0)
+robot.set_actuators(action)
+```
 
-# Communication uses forge_msgs format (RobotState, RobotAction)
-state = robot.get_state(timestamp=0.0)  # RobotState
-robot.set_actuators(action)  # RobotAction
+PiperDriver 作为内部类，需要直接使用驱动时可单独导入：
+
+```python
+from forge_robots_piper import PiperDriver
+driver = PiperDriver(port="can0")  # 低层硬件接口
 ```

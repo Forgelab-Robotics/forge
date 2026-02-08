@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from forge_robots_core import ActuatorValue, BaseRobot, BaseRobotDriver, RobotAction
+from forge_robots_core import ActuatorValue, BaseRobot, RobotAction
 
 from forge_common import get_logger
+
+from forge_robots_piper.driver import PiperDriver
 
 logger = get_logger(__name__)
 
@@ -11,42 +13,43 @@ class PiperRobot(BaseRobot):
     """
     Piper robot model.
 
-    This class represents the Piper robot model and its behaviors.
-    It can work with any compatible driver (real hardware, simulator, etc.):
+    Robot 层封装 Piper 模型与行为，内部使用 PiperDriver 进行硬件通信。
+    TaskRobot → Robot → Driver
 
     Example:
-        # Real hardware driver (same package)
-        from forge_robots_piper import PiperDriver, PiperRobot
-        driver = PiperDriver(port="can0")
-        robot = PiperRobot(driver=driver)
-
-        # Simulator driver (MuJoCo)
         from forge_robots_piper import PiperRobot
-        from forge_robots_mujoco import MuJoCoDriver
-        driver = MuJoCoDriver(model=model, data=data, joints=..., actuators=...)
-        robot = PiperRobot(driver=driver)
+        robot = PiperRobot(port="can0")
+        state = robot.get_state()
+        robot.set_actuators(action)
     """
 
     def __init__(
         self,
-        driver: BaseRobotDriver,
+        port: str = "can0",
+        is_follower: bool = True,
+        auto_connect: bool = True,
         name: str = "piper",
     ):
         """
-        Initialize Piper robot with a driver.
+        Initialize Piper robot.
 
         Args:
-            driver: Robot driver (hardware, simulator, etc.)
+            port: CAN port (e.g. "can0")
+            is_follower: Follower mode for hardware
+            auto_connect: Connect on init
             name: Robot name
         """
+        driver = PiperDriver(
+            port=port,
+            is_follower=is_follower,
+            auto_connect=auto_connect,
+        )
         super().__init__(
             name=name,
             joints=driver.joints,
             actuators=driver.actuators,
             driver=driver,
         )
-        # Robot model can define model-specific attributes
-        # (e.g., home position, workspace limits, etc.)
         self._home_action = RobotAction(
             timestamp=0.0,
             actuators={
@@ -65,6 +68,5 @@ class PiperRobot(BaseRobot):
         Reset robot to home position.
 
         This is robot model logic - defines what "reset" means for Piper.
-        The actual hardware control is handled by the driver.
         """
         self.set_actuators(self._home_action)
