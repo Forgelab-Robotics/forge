@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 import mujoco
@@ -116,15 +115,12 @@ class MuJoCoSimulator:
         self._data.qvel[:] = 0
         logger.debug("[MuJoCoSimulator] Reset to initial state")
 
-    def get_state(self, timestamp: float | None = None) -> RobotState:
+    def get_state(self) -> RobotState:
         """
         Get robot state from MuJoCo simulator.
 
         Returns RobotState in msgs format (radians/meters).
         """
-        if timestamp is None:
-            timestamp = time.time()
-
         qpos = self._data.qpos
         actuator_values: dict[str, ActuatorValue] = {}
 
@@ -146,7 +142,7 @@ class MuJoCoSimulator:
                 unit=unit,
             )
 
-        return RobotState(timestamp=timestamp, actuators=actuator_values)
+        return RobotState(actuators=actuator_values)
 
     def set_action(self, action: RobotAction) -> None:
         """
@@ -197,4 +193,4 @@ class MuJoCoSimulator:
                 mode=act_val.mode,
                 unit=act_val.unit,
             )
-        return RobotAction(timestamp=action.timestamp, actuators=safe_actuators)
+        return RobotAction(actuators=safe_actuators)

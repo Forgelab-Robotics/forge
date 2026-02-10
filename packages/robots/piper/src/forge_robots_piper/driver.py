@@ -189,7 +189,7 @@ class PiperDriver(BaseRobotDriver):
         time.sleep(1)
         logger.info("Homing sequence should be completed.")
 
-    def get_state(self, timestamp: float = 0.0) -> RobotState:
+    def get_state(self) -> RobotState:
         """
         Get robot state from Piper hardware.
 
@@ -243,7 +243,7 @@ class PiperDriver(BaseRobotDriver):
                 unit="meters",
             ),
         }
-        return RobotState(timestamp=timestamp, actuators=actuator_values)
+        return RobotState(actuators=actuator_values)
 
     def set_actuators(self, action: RobotAction) -> None:
         """

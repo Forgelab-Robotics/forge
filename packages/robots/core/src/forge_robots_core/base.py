@@ -59,7 +59,7 @@ class BaseRobotDriver(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_state(self, timestamp: float = 0.0) -> "RobotState":
+    def get_state(self) -> "RobotState":
         """Return robot state (actuator state) in msgs format."""
         pass
 
@@ -85,7 +85,7 @@ class BaseRobotDriver(abc.ABC):
                 mode=act_val.mode,
                 unit=act_val.unit,
             )
-        return RobotAction(timestamp=action.timestamp, actuators=safe_actuators)
+        return RobotAction(actuators=safe_actuators)
 
 
 class BaseRobot(abc.ABC):
@@ -113,9 +113,9 @@ class BaseRobot(abc.ABC):
         """Set actuator values via driver."""
         self.driver.set_actuators(action)
 
-    def get_state(self, timestamp: float = 0.0) -> "RobotState":
+    def get_state(self) -> "RobotState":
         """Get robot state (actuator state) from driver."""
-        return self.driver.get_state(timestamp)
+        return self.driver.get_state()
 
     def get_safe_action(self, action: "RobotAction") -> "RobotAction":
         """Get safe action (clipped to limits) via driver."""

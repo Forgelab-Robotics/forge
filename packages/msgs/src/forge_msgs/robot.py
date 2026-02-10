@@ -17,7 +17,6 @@ from typing import Dict, Literal
 class RobotState(BaseModel):
     """Robot 产出，机器人状态。"""
 
-    timestamp: float
     actuators: Dict[str, ActuatorValue]
 
     def to_np(self, actuator_order: list[str]) -> np.ndarray:
@@ -39,7 +38,6 @@ class RobotState(BaseModel):
             next((a.unit for a in self.actuators.values()), "radians"), 0
         )
         columns = {
-            "timestamp": pa.array([self.timestamp], type=pa.float64()),
             "mode": pa.array([mode_int], type=pa.int8()),
             "unit": pa.array([unit_int], type=pa.int8()),
         }
@@ -53,7 +51,6 @@ class RobotState(BaseModel):
         cls, batch: pa.RecordBatch, actuator_order: list[str]
     ) -> "RobotState":
         """从列式 Arrow 解析。"""
-        timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         actuators = {}
@@ -61,7 +58,7 @@ class RobotState(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)
-        return cls(timestamp=timestamp, actuators=actuators)
+        return cls(actuators=actuators)
 
     @classmethod
     def to_np_from_arrow(
@@ -80,7 +77,6 @@ class RobotState(BaseModel):
 class RobotAction(BaseModel):
     """输入 Robot 的动作。"""
 
-    timestamp: float
     actuators: Dict[str, ActuatorValue]
 
     def to_np(self, actuator_order: list[str]) -> np.ndarray:
@@ -102,7 +98,6 @@ class RobotAction(BaseModel):
             next((a.unit for a in self.actuators.values()), "radians"), 0
         )
         columns = {
-            "timestamp": pa.array([self.timestamp], type=pa.float64()),
             "mode": pa.array([mode_int], type=pa.int8()),
             "unit": pa.array([unit_int], type=pa.int8()),
         }
@@ -116,13 +111,13 @@ class RobotAction(BaseModel):
         cls,
         action_np: np.ndarray,
         actuator_order: list[str],
-        timestamp: float = 0.0,
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
-        unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians",
+        unit: Literal[
+            "radians", "meters", "radians/s", "meters/s", "Nm", "A"
+        ] = "radians",
     ) -> "RobotAction":
         """从数组解码为 RobotAction。"""
         return cls(
-            timestamp=timestamp,
             actuators={
                 name: ActuatorValue(
                     value=float(action_np[i]) if i < len(action_np) else 0.0,
@@ -138,7 +133,6 @@ class RobotAction(BaseModel):
         cls, batch: pa.RecordBatch, actuator_order: list[str]
     ) -> "RobotAction":
         """从列式 Arrow 解析。"""
-        timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         actuators = {}
@@ -146,4 +140,4 @@ class RobotAction(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)
-        return cls(timestamp=timestamp, actuators=actuators)
+        return cls(actuators=actuators)

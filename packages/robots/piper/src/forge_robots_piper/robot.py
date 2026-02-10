@@ -51,7 +51,6 @@ class PiperRobot(BaseRobot):
             driver=driver,
         )
         self._home_action = RobotAction(
-            timestamp=0.0,
             actuators={
                 "joint1": ActuatorValue(value=0.0, mode="position", unit="radians"),
                 "joint2": ActuatorValue(value=0.0, mode="position", unit="radians"),

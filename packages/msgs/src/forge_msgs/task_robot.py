@@ -17,7 +17,6 @@ from typing import Dict, Literal
 class ProprioState(BaseModel):
     """TaskRobot 产出，本体状态（joints，不含图像）。"""
 
-    timestamp: float
     joints: Dict[str, JointValue]
 
     def to_np(self, joint_order: list[str]) -> np.ndarray:
@@ -39,7 +38,6 @@ class ProprioState(BaseModel):
             next((j.unit for j in self.joints.values()), "radians"), 0
         )
         columns = {
-            "timestamp": pa.array([self.timestamp], type=pa.float64()),
             "mode": pa.array([mode_int], type=pa.int8()),
             "unit": pa.array([unit_int], type=pa.int8()),
         }
@@ -49,9 +47,10 @@ class ProprioState(BaseModel):
         return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
-    def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "ProprioState":
+    def from_arrow(
+        cls, batch: pa.RecordBatch, joint_order: list[str]
+    ) -> "ProprioState":
         """从列式 Arrow 解析。"""
-        timestamp = float(batch["timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         joints = {}
@@ -59,7 +58,7 @@ class ProprioState(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
-        return cls(timestamp=timestamp, joints=joints)
+        return cls(joints=joints)
 
     @classmethod
     def to_np_from_arrow(
@@ -78,7 +77,6 @@ class ProprioState(BaseModel):
 class Action(BaseModel):
     """输入 TaskRobot 的动作。"""
 
-    ref_timestamp: float
     joints: Dict[str, JointValue]
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
@@ -90,7 +88,6 @@ class Action(BaseModel):
             next((j.unit for j in self.joints.values()), "radians"), 0
         )
         columns = {
-            "ref_timestamp": pa.array([self.ref_timestamp], type=pa.float64()),
             "mode": pa.array([mode_int], type=pa.int8()),
             "unit": pa.array([unit_int], type=pa.int8()),
         }
@@ -104,13 +101,13 @@ class Action(BaseModel):
         cls,
         action_np: np.ndarray,
         joint_order: list[str],
-        ref_timestamp: float = 0.0,
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
-        unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians",
+        unit: Literal[
+            "radians", "meters", "radians/s", "meters/s", "Nm", "A"
+        ] = "radians",
     ) -> "Action":
         """从算法输出的动作数组解码为 Action。"""
         return cls(
-            ref_timestamp=ref_timestamp,
             joints={
                 name: JointValue(
                     value=float(action_np[i]) if i < len(action_np) else 0.0,
@@ -124,7 +121,6 @@ class Action(BaseModel):
     @classmethod
     def from_arrow(cls, batch: pa.RecordBatch, joint_order: list[str]) -> "Action":
         """从列式 Arrow 解析。"""
-        ref_timestamp = float(batch["ref_timestamp"][0].as_py())
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         joints = {}
@@ -132,4 +128,4 @@ class Action(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
-        return cls(ref_timestamp=ref_timestamp, joints=joints)
+        return cls(joints=joints)
