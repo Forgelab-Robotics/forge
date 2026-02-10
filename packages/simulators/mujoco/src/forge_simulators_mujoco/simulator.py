@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import mujoco
 from forge_msgs import ActuatorValue, RobotAction, RobotState
 from forge_robots_core import BaseActuator, BaseJoint
 
@@ -70,7 +71,9 @@ class MuJoCoSimulator:
             logical_name = joint.name
             prefixed_name = prefix + logical_name
             try:
-                joint_id = model.joint_name2id(prefixed_name)
+                joint_id = mujoco.mj_name2id(
+                    model, mujoco.mjtObj.mjOBJ_JOINT, prefixed_name
+                )
                 qpos_addr = model.jnt_qposadr[joint_id]
                 self._qpos_addrs[logical_name] = qpos_addr
                 logger.info(
@@ -86,7 +89,9 @@ class MuJoCoSimulator:
             logical_name = actuator.name
             prefixed_name = prefix + logical_name
             try:
-                act_id = model.actuator_name2id(prefixed_name)
+                act_id = mujoco.mj_name2id(
+                    model, mujoco.mjtObj.mjOBJ_ACTUATOR, prefixed_name
+                )
                 self._ctrl_indices[logical_name] = act_id
                 logger.info(
                     f"  - Mapped Actuator '{logical_name}' -> '{prefixed_name}' "
