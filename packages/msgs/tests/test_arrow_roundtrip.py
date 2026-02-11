@@ -56,14 +56,6 @@ def test_ensure_record_batch_struct_array() -> None:
         }
     )
     # 单行 RecordBatch 转成 StructArray：每列变成 struct 的一个字段
-    struct_type = pa.struct(
-        [
-            ("mode", pa.int8()),
-            ("unit", pa.int8()),
-            ("j1", pa.float32()),
-            ("j2", pa.float32()),
-        ]
-    )
     struct_array = pa.StructArray.from_arrays(
         [batch.column(i) for i in range(batch.num_columns)],
         names=list(batch.schema.names),
