@@ -45,6 +45,32 @@ def test_ensure_record_batch_bytes_ipc() -> None:
     assert out.column("j1")[0].as_py() == 1.0
 
 
+def test_ensure_record_batch_struct_array() -> None:
+    """dora 有时传 StructArray（RecordBatch 被当作单列 struct）。"""
+    batch = pa.RecordBatch.from_pydict({
+        "mode": pa.array([0], type=pa.int8()),
+        "unit": pa.array([0], type=pa.int8()),
+        "j1": pa.array([1.0], type=pa.float32()),
+        "j2": pa.array([2.0], type=pa.float32()),
+    })
+    # 单行 RecordBatch 转成 StructArray：每列变成 struct 的一个字段
+    struct_type = pa.struct([
+        ("mode", pa.int8()),
+        ("unit", pa.int8()),
+        ("j1", pa.float32()),
+        ("j2", pa.float32()),
+    ])
+    struct_array = pa.StructArray.from_arrays(
+        [batch.column(i) for i in range(batch.num_columns)],
+        names=list(batch.schema.names),
+    )
+    out = ensure_record_batch(struct_array)
+    assert isinstance(out, pa.RecordBatch)
+    assert out.num_rows == 1
+    assert out.column("j1")[0].as_py() == 1.0
+    assert out.column("j2")[0].as_py() == 2.0
+
+
 def test_ensure_record_batch_invalid_type() -> None:
     with pytest.raises(TypeError, match="from_arrow 需要"):
         ensure_record_batch([1, 2, 3])  # type: ignore[arg-type]
@@ -273,3 +299,17 @@ def test_action_from_arrow_empty_batch() -> None:
     back = Action.from_arrow(batch, JOINT_ORDER)
     for name in JOINT_ORDER:
         assert back.joints[name].value == 0.0
+
+
+def test_action_from_arrow_struct_array() -> None:
+    """模拟 dora 传入 StructArray 的场景（task_robot / mujoco 节点）。"""
+    action = _action()
+    batch = action.to_arrow(JOINT_ORDER)
+    struct_array = pa.StructArray.from_arrays(
+        [batch.column(i) for i in range(batch.num_columns)],
+        names=list(batch.schema.names),
+    )
+    back = Action.from_arrow(struct_array, JOINT_ORDER)
+    assert back.joints["j1"].value == 1.0
+    assert back.joints["j2"].value == 2.0
+    assert back.joints["j3"].value == 3.0

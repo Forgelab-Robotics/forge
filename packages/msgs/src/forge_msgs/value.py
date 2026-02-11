@@ -5,8 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-def ensure_record_batch(data: "pa.RecordBatch | pa.Table | bytes") -> "pa.RecordBatch":
-    """将 dora 可能传入的 bytes/Table/RecordBatch 统一转为 RecordBatch。"""
+def ensure_record_batch(
+    data: "pa.RecordBatch | pa.Table | pa.Array | bytes",
+) -> "pa.RecordBatch":
+    """将 dora 可能传入的 bytes/Table/RecordBatch/StructArray 统一转为 RecordBatch。"""
     import pyarrow as pa
 
     if isinstance(data, pa.RecordBatch):
@@ -19,7 +21,15 @@ def ensure_record_batch(data: "pa.RecordBatch | pa.Table | bytes") -> "pa.Record
         if not batches:
             return pa.RecordBatch.from_pydict({})
         return batches[0]
-    raise TypeError(f"from_arrow 需要 pa.RecordBatch、pa.Table 或 bytes，得到: {type(data)}")
+    if isinstance(data, pa.StructArray):
+        # dora 有时把 RecordBatch 作为单列 struct 传递，每行一个 struct
+        n = data.type.num_fields
+        names = [data.type.field(i).name for i in range(n)]
+        arrays = [data.field(i) for i in range(n)]
+        return pa.RecordBatch.from_arrays(arrays, names=names)
+    raise TypeError(
+        f"from_arrow 需要 pa.RecordBatch、pa.Table、pa.StructArray 或 bytes，得到: {type(data)}"
+    )
 
 
 class JointMode(IntEnum):
