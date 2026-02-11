@@ -9,6 +9,7 @@ from forge_msgs.value import (
     MODE_STR_TO_INT,
     UNIT_INT_TO_STR,
     UNIT_STR_TO_INT,
+    ensure_record_batch,
 )
 from pydantic import BaseModel
 from typing import Dict, Literal
@@ -48,9 +49,17 @@ class RobotState(BaseModel):
 
     @classmethod
     def from_arrow(
-        cls, batch: pa.RecordBatch, actuator_order: list[str]
+        cls, batch: pa.RecordBatch | pa.Table | bytes, actuator_order: list[str]
     ) -> "RobotState":
-        """从列式 Arrow 解析。"""
+        """从列式 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。"""
+        batch = ensure_record_batch(batch)
+        if batch.num_rows == 0:
+            return cls(
+                actuators={
+                    name: ActuatorValue(value=0.0, mode="position", unit="radians")
+                    for name in actuator_order
+                }
+            )
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         actuators = {}
@@ -58,20 +67,30 @@ class RobotState(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)
+            else:
+                actuators[name] = ActuatorValue(value=0.0, mode=mode_str, unit=unit_str)
         return cls(actuators=actuators)
 
     @classmethod
     def to_np_from_arrow(
-        cls, batch: pa.RecordBatch, actuator_order: list[str]
+        cls, batch: pa.RecordBatch | pa.Table | bytes, actuator_order: list[str]
     ) -> np.ndarray:
-        """从 Arrow 零拷贝转 numpy。"""
-        return np.concatenate(
-            [
-                batch.column(name).to_numpy(zero_copy_only=True)
-                for name in actuator_order
-                if name in batch.schema.names
-            ]
-        ).astype(np.float32)
+        """从 Arrow 转 numpy；batch 可为 RecordBatch、Table 或 IPC bytes。"""
+        batch = ensure_record_batch(batch)
+        parts = []
+        for name in actuator_order:
+            if name in batch.schema.names:
+                col = batch.column(name)
+                try:
+                    arr = col.to_numpy(zero_copy_only=True)
+                except Exception:
+                    arr = col.to_numpy(zero_copy_only=False)
+                parts.append(arr)
+            else:
+                parts.append(np.array([0.0], dtype=np.float32))
+        if not parts:
+            return np.array([], dtype=np.float32)
+        return np.concatenate(parts).astype(np.float32)
 
 
 class RobotAction(BaseModel):
@@ -130,9 +149,17 @@ class RobotAction(BaseModel):
 
     @classmethod
     def from_arrow(
-        cls, batch: pa.RecordBatch, actuator_order: list[str]
+        cls, batch: pa.RecordBatch | pa.Table | bytes, actuator_order: list[str]
     ) -> "RobotAction":
-        """从列式 Arrow 解析。"""
+        """从列式 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。"""
+        batch = ensure_record_batch(batch)
+        if batch.num_rows == 0:
+            return cls(
+                actuators={
+                    name: ActuatorValue(value=0.0, mode="position", unit="radians")
+                    for name in actuator_order
+                }
+            )
         mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
         unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
         actuators = {}
@@ -140,4 +167,6 @@ class RobotAction(BaseModel):
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)
+            else:
+                actuators[name] = ActuatorValue(value=0.0, mode=mode_str, unit=unit_str)
         return cls(actuators=actuators)

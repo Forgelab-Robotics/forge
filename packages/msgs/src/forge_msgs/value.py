@@ -1,6 +1,25 @@
+from __future__ import annotations
+
 from enum import IntEnum
-from pydantic import BaseModel
 from typing import Literal
+
+from pydantic import BaseModel
+
+def ensure_record_batch(data: "pa.RecordBatch | pa.Table | bytes") -> "pa.RecordBatch":
+    """将 dora 可能传入的 bytes/Table/RecordBatch 统一转为 RecordBatch。"""
+    import pyarrow as pa
+
+    if isinstance(data, pa.RecordBatch):
+        return data
+    if isinstance(data, bytes):
+        reader = pa.ipc.open_stream(data)
+        return reader.read_next_batch()
+    if isinstance(data, pa.Table):
+        batches = data.to_batches()
+        if not batches:
+            return pa.RecordBatch.from_pydict({})
+        return batches[0]
+    raise TypeError(f"from_arrow 需要 pa.RecordBatch、pa.Table 或 bytes，得到: {type(data)}")
 
 
 class JointMode(IntEnum):
