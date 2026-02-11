@@ -4,12 +4,13 @@ from enum import IntEnum
 from typing import Literal
 
 from pydantic import BaseModel
+import pyarrow as pa
+
 
 def ensure_record_batch(
     data: "pa.RecordBatch | pa.Table | pa.Array | bytes",
 ) -> "pa.RecordBatch":
     """将 dora 可能传入的 bytes/Table/RecordBatch/StructArray 统一转为 RecordBatch。"""
-    import pyarrow as pa
 
     if isinstance(data, pa.RecordBatch):
         return data
