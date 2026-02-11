@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import io
+
 import numpy as np
 import pyarrow as pa
 import pytest
+from PIL import Image as PILImage
 
 from forge_msgs.robot import RobotAction, RobotState
 from forge_msgs.task_robot import Action, ProprioState
-from forge_msgs.image import (
-    CompressedImage,
-    Image,
-)
+from forge_msgs.image import Image
 from forge_msgs.value import ActuatorValue, JointValue, ensure_record_batch
 
 
@@ -289,25 +289,74 @@ def test_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
 
 
 def test_compressed_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
-    img = CompressedImage(
+    img = Image(
         width=640,
         height=480,
-        format="jpeg",
+        channels=0,
+        encoding="jpeg",
         data=bytes([0xFF, 0xD8, 0xFF, 0xD9]),  # minimal jpeg-like bytes for roundtrip
     )
     batch = img.to_arrow()
-    back = CompressedImage.from_arrow(batch)
+    back = Image.from_arrow(batch)
     assert back.width == 640
     assert back.height == 480
-    assert back.format == "jpeg"
+    assert back.channels == 0
+    assert back.encoding == "jpeg"
     assert back.data == img.data
 
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, batch.schema) as writer:
         writer.write_batch(batch)
     data = sink.getvalue().to_pybytes()
-    back2 = CompressedImage.from_arrow(data)
+    back2 = Image.from_arrow(data)
     assert back2.data == img.data
+
+
+def test_image_to_numpy_decodes_jpeg() -> None:
+    """to_numpy() 对 encoding=jpeg 能解码为 HWC uint8。"""
+    # 用 Pillow 生成一小块真实 JPEG
+    rgb = np.zeros((4, 6, 3), dtype=np.uint8)
+    rgb[0, 0] = [255, 0, 0]
+    rgb[2, 3] = [0, 255, 0]
+    pil = PILImage.fromarray(rgb)
+    buf = io.BytesIO()
+    pil.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    img = Image(
+        width=6,
+        height=4,
+        channels=0,
+        encoding="jpeg",
+        data=jpeg_bytes,
+    )
+    arr = img.to_numpy()
+    assert arr.dtype == np.uint8
+    assert arr.ndim == 3
+    assert arr.shape[0] == 4 and arr.shape[1] == 6 and arr.shape[2] == 3
+    # 解码后大致为 RGB（JPEG 有损，只做形状与类型检查）
+    assert arr.min() >= 0 and arr.max() <= 255
+
+
+def test_image_to_numpy_decodes_png() -> None:
+    """to_numpy() 对 encoding=png 能解码为 HWC uint8。"""
+    rgb = np.ones((2, 3, 3), dtype=np.uint8) * 128
+    pil = PILImage.fromarray(rgb)
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    img = Image(
+        width=3,
+        height=2,
+        channels=0,
+        encoding="png",
+        data=png_bytes,
+    )
+    arr = img.to_numpy()
+    assert arr.dtype == np.uint8
+    assert arr.shape == (2, 3, 3)
+    np.testing.assert_array_equal(arr, 128)
 
 
 # ---------- Action (task_robot) ----------

@@ -9,8 +9,8 @@ from forge_msgs.task_robot import (
     ProprioState,
 )
 from forge_msgs.image import (
-    CompressedImage,
     Image,
+    ImageEncoding,
 )
 from forge_msgs.value import (
     ActuatorValue,
@@ -22,8 +22,8 @@ from forge_msgs.value import (
 __all__ = [
     "Action",
     "ActuatorValue",
-    "CompressedImage",
     "Image",
+    "ImageEncoding",
     "JointMode",
     "JointUnit",
     "JointValue",
