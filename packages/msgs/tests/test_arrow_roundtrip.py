@@ -8,6 +8,10 @@ import pytest
 
 from forge_msgs.robot import RobotAction, RobotState
 from forge_msgs.task_robot import Action, ProprioState
+from forge_msgs.image import (
+    CompressedImage,
+    Image,
+)
 from forge_msgs.value import ActuatorValue, JointValue, ensure_record_batch
 
 
@@ -257,6 +261,53 @@ def test_proprio_state_from_arrow_empty_batch() -> None:
     for name in JOINT_ORDER:
         assert back.joints[name].value == 0.0
         assert back.joints[name].mode == "position"
+
+
+# ---------- Image ----------
+def test_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
+    img = Image(
+        width=2,
+        height=1,
+        channels=3,
+        encoding="rgb8",
+        data=bytes([255, 0, 0, 0, 255, 0]),
+    )
+    batch = img.to_arrow()
+    back = Image.from_arrow(batch)
+    assert back.width == 2
+    assert back.height == 1
+    assert back.channels == 3
+    assert back.encoding == "rgb8"
+    assert back.data == img.data
+
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    data = sink.getvalue().to_pybytes()
+    back2 = Image.from_arrow(data)
+    assert back2.data == img.data
+
+
+def test_compressed_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
+    img = CompressedImage(
+        width=640,
+        height=480,
+        format="jpeg",
+        data=bytes([0xFF, 0xD8, 0xFF, 0xD9]),  # minimal jpeg-like bytes for roundtrip
+    )
+    batch = img.to_arrow()
+    back = CompressedImage.from_arrow(batch)
+    assert back.width == 640
+    assert back.height == 480
+    assert back.format == "jpeg"
+    assert back.data == img.data
+
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    data = sink.getvalue().to_pybytes()
+    back2 = CompressedImage.from_arrow(data)
+    assert back2.data == img.data
 
 
 # ---------- Action (task_robot) ----------
