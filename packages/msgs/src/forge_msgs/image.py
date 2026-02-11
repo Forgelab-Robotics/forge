@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from enum import IntEnum
 from typing import Literal
 
 import numpy as np
@@ -10,8 +11,25 @@ from pydantic import BaseModel
 
 from forge_msgs.value import ensure_record_batch
 
-# 原始像素格式与压缩格式统一用 encoding 表示
-ImageEncoding = Literal["rgb8", "bgr8", "gray8", "jpeg", "png"]
+
+class ImageEncoding(IntEnum):
+    """图像编码/格式，用于 Arrow 列式格式的零拷贝序列化。"""
+
+    rgb8 = 0
+    bgr8 = 1
+    gray8 = 2
+    jpeg = 3
+    png = 4
+
+
+ENCODING_STR_TO_INT = {
+    "rgb8": ImageEncoding.rgb8,
+    "bgr8": ImageEncoding.bgr8,
+    "gray8": ImageEncoding.gray8,
+    "jpeg": ImageEncoding.jpeg,
+    "png": ImageEncoding.png,
+}
+ENCODING_INT_TO_STR = {v: k for k, v in ENCODING_STR_TO_INT.items()}
 
 
 class Image(BaseModel):
@@ -27,7 +45,7 @@ class Image(BaseModel):
     width: int
     height: int
     channels: int = 3
-    encoding: ImageEncoding = "rgb8"
+    encoding: Literal["rgb8", "bgr8", "gray8", "jpeg", "png"] = "rgb8"
     data: bytes
 
     @property
@@ -82,13 +100,24 @@ class Image(BaseModel):
         )
 
     def to_arrow(self) -> pa.RecordBatch:
-        """列式 Arrow 格式（单行），便于跨语言传输。"""
+        """列式 Arrow 格式（单行），便于跨语言传输。data、encoding 列零拷贝引用。"""
+        # data 列：from_buffers + py_buffer 零拷贝
+        n = len(self.data)
+        data_offsets = np.array([0, n], dtype=np.int64)
+        data_arr = pa.Array.from_buffers(
+            pa.large_binary(),
+            1,
+            [None, pa.py_buffer(data_offsets), pa.py_buffer(self.data)],
+            null_count=0,
+        )
+        # encoding 列：与 JointMode 一致，用 IntEnum 存 int8，零拷贝
+        encoding_arr = pa.array([ENCODING_STR_TO_INT[self.encoding]], type=pa.int8())
         columns = {
             "width": pa.array([self.width], type=pa.int32()),
             "height": pa.array([self.height], type=pa.int32()),
             "channels": pa.array([self.channels], type=pa.int8()),
-            "encoding": pa.array([self.encoding], type=pa.string()),
-            "data": pa.array([self.data], type=pa.large_binary()),
+            "encoding": encoding_arr,
+            "data": data_arr,
         }
         return pa.RecordBatch.from_pydict(columns)
 
@@ -102,7 +131,10 @@ class Image(BaseModel):
         width = int(batch["width"][0].as_py())
         height = int(batch["height"][0].as_py())
         channels = int(batch["channels"][0].as_py())
-        encoding = str(batch["encoding"][0].as_py())
+        enc_val = batch["encoding"][0].as_py()
+        encoding = (
+            ENCODING_INT_TO_STR[enc_val] if isinstance(enc_val, int) else str(enc_val)
+        )
         data = batch["data"][0].as_py()
         if isinstance(data, memoryview):
             data = data.tobytes()

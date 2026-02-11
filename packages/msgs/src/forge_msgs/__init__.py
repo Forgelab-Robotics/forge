@@ -8,10 +8,7 @@ from forge_msgs.task_robot import (
     Action,
     ProprioState,
 )
-from forge_msgs.image import (
-    Image,
-    ImageEncoding,
-)
+from forge_msgs.image import Image, ImageEncoding
 from forge_msgs.value import (
     ActuatorValue,
     JointMode,
