@@ -31,7 +31,7 @@ class ProprioState(BaseModel):
         )
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式，支持零拷贝接收。"""
+        """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。"""
         mode_int = MODE_STR_TO_INT.get(
             next((j.mode for j in self.joints.values()), "position"), 0
         )
@@ -99,7 +99,7 @@ class Action(BaseModel):
     joints: Dict[str, JointValue]
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式。"""
+        """列式 Arrow 格式，便于跨节点传递与 dora 序列化；下游 from_arrow 解析。"""
         mode_int = MODE_STR_TO_INT.get(
             next((j.mode for j in self.joints.values()), "position"), 0
         )

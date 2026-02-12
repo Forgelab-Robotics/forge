@@ -13,7 +13,7 @@ from forge_msgs.value import ensure_record_batch
 
 
 class ImageEncoding(IntEnum):
-    """图像编码/格式，用于 Arrow 列式格式的零拷贝序列化。"""
+    """图像编码/格式，用于 Arrow 列式格式的序列化。"""
 
     rgb8 = 0
     bgr8 = 1
@@ -100,8 +100,8 @@ class Image(BaseModel):
         )
 
     def to_arrow(self) -> pa.RecordBatch:
-        """列式 Arrow 格式（单行），便于跨语言传输。data、encoding 列零拷贝引用。"""
-        # data 列：from_buffers + py_buffer 零拷贝
+        """列式 Arrow 格式（单行），便于跨节点传递；data 列通过 py_buffer 复用原始 buffer，下游解析可零拷贝读取。"""
+        # data 列：from_buffers + py_buffer 复用 self.data，避免大块拷贝
         n = len(self.data)
         data_offsets = np.array([0, n], dtype=np.int64)
         data_arr = pa.Array.from_buffers(
@@ -110,7 +110,7 @@ class Image(BaseModel):
             [None, pa.py_buffer(data_offsets), pa.py_buffer(self.data)],
             null_count=0,
         )
-        # encoding 列：与 JointMode 一致，用 IntEnum 存 int8，零拷贝
+        # encoding 列：与 JointMode 一致，用 IntEnum 存 int8
         encoding_arr = pa.array([ENCODING_STR_TO_INT[self.encoding]], type=pa.int8())
         columns = {
             "width": pa.array([self.width], type=pa.int32()),
