@@ -144,7 +144,9 @@ class PiperDriver(BaseRobotDriver):
             self.is_follower = is_follower
         else:
             self.is_follower = True
-        self.role: Literal["master", "slave"] = "slave" if self.is_follower else "master"
+        self.role: Literal["master", "slave"] = (
+            "slave" if self.is_follower else "master"
+        )
         self.port = port
         self.bus: C_PiperInterface_V2 | None = None
 
@@ -180,9 +182,20 @@ class PiperDriver(BaseRobotDriver):
 
         self.bus.EnableArm(7)
 
-        logger.info("Moving robot to safe position...")
-        self.bus.GripperCtrl(0, 1000, 0x01, 0)
+        self.move_to_safe_position()
         time.sleep(2)
+
+    def move_to_safe_position(self) -> None:
+        """
+        将关节与夹爪移动到安全位（全 0）。
+        用于连接后的安全位与 Robot.reset() 的归零，避免重复实现。
+        """
+        if self.bus is None:
+            raise RuntimeError("Robot is not connected. Call connect() first.")
+        logger.info("Moving robot to safe position...")
+        self.bus.MotionCtrl_2(0x01, 0x01, 30, 0x00)
+        self.bus.JointCtrl(0, 0, 0, 0, 0, 0)
+        self.bus.GripperCtrl(0, 1000, 0x01, 0)
 
     def _connect_master_mode(self) -> None:
         time.sleep(1)

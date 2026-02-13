@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from forge_robots_core import ActuatorValue, BaseRobot, RobotAction
+from forge_robots_core import BaseRobot
 
 from forge_common import get_logger
 
@@ -57,22 +57,11 @@ class PiperRobot(BaseRobot):
             actuators=driver.actuators,
             driver=driver,
         )
-        self._home_action = RobotAction(
-            actuators={
-                "joint1": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "joint2": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "joint3": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "joint4": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "joint5": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "joint6": ActuatorValue(value=0.0, mode="position", unit="radians"),
-                "gripper": ActuatorValue(value=0.0, mode="position", unit="meters"),
-            },
-        )
 
     def reset(self) -> None:
         """
-        Reset robot to home position.
+        Reset robot to safe position.
 
-        This is robot model logic - defines what "reset" means for Piper.
+        Delegates to driver.move_to_safe_position() so safe position is implemented in one place.
         """
-        self.set_actuators(self._home_action)
+        self.driver.move_to_safe_position()

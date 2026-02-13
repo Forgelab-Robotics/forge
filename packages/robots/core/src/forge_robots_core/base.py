@@ -58,6 +58,13 @@ class BaseRobotDriver(abc.ABC):
     def disconnect(self) -> None:
         pass
 
+    def move_to_safe_position(self) -> None:
+        """
+        Move robot to safe position (e.g. all joints at zero).
+        Optional: subclasses override when hardware supports it; default no-op.
+        """
+        pass
+
     @abc.abstractmethod
     def get_state(self) -> "RobotState":
         """Return robot state (actuator state) in msgs format."""
