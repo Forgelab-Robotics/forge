@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import time
+from typing import Literal
 
 from forge_robots_core import (
     ActuatorValue,
@@ -96,6 +97,9 @@ class PiperDriver(BaseRobotDriver):
     Piper robot hardware driver.
 
     This driver interfaces with Piper robot hardware via CAN bus using piper-sdk.
+    **主从（master/slave）**：通过 role 设置。默认 role="slave"（从站），连接后使能机械臂（EnablePiper），可正常读状态与下发控制；
+    role="master"（主站）则仅连接、不使能，机械臂不会动，通常仅用于端口探测等场景。
+
     It converts between hardware-specific units and unified units.
 
     Units:
@@ -111,18 +115,36 @@ class PiperDriver(BaseRobotDriver):
     ANGLE_SCALE = 1000.0
     GRIPPER_SCALE = 1000.0
 
+    # MasterSlaveConfig linkage_config: 0x00 无效, 0xFA 示教输入臂(主), 0xFC 运动输出臂(从)
+    _LINKAGE_MASTER = 0xFA
+    _LINKAGE_SLAVE = 0xFC
+
     def __init__(
         self,
         joints: list[BaseJoint] | None = None,
         actuators: list[BaseActuator] | None = None,
         port: str = "can0",
-        is_follower: bool = True,
+        role: Literal["master", "slave"] = "slave",
+        is_follower: bool | None = None,
         auto_connect: bool = True,
     ):
+        """
+        Args:
+            role: 主从设置。"slave"（从站）默认，连接后使能机械臂，可读状态与控制；
+                "master"（主站）仅连接不使能，机械臂不会动。
+            is_follower: 与 role 等价，保留兼容：True 等价 role="slave"，False 等价 role="master"。
+                若同时传入，以 role 为准。
+        """
         joints = joints or _default_joints()
         actuators = actuators or _default_actuators()
         super().__init__(type="piper", joints=joints, actuators=actuators)
-        self.is_follower = is_follower
+        if role == "master":
+            self.is_follower = False
+        elif is_follower is not None:
+            self.is_follower = is_follower
+        else:
+            self.is_follower = True
+        self.role: Literal["master", "slave"] = "slave" if self.is_follower else "master"
         self.port = port
         self.bus: C_PiperInterface_V2 | None = None
 
@@ -138,12 +160,16 @@ class PiperDriver(BaseRobotDriver):
         logger.info(f"Connecting to Piper robot at port {self.port}...")
         self.bus.ConnectPort()
 
+        # 随动主从模式：主臂 0xFA(示教输入臂)，从臂 0xFC(运动输出臂)；偏移 0 表示单臂/默认
+        linkage = self._LINKAGE_SLAVE if self.is_follower else self._LINKAGE_MASTER
+        self.bus.MasterSlaveConfig(linkage, 0, 0, 0)
+
         if self.is_follower:
             self._connect_follower_mode()
+            logger.info("Successfully connected and enabled the robot (slave).")
         else:
             self._connect_master_mode()
-
-        logger.info("Successfully connected and enabled the robot.")
+            logger.info("Successfully connected (master, not enabled).")
 
     def _connect_follower_mode(self) -> None:
         time.sleep(1)
