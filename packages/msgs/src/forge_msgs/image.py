@@ -79,6 +79,23 @@ class Image(BaseModel):
             arr = arr[:, :, np.newaxis]  # HWC, channels=1
         return arr
 
+    def to_jpeg_bytes(self, quality: int = 85) -> bytes:
+        """将当前图像转为 JPEG 字节流。已为 jpeg 时直接返回 data；raw（rgb8/bgr8/gray8）时先解码再编码；png 等压缩格式会先解码再按 jpeg 编码。"""
+        if self.encoding == "jpeg" and self.data:
+            return self.data
+        arr = self.to_numpy()
+        if arr.size == 0:
+            return b""
+        if self.encoding == "bgr8" and arr.shape[-1] == 3:
+            arr = arr[:, :, ::-1].copy()
+        if arr.ndim == 3 and arr.shape[-1] == 1:
+            pil_img = PILImage.fromarray(arr.squeeze(-1), mode="L")
+        else:
+            pil_img = PILImage.fromarray(arr, mode="RGB")
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue()
+
     @classmethod
     def from_numpy(
         cls,
