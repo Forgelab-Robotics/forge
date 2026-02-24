@@ -174,7 +174,9 @@ class PiperDriver(BaseRobotDriver):
             logger.info("Successfully connected (master, not enabled).")
 
     def _connect_follower_mode(self) -> None:
-        time.sleep(1)
+        time.sleep(0.5)
+        self.bus.ModeCtrl(0x01, 0x01, 30, 0x00)
+        time.sleep(0.5)
         logger.info("Enabling the robot in follower mode...")
 
         while not self.bus.EnablePiper():
