@@ -53,8 +53,8 @@ def test_ensure_record_batch_struct_array() -> None:
     """dora 有时传 StructArray（RecordBatch 被当作单列 struct）。"""
     batch = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([0], type=pa.int8()),
-            "unit": pa.array([0], type=pa.int8()),
+            "mode": pa.array([[0, 0, 0]], type=pa.list_(pa.int8())),
+            "unit": pa.array([[0, 0, 0]], type=pa.list_(pa.int8())),
             "j1": pa.array([1.0], type=pa.float32()),
             "j2": pa.array([2.0], type=pa.float32()),
         }
@@ -93,9 +93,11 @@ def test_robot_state_to_arrow_from_arrow_record_batch() -> None:
     back = RobotState.from_arrow(batch, ACTUATOR_ORDER)
     assert back.actuators["a1"].value == 1.0
     assert back.actuators["a2"].value == 2.0
-    # to_arrow 只存一个 mode/unit（取第一个 actuator），故反序列化后均为同一 mode
+    # 每个 actuator 各自保留 mode/unit
     assert back.actuators["a1"].mode == "position"
-    assert back.actuators["a2"].mode == "position"
+    assert back.actuators["a1"].unit == "radians"
+    assert back.actuators["a2"].mode == "velocity"
+    assert back.actuators["a2"].unit == "radians/s"
 
 
 def test_robot_state_to_arrow_from_arrow_bytes() -> None:
@@ -123,8 +125,8 @@ def test_robot_state_to_arrow_from_arrow_table() -> None:
 def test_robot_state_from_arrow_empty_batch() -> None:
     batch = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([], type=pa.int8()),
-            "unit": pa.array([], type=pa.int8()),
+            "mode": pa.array([], type=pa.list_(pa.int8())),
+            "unit": pa.array([], type=pa.list_(pa.int8())),
             "a1": pa.array([], type=pa.float32()),
             "a2": pa.array([], type=pa.float32()),
         }
@@ -157,8 +159,8 @@ def test_robot_state_from_arrow_order_has_extra_column() -> None:
     """batch 中缺少某列时用 0.0 填充。"""
     batch = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([0], type=pa.int8()),
-            "unit": pa.array([0], type=pa.int8()),
+            "mode": pa.array([[0, 0]], type=pa.list_(pa.int8())),
+            "unit": pa.array([[0, 0]], type=pa.list_(pa.int8())),
             "a1": pa.array([10.0], type=pa.float32()),
             # 无 "a2"
         }
@@ -199,8 +201,8 @@ def test_robot_action_from_arrow_bytes_and_empty_batch() -> None:
 
     empty = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([], type=pa.int8()),
-            "unit": pa.array([], type=pa.int8()),
+            "mode": pa.array([], type=pa.list_(pa.int8())),
+            "unit": pa.array([], type=pa.list_(pa.int8())),
             "a1": pa.array([], type=pa.float32()),
             "a2": pa.array([], type=pa.float32()),
         }
@@ -252,8 +254,8 @@ def test_proprio_state_to_np_from_arrow() -> None:
 def test_proprio_state_from_arrow_empty_batch() -> None:
     batch = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([], type=pa.int8()),
-            "unit": pa.array([], type=pa.int8()),
+            "mode": pa.array([], type=pa.list_(pa.int8())),
+            "unit": pa.array([], type=pa.list_(pa.int8())),
             **{name: pa.array([], type=pa.float32()) for name in JOINT_ORDER},
         }
     )
@@ -397,8 +399,8 @@ def test_action_from_arrow_bytes_and_table() -> None:
 def test_action_from_arrow_empty_batch() -> None:
     batch = pa.RecordBatch.from_pydict(
         {
-            "mode": pa.array([], type=pa.int8()),
-            "unit": pa.array([], type=pa.int8()),
+            "mode": pa.array([], type=pa.list_(pa.int8())),
+            "unit": pa.array([], type=pa.list_(pa.int8())),
             **{name: pa.array([], type=pa.float32()) for name in JOINT_ORDER},
         }
     )

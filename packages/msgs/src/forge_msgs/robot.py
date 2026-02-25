@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pyarrow as pa
 
+from forge_msgs.utils import parse_int_list_from_arrow
 from forge_msgs.value import (
     ActuatorValue,
     MODE_INT_TO_STR,
@@ -31,16 +32,26 @@ class RobotState(BaseModel):
         )
 
     def to_arrow(self, actuator_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。"""
-        mode_int = MODE_STR_TO_INT.get(
-            next((a.mode for a in self.actuators.values()), "position"), 0
-        )
-        unit_int = UNIT_STR_TO_INT.get(
-            next((a.unit for a in self.actuators.values()), "radians"), 0
-        )
+        """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。
+        每个 actuator 的 mode/unit 按 actuator_order 顺序编码为 list 列。
+        """
+        mode_list = [
+            MODE_STR_TO_INT.get(
+                self.actuators[name].mode if name in self.actuators else "position",
+                0,
+            )
+            for name in actuator_order
+        ]
+        unit_list = [
+            UNIT_STR_TO_INT.get(
+                self.actuators[name].unit if name in self.actuators else "radians",
+                0,
+            )
+            for name in actuator_order
+        ]
         columns = {
-            "mode": pa.array([mode_int], type=pa.int8()),
-            "unit": pa.array([unit_int], type=pa.int8()),
+            "mode": pa.array([mode_list], type=pa.list_(pa.int8())),
+            "unit": pa.array([unit_list], type=pa.list_(pa.int8())),
         }
         for name in actuator_order:
             v = self.actuators[name].value if name in self.actuators else 0.0
@@ -60,10 +71,14 @@ class RobotState(BaseModel):
                     for name in actuator_order
                 }
             )
-        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
-        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        mode_raw = batch["mode"][0]
+        unit_raw = batch["unit"][0]
+        mode_vals = parse_int_list_from_arrow(mode_raw, len(actuator_order), MODE_INT_TO_STR, "position")
+        unit_vals = parse_int_list_from_arrow(unit_raw, len(actuator_order), UNIT_INT_TO_STR, "radians")
         actuators = {}
-        for name in actuator_order:
+        for i, name in enumerate(actuator_order):
+            mode_str = mode_vals[i]
+            unit_str = unit_vals[i]
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)
@@ -109,16 +124,26 @@ class RobotAction(BaseModel):
         )
 
     def to_arrow(self, actuator_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式，便于跨节点传递与 dora 序列化；下游 from_arrow 解析。"""
-        mode_int = MODE_STR_TO_INT.get(
-            next((a.mode for a in self.actuators.values()), "position"), 0
-        )
-        unit_int = UNIT_STR_TO_INT.get(
-            next((a.unit for a in self.actuators.values()), "radians"), 0
-        )
+        """列式 Arrow 格式，便于跨节点传递与 dora 序列化；下游 from_arrow 解析。
+        每个 actuator 的 mode/unit 按 actuator_order 顺序编码为 list 列。
+        """
+        mode_list = [
+            MODE_STR_TO_INT.get(
+                self.actuators[name].mode if name in self.actuators else "position",
+                0,
+            )
+            for name in actuator_order
+        ]
+        unit_list = [
+            UNIT_STR_TO_INT.get(
+                self.actuators[name].unit if name in self.actuators else "radians",
+                0,
+            )
+            for name in actuator_order
+        ]
         columns = {
-            "mode": pa.array([mode_int], type=pa.int8()),
-            "unit": pa.array([unit_int], type=pa.int8()),
+            "mode": pa.array([mode_list], type=pa.list_(pa.int8())),
+            "unit": pa.array([unit_list], type=pa.list_(pa.int8())),
         }
         for name in actuator_order:
             v = self.actuators[name].value if name in self.actuators else 0.0
@@ -160,10 +185,14 @@ class RobotAction(BaseModel):
                     for name in actuator_order
                 }
             )
-        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
-        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        mode_raw = batch["mode"][0]
+        unit_raw = batch["unit"][0]
+        mode_vals = parse_int_list_from_arrow(mode_raw, len(actuator_order), MODE_INT_TO_STR, "position")
+        unit_vals = parse_int_list_from_arrow(unit_raw, len(actuator_order), UNIT_INT_TO_STR, "radians")
         actuators = {}
-        for name in actuator_order:
+        for i, name in enumerate(actuator_order):
+            mode_str = mode_vals[i]
+            unit_str = unit_vals[i]
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 actuators[name] = ActuatorValue(value=v, mode=mode_str, unit=unit_str)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pyarrow as pa
 
+from forge_msgs.utils import parse_int_list_from_arrow
 from forge_msgs.value import (
     JointValue,
     MODE_INT_TO_STR,
@@ -31,16 +32,26 @@ class ProprioState(BaseModel):
         )
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。"""
-        mode_int = MODE_STR_TO_INT.get(
-            next((j.mode for j in self.joints.values()), "position"), 0
-        )
-        unit_int = UNIT_STR_TO_INT.get(
-            next((j.unit for j in self.joints.values()), "radians"), 0
-        )
+        """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。
+        每个 joint 的 mode/unit 按 joint_order 顺序编码为 list 列。
+        """
+        mode_list = [
+            MODE_STR_TO_INT.get(
+                self.joints[name].mode if name in self.joints else "position",
+                0,
+            )
+            for name in joint_order
+        ]
+        unit_list = [
+            UNIT_STR_TO_INT.get(
+                self.joints[name].unit if name in self.joints else "radians",
+                0,
+            )
+            for name in joint_order
+        ]
         columns = {
-            "mode": pa.array([mode_int], type=pa.int8()),
-            "unit": pa.array([unit_int], type=pa.int8()),
+            "mode": pa.array([mode_list], type=pa.list_(pa.int8())),
+            "unit": pa.array([unit_list], type=pa.list_(pa.int8())),
         }
         for name in joint_order:
             v = self.joints[name].value if name in self.joints else 0.0
@@ -60,10 +71,14 @@ class ProprioState(BaseModel):
                     for name in joint_order
                 }
             )
-        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
-        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        mode_raw = batch["mode"][0]
+        unit_raw = batch["unit"][0]
+        mode_vals = parse_int_list_from_arrow(mode_raw, len(joint_order), MODE_INT_TO_STR, "position")
+        unit_vals = parse_int_list_from_arrow(unit_raw, len(joint_order), UNIT_INT_TO_STR, "radians")
         joints = {}
-        for name in joint_order:
+        for i, name in enumerate(joint_order):
+            mode_str = mode_vals[i]
+            unit_str = unit_vals[i]
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
@@ -99,16 +114,26 @@ class Action(BaseModel):
     joints: Dict[str, JointValue]
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """列式 Arrow 格式，便于跨节点传递与 dora 序列化；下游 from_arrow 解析。"""
-        mode_int = MODE_STR_TO_INT.get(
-            next((j.mode for j in self.joints.values()), "position"), 0
-        )
-        unit_int = UNIT_STR_TO_INT.get(
-            next((j.unit for j in self.joints.values()), "radians"), 0
-        )
+        """列式 Arrow 格式，便于跨节点传递与 dora 序列化；下游 from_arrow 解析。
+        每个 joint 的 mode/unit 按 joint_order 顺序编码为 list 列。
+        """
+        mode_list = [
+            MODE_STR_TO_INT.get(
+                self.joints[name].mode if name in self.joints else "position",
+                0,
+            )
+            for name in joint_order
+        ]
+        unit_list = [
+            UNIT_STR_TO_INT.get(
+                self.joints[name].unit if name in self.joints else "radians",
+                0,
+            )
+            for name in joint_order
+        ]
         columns = {
-            "mode": pa.array([mode_int], type=pa.int8()),
-            "unit": pa.array([unit_int], type=pa.int8()),
+            "mode": pa.array([mode_list], type=pa.list_(pa.int8())),
+            "unit": pa.array([unit_list], type=pa.list_(pa.int8())),
         }
         for name in joint_order:
             v = self.joints[name].value if name in self.joints else 0.0
@@ -150,10 +175,14 @@ class Action(BaseModel):
                     for name in joint_order
                 }
             )
-        mode_str = MODE_INT_TO_STR.get(int(batch["mode"][0].as_py()), "position")
-        unit_str = UNIT_INT_TO_STR.get(int(batch["unit"][0].as_py()), "radians")
+        mode_raw = batch["mode"][0]
+        unit_raw = batch["unit"][0]
+        mode_vals = parse_int_list_from_arrow(mode_raw, len(joint_order), MODE_INT_TO_STR, "position")
+        unit_vals = parse_int_list_from_arrow(unit_raw, len(joint_order), UNIT_INT_TO_STR, "radians")
         joints = {}
-        for name in joint_order:
+        for i, name in enumerate(joint_order):
+            mode_str = mode_vals[i]
+            unit_str = unit_vals[i]
             if name in batch.schema.names:
                 v = float(batch[name][0].as_py())
                 joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
