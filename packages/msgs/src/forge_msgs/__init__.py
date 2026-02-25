@@ -6,6 +6,7 @@ from forge_msgs.robot import (
 )
 from forge_msgs.task_robot import (
     Action,
+    ActionSequence,
     ProprioState,
 )
 from forge_msgs.image import Image, ImageEncoding
@@ -18,6 +19,7 @@ from forge_msgs.value import (
 
 __all__ = [
     "Action",
+    "ActionSequence",
     "ActuatorValue",
     "Image",
     "ImageEncoding",

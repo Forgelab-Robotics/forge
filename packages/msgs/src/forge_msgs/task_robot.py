@@ -13,7 +13,7 @@ from forge_msgs.value import (
     ensure_record_batch,
 )
 from pydantic import BaseModel
-from typing import Dict, Literal
+from typing import Dict, List, Literal
 
 
 class ProprioState(BaseModel):
@@ -189,3 +189,36 @@ class Action(BaseModel):
             else:
                 joints[name] = JointValue(value=0.0, mode=mode_str, unit=unit_str)
         return cls(joints=joints)
+
+
+class ActionSequence(BaseModel):
+    """一组 Action，用于按 tick 逐帧发送；Arrow 为多行 RecordBatch，每行一帧。"""
+
+    actions: List[Action]
+
+    def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
+        """多行 RecordBatch，每行与 Action.to_arrow 列结构一致。"""
+        if not self.actions:
+            empty = Action(
+                joints={
+                    name: JointValue(value=0.0, mode="position", unit="radians")
+                    for name in joint_order
+                }
+            )
+            return empty.to_arrow(joint_order)
+        batches = [a.to_arrow(joint_order) for a in self.actions]
+        return pa.concat_batches(batches)
+
+    @classmethod
+    def from_arrow(
+        cls, batch: pa.RecordBatch | pa.Table | bytes, joint_order: list[str]
+    ) -> "ActionSequence":
+        """从多行 Arrow 解析，每行一个 Action。单行时返回长度为 1 的序列。"""
+        batch = ensure_record_batch(batch)
+        if batch.num_rows == 0:
+            return cls(actions=[])
+        actions_list: List[Action] = []
+        for r in range(batch.num_rows):
+            row_batch = batch.slice(r, 1)
+            actions_list.append(Action.from_arrow(row_batch, joint_order))
+        return cls(actions=actions_list)
