@@ -13,13 +13,13 @@ TaskRobot 与 Simulator 之间通过 RobotState / RobotAction 通信。
 
 ## 单位
 
-统一使用：
+接口统一使用：
 
 - **角度**：radians
-- **距离**：meters
-- **速度**：radians/s（旋转）或 meters/s（直线）
+- **距离**：millimeters（直线关节）
+- **速度**：radians/s（旋转）或 millimeters/s（直线）
 
-MuJoCo 原生使用 radians/meters，无需转换。
+MuJoCo 内部为 radians/meters，在边界处与 millimeters 互相转换。
 
 ## 使用
 

@@ -7,7 +7,7 @@ Piper robot and driver for the Forge robotics framework.
 All values use unified units:
 - **Angles**: radians
 - **Distances**: meters
-- **Velocities**: radians/s (for revolute joints) or meters/s (for prismatic joints)
+- **Velocities**: radians/s (for revolute joints) or millimeters/s (for prismatic joints)
 
 The driver automatically converts between hardware-specific units and unified units:
 - Hardware joint angles: degrees × 1000 → radians

@@ -23,12 +23,12 @@ class MuJoCoSimulator:
     Use as a standalone Dora node: receives RobotAction from TaskRobot,
     runs physics step, sends RobotState to TaskRobot.
 
-    Units:
+    Units (msgs interface):
     - Angles: radians
-    - Distances: meters
-    - Velocities: radians/s (for revolute joints) or meters/s (for prismatic)
+    - Distances: millimeters (prismatic)
+    - Velocities: radians/s (revolute) or millimeters/s (prismatic)
 
-    MuJoCo uses radians/meters natively, no conversion needed.
+    MuJoCo uses radians/meters internally; conversion to/from millimeters at boundary.
     """
 
     def __init__(
@@ -119,7 +119,8 @@ class MuJoCoSimulator:
         """
         Get robot state from MuJoCo simulator.
 
-        Returns RobotState in msgs format (radians/meters).
+        Returns RobotState in msgs format (radians/millimeters).
+        Prismatic joint values are converted from MuJoCo meters to millimeters.
         """
         qpos = self._data.qpos
         actuator_values: dict[str, ActuatorValue] = {}
@@ -130,14 +131,18 @@ class MuJoCoSimulator:
             if actuator:
                 unit = actuator.unit
             elif joint:
-                unit = "radians" if joint.mode == "position" else "meters"
+                unit = "radians" if joint.mode == "position" else "millimeters"
             else:
                 logger.warning(f"Joint/actuator '{logical_name}' not found.")
                 continue
 
             qpos_value = qpos[addr]
+            if unit in ("millimeters", "millimeters/s"):
+                value = float(qpos_value) * 1000.0
+            else:
+                value = float(qpos_value)
             actuator_values[logical_name] = ActuatorValue(
-                value=float(qpos_value),
+                value=value,
                 mode="position",
                 unit=unit,
             )
@@ -148,7 +153,8 @@ class MuJoCoSimulator:
         """
         Set actuator values in MuJoCo simulator.
 
-        Input: RobotAction in msgs format (radians/meters).
+        Input: RobotAction in msgs format (radians/millimeters).
+        Prismatic values are converted from millimeters to meters for MuJoCo.
         Values are clipped to actuator limits before applying.
         """
         safe_action = self._get_safe_action(action)
@@ -176,7 +182,10 @@ class MuJoCoSimulator:
                 continue
 
             ctrl_index = self._ctrl_indices[logical_name]
-            ctrl[ctrl_index] = act_val.value
+            if act_val.unit in ("millimeters", "millimeters/s"):
+                ctrl[ctrl_index] = act_val.value / 1000.0
+            else:
+                ctrl[ctrl_index] = act_val.value
 
     def _get_safe_action(self, action: RobotAction) -> RobotAction:
         """Clip action values to actuator limits."""

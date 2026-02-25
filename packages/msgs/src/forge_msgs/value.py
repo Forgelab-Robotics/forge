@@ -43,14 +43,16 @@ class JointMode(IntEnum):
 
 
 class JointUnit(IntEnum):
-    """关节单位，用于 Arrow 列式格式的零拷贝序列化。"""
+    """关节单位，用于 Arrow 列式格式的零拷贝序列化。直线关节默认用 millimeters。"""
 
     radians = 0
-    meters = 1
+    millimeters = 1
     radians_s = 2
-    meters_s = 3
+    millimeters_s = 3
     Nm = 4
     A = 5
+    meters = 6
+    meters_s = 7
 
 
 MODE_STR_TO_INT = {
@@ -63,22 +65,29 @@ MODE_INT_TO_STR = {v: k for k, v in MODE_STR_TO_INT.items()}
 
 UNIT_STR_TO_INT = {
     "radians": JointUnit.radians,
-    "meters": JointUnit.meters,
+    "millimeters": JointUnit.millimeters,
     "radians/s": JointUnit.radians_s,
-    "meters/s": JointUnit.meters_s,
+    "millimeters/s": JointUnit.millimeters_s,
     "Nm": JointUnit.Nm,
     "A": JointUnit.A,
+    "meters": JointUnit.meters,
+    "meters/s": JointUnit.meters_s,
 }
 UNIT_INT_TO_STR = {v: k for k, v in UNIT_STR_TO_INT.items()}
+
+# 直线关节（prismatic）默认单位
+UNIT_LITERAL = Literal[
+    "radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A"
+]
 
 
 class JointValue(BaseModel):
     value: float
     mode: Literal["position", "velocity", "torque", "prismatic"]
-    unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"]
+    unit: UNIT_LITERAL
 
 
 class ActuatorValue(BaseModel):
     value: float
     mode: Literal["position", "velocity", "torque", "prismatic"]
-    unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"]
+    unit: UNIT_LITERAL

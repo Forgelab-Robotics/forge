@@ -19,8 +19,8 @@ class ActuatorConfig:
     control_mode: Literal["position", "velocity", "prismatic"]
     min_value: float = -3.14
     max_value: float = 3.14
-    # 单位，与 forge_msgs 一致："radians" | "meters" | "radians/s" | "meters/s" | "Nm" | "A"
-    unit: Literal["radians", "meters", "radians/s", "meters/s", "Nm", "A"] = "radians"
+    # 单位，与 forge_msgs 一致；直线关节默认 millimeters / millimeters/s
+    unit: Literal["radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A"] = "radians"
     # 适用范围："all"（通用），"sim"（仅仿真），"real"（仅实物）
     scope: Literal["all", "sim", "real"] = "all"
 

@@ -122,7 +122,7 @@ class Action(BaseModel):
         joint_order: list[str],
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
         unit: Literal[
-            "radians", "meters", "radians/s", "meters/s", "Nm", "A"
+            "radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A"
         ] = "radians",
     ) -> "Action":
         """从算法输出的动作数组解码为 Action。"""

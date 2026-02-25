@@ -86,8 +86,8 @@ def _default_actuators() -> list[BaseActuator]:
             id=7,
             control_mode="position",
             min_value=0.0,
-            max_value=0.1,
-            unit="meters",
+            max_value=105.0,
+            unit="millimeters",
         ),
     ]
 
@@ -104,8 +104,8 @@ class PiperDriver(BaseRobotDriver):
 
     Units:
     - Angles: radians (converted from hardware units: degrees * 1000)
-    - Distances: meters (converted from hardware units: millimeters)
-    - Velocities: radians/s (for revolute joints) or meters/s (for prismatic joints)
+    - Distances: millimeters (prismatic / gripper, same as hardware scale)
+    - Velocities: radians/s (for revolute joints) or millimeters/s (for prismatic joints)
 
     Hardware units:
     - Joint angles: degrees * ANGLE_SCALE (where ANGLE_SCALE = 1000.0)
@@ -234,7 +234,7 @@ class PiperDriver(BaseRobotDriver):
         """
         Get robot state from Piper hardware.
 
-        Converts hardware units to unified units (radians/meters).
+        Converts hardware units to unified units (radians/millimeters).
         Returns RobotState in msgs format.
         """
         if self.bus is None:
@@ -279,9 +279,9 @@ class PiperDriver(BaseRobotDriver):
                 unit="radians",
             ),
             "gripper": ActuatorValue(
-                value=gripper.grippers_angle / self.GRIPPER_SCALE / 1000.0,
+                value=gripper.grippers_angle / self.GRIPPER_SCALE,
                 mode="position",
-                unit="meters",
+                unit="millimeters",
             ),
         }
         return RobotState(actuators=actuator_values)
@@ -290,7 +290,7 @@ class PiperDriver(BaseRobotDriver):
         """
         Set actuator values on Piper hardware.
 
-        Input: RobotAction in msgs format (radians/meters).
+        Input: RobotAction in msgs format (radians/millimeters).
         Converts to hardware units for CAN bus.
         """
         if self.bus is None:
@@ -305,7 +305,7 @@ class PiperDriver(BaseRobotDriver):
         joint_4 = int(math.degrees(action_dict.get("joint4", 0.0)) * self.ANGLE_SCALE)
         joint_5 = int(math.degrees(action_dict.get("joint5", 0.0)) * self.ANGLE_SCALE)
         joint_6 = int(math.degrees(action_dict.get("joint6", 0.0)) * self.ANGLE_SCALE)
-        gripper = int(action_dict.get("gripper", 0.0) * 1000.0 * self.GRIPPER_SCALE)
+        gripper = int(action_dict.get("gripper", 0.0) * self.GRIPPER_SCALE)
 
         self.bus.MotionCtrl_2(0x01, 0x01, 100, 0x00)
         self.bus.JointCtrl(joint_1, joint_2, joint_3, joint_4, joint_5, joint_6)

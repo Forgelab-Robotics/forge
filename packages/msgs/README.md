@@ -17,7 +17,7 @@ pip install forge-msgs
 - **`JointValue`**：关节/关节空间量
   - `value`: float
   - `mode`: `"position"` | `"velocity"` | `"torque"` | `"prismatic"`
-  - `unit`: `"radians"` | `"meters"` | `"radians/s"` | `"meters/s"` | `"Nm"` | `"A"`
+  - `unit`: `"radians"` | `"millimeters"` | `"meters"` | `"radians/s"` | `"millimeters/s"` | `"meters/s"` | `"Nm"` | `"A"`（直线关节默认 millimeters / millimeters/s）
 
 - **`ActuatorValue`**：执行器/驱动空间量，字段与 `JointValue` 相同
 

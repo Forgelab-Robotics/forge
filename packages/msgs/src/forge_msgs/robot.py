@@ -132,7 +132,7 @@ class RobotAction(BaseModel):
         actuator_order: list[str],
         mode: Literal["position", "velocity", "torque", "prismatic"] = "position",
         unit: Literal[
-            "radians", "meters", "radians/s", "meters/s", "Nm", "A"
+            "radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A"
         ] = "radians",
     ) -> "RobotAction":
         """从数组解码为 RobotAction。"""
