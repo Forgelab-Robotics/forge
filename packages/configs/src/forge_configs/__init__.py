@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from forge_configs.robot import ActuatorConfig, JointConfig, RobotConfig
 from forge_configs.task import (
     CameraConfig,
-    RobotConfig,
     TaskConfig,
     SimulatorConfig,
     TaskRobotConfig,
@@ -10,6 +10,8 @@ from forge_configs.task import (
 )
 
 __all__ = [
+    "ActuatorConfig",
+    "JointConfig",
     "CameraConfig",
     "RobotConfig",
     "TaskConfig",

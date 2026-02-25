@@ -13,25 +13,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 import yaml
 
-
-class RobotConfig(BaseModel):
-    """高层次机器人配置（场景级）。
-
-    - id: 逻辑机器人 ID（如 robot_0）
-    - prefix: 在仿真模型中的前缀（如 item_1/），由各 simulator 自行解释
-    - joints: 该机器人的关节名（不含 prefix），如 joint1..gripper
-    """
-
-    id: str
-    prefix: str = ""
-    joints: List[str]
-
-    @field_validator("joints")
-    @classmethod
-    def _non_empty_joints(cls, v: List[str]) -> List[str]:
-        if not v:
-            raise ValueError("RobotConfig.joints 不能为空")
-        return v
+from forge_configs.robot import RobotConfig
 
 
 class CameraConfig(BaseModel):
