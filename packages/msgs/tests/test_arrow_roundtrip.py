@@ -10,7 +10,7 @@ import pytest
 from PIL import Image as PILImage
 
 from forge_msgs.robot import RobotAction, RobotState
-from forge_msgs.task_robot import Action, ProprioState
+from forge_msgs.task_robot import Action, ActionSequence, ProprioState
 from forge_msgs.image import Image
 from forge_msgs.value import ActuatorValue, JointValue, ensure_record_batch
 
@@ -421,3 +421,39 @@ def test_action_from_arrow_struct_array() -> None:
     assert back.joints["j1"].value == 1.0
     assert back.joints["j2"].value == 2.0
     assert back.joints["j3"].value == 3.0
+
+
+# ---------- ActionSequence (task_robot) ----------
+def test_action_sequence_to_arrow_from_arrow_with_ref_timestamp() -> None:
+    a1 = _action()
+    a2 = _action()
+    seq = ActionSequence(actions=[a1, a2], ref_timestamp=1.23)
+
+    batch = seq.to_arrow(JOINT_ORDER)
+    assert isinstance(batch, pa.RecordBatch)
+    assert batch.num_rows == 2
+
+    # metadata 中应包含 ref_timestamp
+    metadata = batch.schema.metadata or {}
+    assert b"ref_timestamp" in metadata
+    assert float(metadata[b"ref_timestamp"].decode("utf-8")) == pytest.approx(1.23)
+
+    back = ActionSequence.from_arrow(batch, JOINT_ORDER)
+    assert len(back.actions) == 2
+    assert back.ref_timestamp == pytest.approx(1.23)
+    assert back.actions[0].joints["j1"].value == pytest.approx(a1.joints["j1"].value)
+
+
+def test_action_sequence_from_arrow_bytes_preserves_ref_timestamp() -> None:
+    a1 = _action()
+    seq = ActionSequence(actions=[a1], ref_timestamp=2.5)
+    batch = seq.to_arrow(JOINT_ORDER)
+
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    data = sink.getvalue().to_pybytes()
+
+    back = ActionSequence.from_arrow(data, JOINT_ORDER)
+    assert len(back.actions) == 1
+    assert back.ref_timestamp == pytest.approx(2.5)

@@ -195,6 +195,8 @@ class ActionSequence(BaseModel):
     """一组 Action，用于按 tick 逐帧发送；Arrow 为多行 RecordBatch，每行一帧。"""
 
     actions: List[Action]
+    # 可选：该序列对应的观测/生成时间戳（由上游 policy 填写）
+    ref_timestamp: float | None = None
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
         """多行 RecordBatch，每行与 Action.to_arrow 列结构一致。"""
@@ -207,7 +209,18 @@ class ActionSequence(BaseModel):
             )
             return empty.to_arrow(joint_order)
         batches = [a.to_arrow(joint_order) for a in self.actions]
-        return pa.concat_batches(batches)
+        batch = pa.concat_batches(batches)
+
+        # 在 Arrow schema metadata 中附带 ref_timestamp（若存在），不改变列结构
+        if self.ref_timestamp is not None:
+            schema = batch.schema
+            # metadata 为 bytes→bytes 的字典
+            metadata = dict(schema.metadata or {})
+            metadata[b"ref_timestamp"] = str(self.ref_timestamp).encode("utf-8")
+            new_schema = schema.with_metadata(metadata)
+            batch = pa.RecordBatch.from_arrays(list(batch.columns), schema=new_schema)
+
+        return batch
 
     @classmethod
     def from_arrow(
@@ -216,9 +229,21 @@ class ActionSequence(BaseModel):
         """从多行 Arrow 解析，每行一个 Action。单行时返回长度为 1 的序列。"""
         batch = ensure_record_batch(batch)
         if batch.num_rows == 0:
-            return cls(actions=[])
+            # 空序列保持 ref_timestamp=None
+            return cls(actions=[], ref_timestamp=None)
+
+        # 从 schema metadata 中解析 ref_timestamp（若存在）
+        ref_timestamp: float | None = None
+        metadata = batch.schema.metadata or {}
+        raw_ts = metadata.get(b"ref_timestamp")
+        if raw_ts is not None:
+            try:
+                ref_timestamp = float(raw_ts.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                ref_timestamp = None
+
         actions_list: List[Action] = []
         for r in range(batch.num_rows):
             row_batch = batch.slice(r, 1)
             actions_list.append(Action.from_arrow(row_batch, joint_order))
-        return cls(actions=actions_list)
+        return cls(actions=actions_list, ref_timestamp=ref_timestamp)
