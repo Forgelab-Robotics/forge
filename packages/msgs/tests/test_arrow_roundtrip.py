@@ -212,13 +212,14 @@ def test_robot_action_from_arrow_bytes_and_empty_batch() -> None:
 
 
 # ---------- ProprioState ----------
-def _proprio_state() -> ProprioState:
+def _proprio_state(step: int = 0) -> ProprioState:
     return ProprioState(
         joints={
             "j1": JointValue(value=0.1, mode="position", unit="radians"),
             "j2": JointValue(value=0.2, mode="position", unit="radians"),
             "j3": JointValue(value=0.3, mode="position", unit="radians"),
-        }
+        },
+        step=step,
     )
 
 
@@ -229,6 +230,14 @@ def test_proprio_state_to_arrow_from_arrow_record_batch() -> None:
     assert back.joints["j1"].value == pytest.approx(0.1)
     assert back.joints["j2"].value == pytest.approx(0.2)
     assert back.joints["j3"].value == pytest.approx(0.3)
+    assert back.step == 0
+
+
+def test_proprio_state_step_roundtrip() -> None:
+    state = _proprio_state(step=42)
+    batch = state.to_arrow(JOINT_ORDER)
+    back = ProprioState.from_arrow(batch, JOINT_ORDER)
+    assert back.step == 42
 
 
 def test_proprio_state_to_arrow_from_arrow_bytes() -> None:
