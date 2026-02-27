@@ -184,19 +184,33 @@ class PiperDriver(BaseRobotDriver):
 
         self.bus.EnableArm(7)
 
-        self.move_to_safe_position()
+        self.move_to_home_position()
         time.sleep(2)
 
-    def move_to_safe_position(self) -> None:
+    def move_to_home_position(self) -> None:
         """
-        将关节与夹爪移动到安全位（全 0）。
-        用于连接后的安全位与 Robot.reset() 的归零，避免重复实现。
+        将关节与夹爪移动到 Home 位（全 0）。
+        用于连接后的初始化。
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
-        logger.info("Moving robot to safe position...")
+        logger.info("Moving robot to home position (all 0)...")
         self.bus.MotionCtrl_2(0x01, 0x01, 30, 0x00)
         self.bus.JointCtrl(0, 0, 0, 0, 0, 0)
+        self.bus.GripperCtrl(0, 1000, 0x01, 0)
+
+    def move_to_rest_position(self) -> None:
+        """
+        将关节与夹爪移动到休息位（防摔姿态）。
+        joint5 设置为 0.48 弧度。
+        """
+        if self.bus is None:
+            raise RuntimeError("Robot is not connected. Call connect() first.")
+        logger.info("Moving robot to rest position (j5=0.48 rad)...")
+        self.bus.MotionCtrl_2(0x01, 0x01, 30, 0x00)
+        # 0.48 rad 约等于 27.5 度
+        j5_hardware = int(math.degrees(0.48) * self.ANGLE_SCALE)
+        self.bus.JointCtrl(0, 0, 0, 0, j5_hardware, 0)
         self.bus.GripperCtrl(0, 1000, 0x01, 0)
 
     def _connect_master_mode(self) -> None:
@@ -207,6 +221,14 @@ class PiperDriver(BaseRobotDriver):
         if self.bus is None:
             logger.warning("Robot is not connected.")
             return
+
+        if self.is_follower:
+            logger.info("Safety sequence: Moving to rest position before disable...")
+            try:
+                self.move_to_rest_position()
+                time.sleep(2)  # 等待回位动作完成
+            except Exception as e:
+                logger.error(f"Failed to move to rest position: {e}")
 
         logger.info("Disabling and disconnecting from the robot...")
         self.bus.DisablePiper()
