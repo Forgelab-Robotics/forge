@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import numpy as np
 import pyarrow as pa
 
@@ -20,8 +21,8 @@ class ProprioState(BaseModel):
     """TaskRobot 产出，本体状态（joints，不含图像）。"""
 
     joints: Dict[str, JointValue]
-    # 本状态对应的逻辑 step，与 ActionSequence.start_step 对齐；policy 可据此设置返回序列的 start_step
-    step: int = 0
+    # 本状态对应的时间戳（建议 time.monotonic()），与 ActionSequence.ref_timestamp 对齐
+    timestamp: float = 0.0
 
     def to_np(self, joint_order: list[str]) -> np.ndarray:
         """将本体状态编码为数组，供算法使用。"""
@@ -35,7 +36,7 @@ class ProprioState(BaseModel):
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
         """列式 Arrow 格式，便于跨节点传递；下游可用 to_np_from_arrow 零拷贝转 numpy。
-        每个 joint 的 mode/unit 按 joint_order 顺序编码为 list 列；step 放在 schema metadata 中。
+        每个 joint 的 mode/unit 按 joint_order 顺序编码为 list 列；timestamp 作为正式列（float64）以在 dora/IPC 传递时保留。
         """
         mode_list = [
             MODE_STR_TO_INT.get(
@@ -54,38 +55,29 @@ class ProprioState(BaseModel):
         columns = {
             "mode": pa.array([mode_list], type=pa.list_(pa.int8())),
             "unit": pa.array([unit_list], type=pa.list_(pa.int8())),
+            "timestamp": pa.array([self.timestamp], type=pa.float64()),
         }
         for name in joint_order:
             v = self.joints[name].value if name in self.joints else 0.0
             columns[name] = pa.array([v], type=pa.float32())
-        batch = pa.RecordBatch.from_pydict(columns)
-        schema = batch.schema
-        metadata = dict(schema.metadata or {})
-        metadata[b"step"] = str(self.step).encode("utf-8")
-        new_schema = schema.with_metadata(metadata)
-        return pa.RecordBatch.from_arrays(list(batch.columns), schema=new_schema)
+        return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch | pa.Table | bytes, joint_order: list[str]
     ) -> "ProprioState":
-        """从列式 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。step 从 schema metadata 读取，缺省为 0。"""
+        """从列式 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。timestamp 从列 "timestamp"（float64）读取，若无该列则 0.0。"""
         batch = ensure_record_batch(batch)
-        step = 0
-        metadata = batch.schema.metadata or {}
-        raw_step = metadata.get(b"step")
-        if raw_step is not None:
-            try:
-                step = int(raw_step.decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
-                step = 0
+        timestamp = 0.0
+        if "timestamp" in batch.schema.names and batch.num_rows > 0:
+            timestamp = float(batch["timestamp"][0].as_py())
         if batch.num_rows == 0:
             return cls(
                 joints={
                     name: JointValue(value=0.0, mode="position", unit="radians")
                     for name in joint_order
                 },
-                step=step,
+                timestamp=timestamp,
             )
         mode_raw = batch["mode"][0]
         unit_raw = batch["unit"][0]
@@ -100,7 +92,7 @@ class ProprioState(BaseModel):
                 joints[name] = JointValue(value=v, mode=mode_str, unit=unit_str)
             else:
                 joints[name] = JointValue(value=0.0, mode=mode_str, unit=unit_str)
-        return cls(joints=joints, step=step)
+        return cls(joints=joints, timestamp=timestamp)
 
     @classmethod
     def to_np_from_arrow(
@@ -217,7 +209,10 @@ class ActionSequence(BaseModel):
     start_step: int | None = None
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """多行 RecordBatch，每行与 Action.to_arrow 列结构一致。"""
+        """多行 RecordBatch，每行与 Action.to_arrow 列结构一致；ref_timestamp / start_step 作为列写入，不写 metadata。"""
+        ref_ts_val = self.ref_timestamp if self.ref_timestamp is not None else float("nan")
+        start_step_val = self.start_step if self.start_step is not None else -1
+
         if not self.actions:
             empty = Action(
                 joints={
@@ -225,49 +220,41 @@ class ActionSequence(BaseModel):
                     for name in joint_order
                 }
             )
-            return empty.to_arrow(joint_order)
-        batches = [a.to_arrow(joint_order) for a in self.actions]
-        batch = pa.concat_batches(batches)
+            batch = empty.to_arrow(joint_order)
+        else:
+            batches = [a.to_arrow(joint_order) for a in self.actions]
+            batch = pa.concat_batches(batches)
 
-        # 在 Arrow schema metadata 中附带 ref_timestamp / start_step（若存在），不改变列结构
-        if self.ref_timestamp is not None or self.start_step is not None:
-            schema = batch.schema
-            metadata = dict(schema.metadata or {})
-            if self.ref_timestamp is not None:
-                metadata[b"ref_timestamp"] = str(self.ref_timestamp).encode("utf-8")
-            if self.start_step is not None:
-                metadata[b"start_step"] = str(self.start_step).encode("utf-8")
-            new_schema = schema.with_metadata(metadata)
-            batch = pa.RecordBatch.from_arrays(list(batch.columns), schema=new_schema)
-
-        return batch
+        n = batch.num_rows
+        new_columns = list(batch.columns) + [
+            pa.array([ref_ts_val] * n, type=pa.float64()),
+            pa.array([start_step_val] * n, type=pa.int64()),
+        ]
+        new_names = list(batch.schema.names) + ["ref_timestamp", "start_step"]
+        return pa.RecordBatch.from_arrays(new_columns, names=new_names)
 
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch | pa.Table | bytes, joint_order: list[str]
     ) -> "ActionSequence":
-        """从多行 Arrow 解析，每行一个 Action。单行时返回长度为 1 的序列。"""
+        """从多行 Arrow 解析，每行一个 Action；ref_timestamp / start_step 只从列读取，不读 metadata。"""
         batch = ensure_record_batch(batch)
         if batch.num_rows == 0:
             return cls(actions=[], ref_timestamp=None, start_step=None)
 
-        metadata = batch.schema.metadata or {}
         ref_timestamp: float | None = None
-        raw_ts = metadata.get(b"ref_timestamp")
-        if raw_ts is not None:
-            try:
-                ref_timestamp = float(raw_ts.decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
-                ref_timestamp = None
+        if "ref_timestamp" in batch.schema.names and batch.num_rows > 0:
+            val = batch["ref_timestamp"][0].as_py()
+            if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                ref_timestamp = float(val)
 
         start_step: int | None = None
-        raw_step = metadata.get(b"start_step")
-        if raw_step is not None:
-            try:
-                start_step = int(raw_step.decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
-                start_step = None
+        if "start_step" in batch.schema.names and batch.num_rows > 0:
+            val = int(batch["start_step"][0].as_py())
+            if val >= 0:
+                start_step = val
 
+        # 每行解析为 Action（slice 含 ref_timestamp/start_step 列，Action.from_arrow 只读 mode/unit/joints，会忽略多余列）
         actions_list: List[Action] = []
         for r in range(batch.num_rows):
             row_batch = batch.slice(r, 1)

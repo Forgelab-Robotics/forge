@@ -212,14 +212,14 @@ def test_robot_action_from_arrow_bytes_and_empty_batch() -> None:
 
 
 # ---------- ProprioState ----------
-def _proprio_state(step: int = 0) -> ProprioState:
+def _proprio_state(timestamp: float = 0.0) -> ProprioState:
     return ProprioState(
         joints={
             "j1": JointValue(value=0.1, mode="position", unit="radians"),
             "j2": JointValue(value=0.2, mode="position", unit="radians"),
             "j3": JointValue(value=0.3, mode="position", unit="radians"),
         },
-        step=step,
+        timestamp=timestamp,
     )
 
 
@@ -230,14 +230,14 @@ def test_proprio_state_to_arrow_from_arrow_record_batch() -> None:
     assert back.joints["j1"].value == pytest.approx(0.1)
     assert back.joints["j2"].value == pytest.approx(0.2)
     assert back.joints["j3"].value == pytest.approx(0.3)
-    assert back.step == 0
+    assert back.timestamp == 0.0
 
 
-def test_proprio_state_step_roundtrip() -> None:
-    state = _proprio_state(step=42)
+def test_proprio_state_timestamp_roundtrip() -> None:
+    state = _proprio_state(timestamp=42.0)
     batch = state.to_arrow(JOINT_ORDER)
     back = ProprioState.from_arrow(batch, JOINT_ORDER)
-    assert back.step == 42
+    assert back.timestamp == pytest.approx(42.0)
 
 
 def test_proprio_state_to_arrow_from_arrow_bytes() -> None:
@@ -265,6 +265,7 @@ def test_proprio_state_from_arrow_empty_batch() -> None:
         {
             "mode": pa.array([], type=pa.list_(pa.int8())),
             "unit": pa.array([], type=pa.list_(pa.int8())),
+            "timestamp": pa.array([], type=pa.float64()),
             **{name: pa.array([], type=pa.float32()) for name in JOINT_ORDER},
         }
     )
@@ -272,6 +273,7 @@ def test_proprio_state_from_arrow_empty_batch() -> None:
     for name in JOINT_ORDER:
         assert back.joints[name].value == 0.0
         assert back.joints[name].mode == "position"
+    assert back.timestamp == 0.0
 
 
 # ---------- Image ----------
@@ -441,11 +443,8 @@ def test_action_sequence_to_arrow_from_arrow_with_ref_timestamp() -> None:
     batch = seq.to_arrow(JOINT_ORDER)
     assert isinstance(batch, pa.RecordBatch)
     assert batch.num_rows == 2
-
-    # metadata 中应包含 ref_timestamp
-    metadata = batch.schema.metadata or {}
-    assert b"ref_timestamp" in metadata
-    assert float(metadata[b"ref_timestamp"].decode("utf-8")) == pytest.approx(1.23)
+    assert "ref_timestamp" in batch.schema.names
+    assert batch["ref_timestamp"][0].as_py() == pytest.approx(1.23)
 
     back = ActionSequence.from_arrow(batch, JOINT_ORDER)
     assert len(back.actions) == 2
