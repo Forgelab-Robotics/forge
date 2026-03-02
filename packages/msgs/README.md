@@ -45,7 +45,7 @@ pip install forge-msgs
 
 ## 列式 Arrow 格式
 
-所有消息使用列式 `pa.RecordBatch`，支持零拷贝。`to_arrow()` 和 `from_arrow()` 均需传入 `joint_order` 或 `actuator_order` 以确定列顺序。时间/对齐字段（`ProprioState.timestamp`、`ActionSequence.ref_timestamp` / `start_step`）均作为正式列写入，不使用 schema metadata，避免 dora/IPC 传递时丢失。
+所有消息使用列式 `pa.RecordBatch`，支持零拷贝。`to_arrow()` 和 `from_arrow()` 均需传入 `joint_order` 或 `actuator_order` 以确定列顺序。时间/对齐字段（`ProprioState.timestamp`、`ActionSequence.ref_timestamp`）均作为正式列写入，不使用 schema metadata，避免 dora/IPC 传递时丢失。
 
 ### 发送数据
 

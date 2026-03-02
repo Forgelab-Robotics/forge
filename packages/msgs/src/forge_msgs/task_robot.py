@@ -203,15 +203,12 @@ class ActionSequence(BaseModel):
     """一组 Action，用于按 tick 逐帧发送；Arrow 为多行 RecordBatch，每行一帧。"""
 
     actions: List[Action]
-    # 可选：该序列对应的观测/生成时间戳（由上游 policy 填写）
+    # 可选：该序列对应的观测/生成时间戳（由上游 policy 填写，task_robot 用其加 latency 得到序列起始时刻）
     ref_timestamp: float | None = None
-    # 可选：本序列第一帧对应的逻辑 step（50 Hz 等对齐场景下由上游填写，task_robot 优先使用）
-    start_step: int | None = None
 
     def to_arrow(self, joint_order: list[str]) -> pa.RecordBatch:
-        """多行 RecordBatch，每行与 Action.to_arrow 列结构一致；ref_timestamp / start_step 作为列写入，不写 metadata。"""
+        """多行 RecordBatch，每行与 Action.to_arrow 列结构一致；ref_timestamp 作为列写入，不写 metadata。"""
         ref_ts_val = self.ref_timestamp if self.ref_timestamp is not None else float("nan")
-        start_step_val = self.start_step if self.start_step is not None else -1
 
         if not self.actions:
             empty = Action(
@@ -228,19 +225,18 @@ class ActionSequence(BaseModel):
         n = batch.num_rows
         new_columns = list(batch.columns) + [
             pa.array([ref_ts_val] * n, type=pa.float64()),
-            pa.array([start_step_val] * n, type=pa.int64()),
         ]
-        new_names = list(batch.schema.names) + ["ref_timestamp", "start_step"]
+        new_names = list(batch.schema.names) + ["ref_timestamp"]
         return pa.RecordBatch.from_arrays(new_columns, names=new_names)
 
     @classmethod
     def from_arrow(
         cls, batch: pa.RecordBatch | pa.Table | bytes, joint_order: list[str]
     ) -> "ActionSequence":
-        """从多行 Arrow 解析，每行一个 Action；ref_timestamp / start_step 只从列读取，不读 metadata。"""
+        """从多行 Arrow 解析，每行一个 Action；ref_timestamp 只从列读取，不读 metadata。"""
         batch = ensure_record_batch(batch)
         if batch.num_rows == 0:
-            return cls(actions=[], ref_timestamp=None, start_step=None)
+            return cls(actions=[], ref_timestamp=None)
 
         ref_timestamp: float | None = None
         if "ref_timestamp" in batch.schema.names and batch.num_rows > 0:
@@ -248,15 +244,8 @@ class ActionSequence(BaseModel):
             if val is not None and not (isinstance(val, float) and math.isnan(val)):
                 ref_timestamp = float(val)
 
-        start_step: int | None = None
-        if "start_step" in batch.schema.names and batch.num_rows > 0:
-            val = int(batch["start_step"][0].as_py())
-            if val >= 0:
-                start_step = val
-
-        # 每行解析为 Action（slice 含 ref_timestamp/start_step 列，Action.from_arrow 只读 mode/unit/joints，会忽略多余列）
         actions_list: List[Action] = []
         for r in range(batch.num_rows):
             row_batch = batch.slice(r, 1)
             actions_list.append(Action.from_arrow(row_batch, joint_order))
-        return cls(actions=actions_list, ref_timestamp=ref_timestamp, start_step=start_step)
+        return cls(actions=actions_list, ref_timestamp=ref_timestamp)
