@@ -16,6 +16,7 @@ from forge_msgs.value import (
     JointUnit,
     JointValue,
 )
+from forge_msgs.record import RecordingPath
 
 __all__ = [
     "Action",
@@ -27,6 +28,7 @@ __all__ = [
     "JointUnit",
     "JointValue",
     "ProprioState",
+    "RecordingPath",
     "RobotAction",
     "RobotState",
 ]
