@@ -37,6 +37,7 @@ class MuJoCoSimulator:
         data: Any,
         joints: list[BaseJoint] | None = None,
         actuators: list[BaseActuator] | None = None,
+        derived_state_cfg: dict[str, dict[str, Any]] | None = None,
         prefix: str = "",
     ):
         """
@@ -63,7 +64,11 @@ class MuJoCoSimulator:
 
         logger.info(f"[MuJoCoSimulator] Initializing with prefix: '{prefix}'")
 
+        # 逻辑关节名 -> qpos 索引（由 joints 列表构建，保持向后兼容）
         self._qpos_addrs: dict[str, int] = {}
+        # 物理 joint 名 -> qpos 索引（供派生状态使用，如 joint7/joint8）
+        self._joint_qpos_addrs: dict[str, int] = {}
+        # 逻辑 actuator 名 -> ctrl 索引
         self._ctrl_indices: dict[str, int] = {}
 
         for joint in self._joints:
@@ -75,6 +80,7 @@ class MuJoCoSimulator:
                 )
                 qpos_addr = model.jnt_qposadr[joint_id]
                 self._qpos_addrs[logical_name] = qpos_addr
+                self._joint_qpos_addrs[logical_name] = qpos_addr
                 logger.info(
                     f"  - Mapped Joint '{logical_name}' -> '{prefixed_name}' "
                     f"at qpos_addr: {qpos_addr}"
@@ -101,6 +107,56 @@ class MuJoCoSimulator:
                     f"  - WARNING: Actuator '{prefixed_name}' not found in mjModel."
                 )
 
+        # 解析派生 actuator 状态配置（例如 gripper 由 joint7/joint8 合成）
+        # 结构：{ actuator_name: { "joint_qpos_addrs": [int, ...], "expr": str|None, "scale": float } }
+        self._derived_state_cfg: dict[str, dict[str, Any]] = {}
+        if derived_state_cfg:
+            for act_name, cfg in derived_state_cfg.items():
+                joint_names = cfg.get("joint_names") or []
+                expr = cfg.get("expr")
+                scale = cfg.get("scale", 1.0)
+
+                if not joint_names:
+                    continue
+
+                joint_qpos_addrs: list[int] = []
+                for j_name in joint_names:
+                    # 先看是否已有缓存
+                    if j_name in self._joint_qpos_addrs:
+                        joint_qpos_addrs.append(self._joint_qpos_addrs[j_name])
+                        continue
+
+                    prefixed_joint_name = prefix + j_name
+                    try:
+                        joint_id = mujoco.mj_name2id(
+                            model, mujoco.mjtObj.mjOBJ_JOINT, prefixed_joint_name
+                        )
+                        qpos_addr = model.jnt_qposadr[joint_id]
+                        self._joint_qpos_addrs[j_name] = qpos_addr
+                        joint_qpos_addrs.append(qpos_addr)
+                        logger.info(
+                            "  - DerivedState: joint '%s' -> '%s' at qpos_addr: %d",
+                            j_name,
+                            prefixed_joint_name,
+                            qpos_addr,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "  - WARNING: DerivedState joint '%s' (prefixed '%s') "
+                            "not found in mjModel.",
+                            j_name,
+                            prefixed_joint_name,
+                        )
+
+                if not joint_qpos_addrs:
+                    continue
+
+                self._derived_state_cfg[act_name] = {
+                    "joint_qpos_addrs": joint_qpos_addrs,
+                    "expr": expr,
+                    "scale": float(scale),
+                }
+
     @property
     def actuator_order(self) -> list[str]:
         """Actuator names in order (for RobotState / RobotAction)."""
@@ -125,6 +181,7 @@ class MuJoCoSimulator:
         qpos = self._data.qpos
         actuator_values: dict[str, ActuatorValue] = {}
 
+        # 基础关节：按 joints 列表中的逻辑名直接读取 qpos
         for logical_name, addr in self._qpos_addrs.items():
             actuator = self._actuator_map.get(logical_name)
             joint = self._joint_map.get(logical_name)
@@ -144,6 +201,42 @@ class MuJoCoSimulator:
             actuator_values[logical_name] = ActuatorValue(
                 value=value,
                 mode="position",
+                unit=unit,
+            )
+
+        # 派生 actuator（例如 gripper 由 joint7/joint8 合成）
+        for act_name, cfg in self._derived_state_cfg.items():
+            joint_qpos_addrs: list[int] = cfg.get("joint_qpos_addrs", [])
+            if not joint_qpos_addrs:
+                continue
+
+            expr = cfg.get("expr")
+            scale = float(cfg.get("scale", 1.0))
+
+            values = [float(qpos[addr]) for addr in joint_qpos_addrs]
+            if not values:
+                continue
+
+            if expr == "diff" and len(values) >= 2:
+                raw = values[0] - values[1]
+            elif expr == "sum":
+                raw = sum(values)
+            else:
+                raw = values[0]
+
+            value = raw * scale
+
+            actuator = self._actuator_map.get(act_name)
+            if actuator:
+                mode = actuator.control_mode
+                unit = actuator.unit
+            else:
+                mode = "position"
+                unit = "radians"
+
+            actuator_values[act_name] = ActuatorValue(
+                value=value,
+                mode=mode,
                 unit=unit,
             )
 
