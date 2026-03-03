@@ -208,9 +208,7 @@ class PiperDriver(BaseRobotDriver):
             raise RuntimeError("Robot is not connected. Call connect() first.")
         logger.info("Moving robot to rest position (j5=0.48 rad)...")
         self.bus.MotionCtrl_2(0x01, 0x01, 30, 0x00)
-        # 0.48 rad 约等于 27.5 度
-        j5_hardware = int(math.degrees(0.4) * self.ANGLE_SCALE)
-        self.bus.JointCtrl(0, 0, 0, 0, j5_hardware, 0)
+        self.bus.JointCtrl(0, 0, 0, 0, 0, 0)
         self.bus.GripperCtrl(0, 1000, 0x01, 0)
 
     def _connect_master_mode(self) -> None:
