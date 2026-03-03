@@ -206,9 +206,10 @@ class PiperDriver(BaseRobotDriver):
         """
         if self.bus is None:
             raise RuntimeError("Robot is not connected. Call connect() first.")
-        logger.info("Moving robot to rest position (j5=0.48 rad)...")
+        logger.info("Moving robot to rest position (j5=0.3 rad)...")
         self.bus.MotionCtrl_2(0x01, 0x01, 30, 0x00)
-        self.bus.JointCtrl(0, 0, 0, 0, 0, 0)
+        j5_hardware = int(math.degrees(0.3) * self.ANGLE_SCALE)
+        self.bus.JointCtrl(0, 0, 0, 0, j5_hardware, 0)
         self.bus.GripperCtrl(0, 1000, 0x01, 0)
 
     def _connect_master_mode(self) -> None:
