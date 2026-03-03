@@ -231,7 +231,7 @@ class PiperDriver(BaseRobotDriver):
                 logger.error(f"Failed to move to rest position: {e}")
 
         logger.info("Disabling and disconnecting from the robot...")
-        # self.bus.DisablePiper()
+        self.bus.DisablePiper()
         self.bus.DisconnectPort()
         self.bus = None
         logger.info("Disconnected from the robot.")
