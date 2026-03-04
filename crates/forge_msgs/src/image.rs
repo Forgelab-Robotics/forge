@@ -350,6 +350,34 @@ pub enum ImageError {
     UnsupportedEncoding(String),
 }
 
+impl std::fmt::Display for ImageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImageError::Decode(e) => write!(f, "decode error: {e}"),
+            ImageError::Encode(e) => write!(f, "encode error: {e}"),
+            ImageError::InvalidShape(msg) => write!(f, "invalid shape: {msg}"),
+            ImageError::UnsupportedEncoding(msg) => write!(f, "unsupported encoding: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ImageError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ImageError::Decode(e) => Some(e),
+            ImageError::Encode(e) => Some(e),
+            ImageError::InvalidShape(_) => None,
+            ImageError::UnsupportedEncoding(_) => None,
+        }
+    }
+}
+
+impl From<image_crate::ImageError> for ImageError {
+    fn from(e: image_crate::ImageError) -> Self {
+        ImageError::Decode(e)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
