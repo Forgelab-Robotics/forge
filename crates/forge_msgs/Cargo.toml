@@ -1,0 +1,15 @@
+[package]
+name = "forge-msgs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "forge_msgs"
+path = "src/lib.rs"
+
+[dependencies]
+arrow-array = "58.0.0"
+arrow-schema = "58.0.0"
+ndarray = "0.17.2"
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg"] }
+
