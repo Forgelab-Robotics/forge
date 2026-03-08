@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 arrow-array = "54.3.1"
 arrow-schema = "54.3.1"
+arrow-buffer = "54.3.1"
 ndarray = "0.17.2"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg"] }
 
