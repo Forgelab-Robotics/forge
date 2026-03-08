@@ -242,7 +242,7 @@ impl Image {
             height: h as i32,
             channels,
             encoding,
-            data,
+            data: Bytes::from(data),
         })
     }
 
@@ -250,14 +250,14 @@ impl Image {
     ///
     /// - 若当前已为 jpeg 且 data 非空，则直接返回拷贝。
     /// - 其它格式会先解码为 ndarray，再重新编码为 jpeg。
-    pub fn to_jpeg_bytes(&self, quality: u8) -> Result<Vec<u8>, ImageError> {
+    pub fn to_jpeg_bytes(&self, quality: u8) -> Result<Bytes, ImageError> {
         if matches!(self.encoding, ImageEncoding::Jpeg) && !self.data.is_empty() {
             return Ok(self.data.clone());
         }
 
         let arr = self.to_ndarray()?;
         if arr.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Bytes::new());
         }
 
         let (_, _, c) = arr.dim();
@@ -305,7 +305,7 @@ impl Image {
             )
             .map_err(ImageError::Encode)?;
 
-        Ok(buf)
+        Ok(Bytes::from(buf))
     }
 
     fn decode_compressed_to_ndarray(&self) -> Result<Array3<u8>, ImageError> {
