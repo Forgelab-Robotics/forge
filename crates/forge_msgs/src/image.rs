@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use arrow_array::{Array, ArrayRef, Int32Array, Int8Array, LargeBinaryArray, RecordBatch};
-use arrow_buffer::Buffer;
 use arrow_schema::{DataType, Field, Schema};
+use bytes::Bytes;
 use image as image_crate;
 use ndarray::{Array3, ArrayView3};
 
@@ -50,7 +50,7 @@ pub struct Image {
     pub height: i32,
     pub channels: i8,
     pub encoding: ImageEncoding,
-    pub data: Buffer,
+    pub data: Bytes,
 }
 
 impl Image {
@@ -59,7 +59,7 @@ impl Image {
         height: i32,
         channels: i8,
         encoding: ImageEncoding,
-        data: Buffer,
+        data: Bytes,
     ) -> Self {
         Self {
             width,
@@ -76,7 +76,7 @@ impl Image {
             height: 0,
             channels: 0,
             encoding: ImageEncoding::Rgb8,
-            data: Buffer::from(Vec::new()),
+            data: Bytes::new(),
         }
     }
 
@@ -92,8 +92,9 @@ impl Image {
         let height_arr = Int32Array::from(vec![self.height]);
         let channels_arr = Int8Array::from(vec![self.channels]);
         let encoding_arr = Int8Array::from(vec![self.encoding.as_i8()]);
-        // 使用 Buffer 直接构造，实现零拷贝
-        let data_arr = LargeBinaryArray::from_scalar_buffer(self.data.clone(), vec![0, self.data.len() as i64], None);
+        // 这里会复制一份数据以构造 LargeBinaryArray
+        // 如果需要极致零拷贝，通常需要直接操作 arrow_buffer::Buffer，但 Bytes 类型已足够通用
+        let data_arr = LargeBinaryArray::from_iter_values(std::iter::once(&self.data));
 
         let fields = vec![
             Field::new("width", DataType::Int32, false),
@@ -160,7 +161,7 @@ impl Image {
         let channels = channels_arr.value(0);
         let encoding = ImageEncoding::from_i8(encoding_arr.value(0));
 
-        let data = Buffer::from(data_arr.value(0));
+        let data = Bytes::copy_from_slice(data_arr.value(0));
 
         Self {
             width,
