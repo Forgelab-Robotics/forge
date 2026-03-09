@@ -209,7 +209,7 @@ impl Image {
             )));
         }
 
-        let arr = Array3::from_shape_vec((h, w, c), self.data.clone())
+        let arr = Array3::from_shape_vec((h, w, c), self.data.to_vec())
             .map_err(|e| ImageError::InvalidShape(e.to_string()))?;
 
         Ok(arr)
