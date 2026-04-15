@@ -17,6 +17,7 @@ UNIT_LITERAL = Literal[
     "meters/s",
     "Nm",
     "A",
+    "unitless",
 ]
 
 
