@@ -20,6 +20,7 @@ class ImageEncoding(IntEnum):
     gray8 = 2
     jpeg = 3
     png = 4
+    depth_u16 = 5
 
 
 ENCODING_STR_TO_INT = {
@@ -28,6 +29,7 @@ ENCODING_STR_TO_INT = {
     "gray8": ImageEncoding.gray8,
     "jpeg": ImageEncoding.jpeg,
     "png": ImageEncoding.png,
+    "depth_u16": ImageEncoding.depth_u16,
 }
 ENCODING_INT_TO_STR = {v: k for k, v in ENCODING_STR_TO_INT.items()}
 
@@ -37,15 +39,15 @@ class Image(BaseModel):
 
     字段说明：
     - width/height: 图像尺寸（压缩时为原始尺寸，供下游校验）
-    - channels: 原始像素时有效（1=灰度, 3=RGB/BGR）；压缩格式时为 0
-    - encoding: 像素或压缩格式（rgb8/bgr8/gray8 为原始，jpeg/png 为压缩）
-    - data: 原始像素 bytes（H*W*channels）或压缩 bitstream
+    - channels: 原始像素时有效（1=灰度/深度单通道, 3=RGB/BGR）；压缩格式时为 0
+    - encoding: 像素或压缩格式（rgb8/bgr8/gray8/depth_u16 为原始，jpeg/png 为压缩）
+    - data: 原始像素 bytes（H*W*channels 或 depth_u16 时为 H*W*2 小端 uint16）或压缩 bitstream
     """
 
     width: int
     height: int
     channels: int = 3
-    encoding: Literal["rgb8", "bgr8", "gray8", "jpeg", "png"] = "rgb8"
+    encoding: Literal["rgb8", "bgr8", "gray8", "jpeg", "png", "depth_u16"] = "rgb8"
     data: bytes
 
     @property
@@ -54,9 +56,24 @@ class Image(BaseModel):
         return self.encoding in ("jpeg", "png")
 
     def to_numpy(self) -> np.ndarray:
-        """将 data 解码为 numpy uint8 数组（HWC）。支持原始像素 (rgb8/bgr8/gray8) 与压缩格式 (jpeg/png)。"""
+        """将 data 解码为 numpy 数组。
+
+        - rgb8/bgr8/gray8：uint8，形状 (H, W, C)。
+        - depth_u16：uint16，形状 (H, W)（深度图，小端每像素 2 字节）。
+        - jpeg/png：解码后为 uint8 (H, W, C)。
+        """
         if self.is_compressed:
             return self._decode_compressed_to_numpy()
+        if self.encoding == "depth_u16":
+            if self.width <= 0 or self.height <= 0:
+                return np.zeros((0, 0), dtype=np.uint16)
+            expected = self.width * self.height * 2
+            arr = np.frombuffer(self.data, dtype=np.uint16)
+            if arr.size != self.width * self.height:
+                raise ValueError(
+                    f"depth_u16 data 大小不匹配：{arr.size} != {self.width * self.height} uint16"
+                )
+            return arr.reshape((self.height, self.width))
         if self.width <= 0 or self.height <= 0 or self.channels <= 0:
             return np.zeros((0, 0, 0), dtype=np.uint8)
         arr = np.frombuffer(self.data, dtype=np.uint8)
@@ -80,9 +97,16 @@ class Image(BaseModel):
         return arr
 
     def to_jpeg_bytes(self, quality: int = 85) -> bytes:
-        """将当前图像转为 JPEG 字节流。已为 jpeg 时直接返回 data；raw（rgb8/bgr8/gray8）时先解码再编码；png 等压缩格式会先解码再按 jpeg 编码。"""
+        """将当前图像转为 JPEG 字节流。已为 jpeg 时直接返回 data；png 会先解码再编码。
+
+        gray8 / depth_u16 为原始传感器语义，不支持转为 JPEG，请使用原始 data 或自行编码。
+        """
         if self.encoding == "jpeg" and self.data:
             return self.data
+        if self.encoding in ("gray8", "depth_u16"):
+            raise ValueError(
+                f"encoding={self.encoding} 不支持 to_jpeg_bytes，请使用原始像素 data"
+            )
         arr = self.to_numpy()
         if arr.size == 0:
             return b""
@@ -100,9 +124,29 @@ class Image(BaseModel):
     def from_numpy(
         cls,
         frame: np.ndarray,
-        encoding: Literal["rgb8", "bgr8", "gray8"] = "rgb8",
+        encoding: Literal["rgb8", "bgr8", "gray8", "depth_u16"] = "rgb8",
     ) -> "Image":
-        """从 numpy (HWC) 构建 Image（uint8）。"""
+        """从 numpy 构建 Image：rgb8/bgr8/gray8 为 uint8 (H,W,C)；depth_u16 为 uint16 (H,W) 或 (H,W,1)。"""
+        if encoding == "depth_u16":
+            if frame.dtype != np.uint16:
+                raise ValueError(f"depth_u16 期望 uint16，但得到 {frame.dtype}")
+            if frame.ndim == 2:
+                height, width = frame.shape
+                data = frame.tobytes()
+            elif frame.ndim == 3 and frame.shape[2] == 1:
+                height, width, _ = frame.shape
+                data = frame.reshape(height, width).tobytes()
+            else:
+                raise ValueError(
+                    f"depth_u16 期望形状 (H,W) 或 (H,W,1)，但得到 {frame.shape}"
+                )
+            return cls(
+                width=int(width),
+                height=int(height),
+                channels=1,
+                encoding="depth_u16",
+                data=data,
+            )
         if frame.dtype != np.uint8:
             raise ValueError(f"期望 uint8，但得到 {frame.dtype}")
         if frame.ndim != 3:

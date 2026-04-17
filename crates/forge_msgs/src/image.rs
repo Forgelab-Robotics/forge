@@ -4,7 +4,7 @@ use arrow_array::{Array, ArrayRef, Int32Array, Int8Array, LargeBinaryArray, Reco
 use arrow_schema::{DataType, Field, Schema};
 use bytes::Bytes;
 use image as image_crate;
-use ndarray::{Array3, ArrayView3};
+use ndarray::{Array2, Array3, ArrayView2, ArrayView3};
 
 /// 图像编码/格式，对齐 Python 版 `ImageEncoding`。
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -15,6 +15,8 @@ pub enum ImageEncoding {
     Gray8 = 2,
     Jpeg = 3,
     Png = 4,
+    /// 深度图：小端 uint16，每像素 2 字节，与 Python `depth_u16` 对齐。
+    DepthU16 = 5,
 }
 
 impl ImageEncoding {
@@ -25,6 +27,7 @@ impl ImageEncoding {
             2 => ImageEncoding::Gray8,
             3 => ImageEncoding::Jpeg,
             4 => ImageEncoding::Png,
+            5 => ImageEncoding::DepthU16,
             _ => ImageEncoding::Rgb8,
         }
     }
@@ -43,7 +46,7 @@ impl ImageEncoding {
 /// - `width` / `height`: 图像尺寸
 /// - `channels`: 原始像素通道数（压缩格式时可为 0）
 /// - `encoding`: 像素或压缩格式
-/// - `data`: 原始像素 bytes（H*W*C）或压缩 bitstream
+/// - `data`: 原始像素 bytes（H*W*C；`DepthU16` 时为 H*W*2 小端 u16）或压缩 bitstream
 #[derive(Clone, Debug)]
 pub struct Image {
     pub width: i32,
@@ -172,11 +175,64 @@ impl Image {
         }
     }
 
+    /// 将 `depth_u16` 图像转为 `Array2<u16>`（HW），小端每像素 2 字节。
+    pub fn to_depth_u16_ndarray(&self) -> Result<Array2<u16>, ImageError> {
+        if self.encoding != ImageEncoding::DepthU16 {
+            return Err(ImageError::UnsupportedEncoding(
+                "to_depth_u16_ndarray requires encoding DepthU16".to_string(),
+            ));
+        }
+        if self.width <= 0 || self.height <= 0 {
+            return Ok(Array2::zeros((0, 0)));
+        }
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let expected = w
+            .checked_mul(h)
+            .and_then(|n| n.checked_mul(2))
+            .ok_or_else(|| ImageError::InvalidShape("size overflow".to_string()))?;
+        if self.data.len() != expected {
+            return Err(ImageError::InvalidShape(format!(
+                "data length {} does not match width*height*2={}",
+                self.data.len(),
+                expected
+            )));
+        }
+        let mut vec = Vec::with_capacity(w * h);
+        for chunk in self.data.chunks_exact(2) {
+            vec.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        Array2::from_shape_vec((h, w), vec).map_err(|e| ImageError::InvalidShape(e.to_string()))
+    }
+
+    /// 从 `Array2<u16>` 构建深度图（`DepthU16`，channels=1）。
+    pub fn from_depth_u16_ndarray(frame: ArrayView2<u16>) -> Result<Self, ImageError> {
+        let (h, w) = frame.dim();
+        let mut buf = Vec::with_capacity(h * w * 2);
+        for &v in frame.iter() {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        Ok(Self {
+            width: w as i32,
+            height: h as i32,
+            channels: 1,
+            encoding: ImageEncoding::DepthU16,
+            data: Bytes::from(buf),
+        })
+    }
+
     /// 将图像转换为 `ndarray::Array3<u8>`（HWC）。
     ///
     /// - 对于 `rgb8` / `bgr8` / `gray8`：从原始像素数据 reshape。
     /// - 对于 `jpeg` / `png`：使用 `image` crate 解码后再转换为 ndarray。
+    /// - 对于 `DepthU16`：请使用 [`Self::to_depth_u16_ndarray`]。
     pub fn to_ndarray(&self) -> Result<Array3<u8>, ImageError> {
+        if self.encoding == ImageEncoding::DepthU16 {
+            return Err(ImageError::UnsupportedEncoding(
+                "use to_depth_u16_ndarray() for DepthU16 images".to_string(),
+            ));
+        }
+
         if self.width <= 0 || self.height <= 0 {
             return Ok(Array3::zeros((0, 0, 0)));
         }
@@ -220,9 +276,12 @@ impl Image {
         frame: ArrayView3<u8>,
         encoding: ImageEncoding,
     ) -> Result<Self, ImageError> {
-        if matches!(encoding, ImageEncoding::Jpeg | ImageEncoding::Png) {
+        if matches!(
+            encoding,
+            ImageEncoding::Jpeg | ImageEncoding::Png | ImageEncoding::DepthU16
+        ) {
             return Err(ImageError::UnsupportedEncoding(
-                "from_ndarray does not support compressed encodings (jpeg/png)".to_string(),
+                "from_ndarray does not support compressed (jpeg/png) or DepthU16; use from_depth_u16_ndarray".to_string(),
             ));
         }
 
@@ -250,9 +309,20 @@ impl Image {
     ///
     /// - 若当前已为 jpeg 且 data 非空，则直接返回拷贝。
     /// - 其它格式会先解码为 ndarray，再重新编码为 jpeg。
+    ///
+    /// `Gray8` / `DepthU16` 为原始传感器语义，不支持 JPEG，请使用原始 `data`。
     pub fn to_jpeg_bytes(&self, quality: u8) -> Result<Bytes, ImageError> {
         if matches!(self.encoding, ImageEncoding::Jpeg) && !self.data.is_empty() {
             return Ok(self.data.clone());
+        }
+
+        if matches!(
+            self.encoding,
+            ImageEncoding::Gray8 | ImageEncoding::DepthU16
+        ) {
+            return Err(ImageError::UnsupportedEncoding(
+                "Gray8 and DepthU16 do not support JPEG; use raw data".to_string(),
+            ));
         }
 
         let arr = self.to_ndarray()?;
@@ -382,8 +452,8 @@ impl From<image_crate::ImageError> for ImageError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Image, ImageEncoding};
-    use ndarray::{array, Array3};
+    use super::{Image, ImageEncoding, ImageError};
+    use ndarray::{array, Array2, Array3};
 
     #[test]
     fn raw_rgb_roundtrip_record_batch_and_ndarray() {
@@ -427,6 +497,40 @@ mod tests {
         let frame2 = img2.to_ndarray().unwrap();
         assert_eq!(frame2.shape(), frame.shape());
         assert_eq!(frame2.as_slice().unwrap(), frame.as_slice().unwrap());
+    }
+
+    #[test]
+    fn gray8_to_jpeg_bytes_unsupported() {
+        let frame: Array3<u8> = array![[[0u8], [1u8]], [[2u8], [3u8]]];
+        let img = Image::from_ndarray(frame.view(), ImageEncoding::Gray8).unwrap();
+        let err = img.to_jpeg_bytes(90).unwrap_err();
+        assert!(matches!(err, ImageError::UnsupportedEncoding(_)));
+    }
+
+    #[test]
+    fn depth_u16_to_jpeg_bytes_unsupported() {
+        let frame: Array2<u16> = array![[1u16, 2], [3, 4]];
+        let img = Image::from_depth_u16_ndarray(frame.view()).unwrap();
+        let err = img.to_jpeg_bytes(90).unwrap_err();
+        assert!(matches!(err, ImageError::UnsupportedEncoding(_)));
+    }
+
+    #[test]
+    fn depth_u16_roundtrip_record_batch_and_ndarray() {
+        let frame: Array2<u16> = array![[100u16, 200], [3000, 4000]];
+        let img = Image::from_depth_u16_ndarray(frame.view()).unwrap();
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.channels, 1);
+        assert_eq!(img.encoding, ImageEncoding::DepthU16);
+
+        let batch = img.to_record_batch();
+        let img2 = Image::from_record_batch(&batch);
+        assert_eq!(img2.data, img.data);
+
+        let d2 = img2.to_depth_u16_ndarray().unwrap();
+        assert_eq!(d2.shape(), frame.shape());
+        assert_eq!(d2.as_slice().unwrap(), frame.as_slice().unwrap());
     }
 
     #[test]
