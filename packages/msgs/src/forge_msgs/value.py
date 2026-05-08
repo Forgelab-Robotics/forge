@@ -53,6 +53,7 @@ class JointUnit(IntEnum):
     A = 5
     meters = 6
     meters_s = 7
+    unitless = 8
 
 
 MODE_STR_TO_INT = {
@@ -72,12 +73,13 @@ UNIT_STR_TO_INT = {
     "A": JointUnit.A,
     "meters": JointUnit.meters,
     "meters/s": JointUnit.meters_s,
+    "unitless": JointUnit.unitless,
 }
 UNIT_INT_TO_STR = {v: k for k, v in UNIT_STR_TO_INT.items()}
 
 # 直线关节（prismatic）默认单位
 UNIT_LITERAL = Literal[
-    "radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A"
+    "radians", "millimeters", "meters", "radians/s", "millimeters/s", "meters/s", "Nm", "A", "unitless"
 ]
 
 

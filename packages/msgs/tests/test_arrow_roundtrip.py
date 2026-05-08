@@ -372,6 +372,41 @@ def test_image_to_numpy_decodes_png() -> None:
     np.testing.assert_array_equal(arr, 128)
 
 
+def test_depth_u16_to_arrow_from_arrow_and_numpy() -> None:
+    depth = np.array([[100, 200], [3000, 4000]], dtype=np.uint16)
+    img = Image.from_numpy(depth, encoding="depth_u16")
+    assert img.encoding == "depth_u16"
+    assert img.channels == 1
+    assert img.width == 2 and img.height == 2
+    back = img.to_numpy()
+    assert back.dtype == np.uint16
+    assert back.ndim == 2
+    np.testing.assert_array_equal(back, depth)
+
+    batch = img.to_arrow()
+    back2 = Image.from_arrow(batch)
+    assert back2.encoding == "depth_u16"
+    assert back2.data == img.data
+    np.testing.assert_array_equal(back2.to_numpy(), depth)
+
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    data = sink.getvalue().to_pybytes()
+    back3 = Image.from_arrow(data)
+    np.testing.assert_array_equal(back3.to_numpy(), depth)
+
+    with pytest.raises(ValueError, match="depth_u16"):
+        img.to_jpeg_bytes(quality=85)
+
+
+def test_gray8_to_jpeg_bytes_not_supported() -> None:
+    g = np.zeros((2, 3, 1), dtype=np.uint8)
+    img = Image.from_numpy(g, encoding="gray8")
+    with pytest.raises(ValueError, match="gray8"):
+        img.to_jpeg_bytes()
+
+
 # ---------- Action (task_robot) ----------
 def _action() -> Action:
     return Action(
