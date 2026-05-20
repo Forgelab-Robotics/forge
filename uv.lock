@@ -8,6 +8,7 @@ members = [
     "forge-common",
     "forge-configs",
     "forge-msgs",
+    "forge-robot",
 ]
 
 [[package]]
@@ -26,6 +27,28 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "dora-rs"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyarrow" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/ff/894f11890a526f107d3d06b0e71209b45e5a7bb3666aed23725308bbf78a/dora_rs-0.4.1.tar.gz", hash = "sha256:fec74e823d438c6281caf2447b077f9299380b849a5ab113961bcf5e1d061332", size = 400799, upload-time = "2026-01-20T20:43:23.349Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/86/9ce12fbbfc365b7037666ffbc79ac93ba05690b22cac8fad8d2104577dfe/dora_rs-0.4.1-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:a315e7bfefa64c6082da31b5fa77375a485d5a8558c8e835ef98b389b6906aec", size = 17873861, upload-time = "2026-01-20T20:43:09.532Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/62/5f476d78a57d2557c76458049c55a408618c0ceb5d1fdd267cbc9fc333b2/dora_rs-0.4.1-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:0f903b2fc89807f9f56e31807c3e0fcf8a703c2accfe932b193a8898212c22a0", size = 17036942, upload-time = "2026-01-20T20:42:56.288Z" },
+    { url = "https://files.pythonhosted.org/packages/30/46/ff8235c5086b6f124a3ae47ee52eafdb6bea0e589d9ab506ceb085253c2c/dora_rs-0.4.1-cp37-abi3-manylinux_2_28_armv7l.whl", hash = "sha256:3edbb5856668dd6d04e1c1fd941f20588acb7f16ba5c7d60d6487c07d3d1da2c", size = 15510340, upload-time = "2026-01-20T20:42:59.773Z" },
+    { url = "https://files.pythonhosted.org/packages/08/06/e763a0305c396a29ea56a378e08a52a4f14403b3abb0c8d9004925d49da9/dora_rs-0.4.1-cp37-abi3-manylinux_2_28_i686.whl", hash = "sha256:fd5b5ceeec35e39f2007fd4fb20efa7d4c5c425ae85e9ea19357184830cf5fdb", size = 18873782, upload-time = "2026-01-20T20:43:03.331Z" },
+    { url = "https://files.pythonhosted.org/packages/94/53/7dc142faa1719333d57c78cfcf419f2b176770b49ebef54e0bbfa34212ac/dora_rs-0.4.1-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:7cec1754d300dafff1b2c930608700320c15903396cdb4d79b4396fe88c08f68", size = 17401111, upload-time = "2026-01-20T20:43:06.392Z" },
+    { url = "https://files.pythonhosted.org/packages/50/73/15138c5dfb1e0d6237dfca436b866da7cc39c8d6e475d271c671cd9079bd/dora_rs-0.4.1-cp37-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:98ff55301959686d2050359066f869998f8ed3efc87f1f7fa0fd889cb8c04c61", size = 20807024, upload-time = "2026-01-20T20:43:13.036Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/80/0c22260559b440ed695093cc4da963353086fb86c6f7981812f4922a8b0a/dora_rs-0.4.1-cp37-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:49a8eb40e4836deee21958ffab6aa0cd715fa2230bbfd90447fb6917819ebaa9", size = 19532748, upload-time = "2026-01-20T20:43:15.532Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/c0/df4f3c97160c1be1b120aa6e53ed3175a8ce988acbc2b78f66f4778a17ea/dora_rs-0.4.1-cp37-abi3-musllinux_1_2_i686.whl", hash = "sha256:9b6d3ffac8f28999f6a073f024b8c4d11d39636f602af74c8fd54588ce260448", size = 20832400, upload-time = "2026-01-20T20:43:19.064Z" },
+    { url = "https://files.pythonhosted.org/packages/68/53/a0f6595e43713883e229fabdd3f4cdf5712caa4b08d2cacd51bd3681eea6/dora_rs-0.4.1-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:03a260889efe13151f95a1869173fccaca98731c9b29b24b00187a6d3ee2cea6", size = 20594335, upload-time = "2026-01-20T20:43:21.469Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/d4/e8134ce7d977fd87f507b6951b53df3aa7ab91122e7d487707352336703b/dora_rs-0.4.1-cp37-abi3-win_amd64.whl", hash = "sha256:9a424dca038006f05fcc44eaaea1a7a124a694f7aa954f8261d0bbe98877fd5b", size = 15069944, upload-time = "2026-01-20T20:43:24.614Z" },
 ]
 
 [[package]]
@@ -78,6 +101,21 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
 ]
 provides-extras = ["test"]
+
+[[package]]
+name = "forge-robot"
+version = "0.1.0"
+source = { editable = "packages/robot" }
+dependencies = [
+    { name = "dora-rs" },
+    { name = "forge-msgs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dora-rs", specifier = "==0.4.1" },
+    { name = "forge-msgs", editable = "packages/msgs" },
+]
 
 [[package]]
 name = "iniconfig"
