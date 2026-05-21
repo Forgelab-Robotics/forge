@@ -1,12 +1,11 @@
 """forge_robots 通用驱动协议与基类。"""
 
-from .port_tools import (
-    STANDARD_PORT_COMMANDS,
+from .device_tools import (
+    STANDARD_DEVICE_COMMANDS,
     address_info,
     error_result,
     ok_result,
     print_json_result,
-    role_info,
     unsupported_ok,
 )
 
@@ -15,14 +14,13 @@ __all__ = [
     "BaseRobotDriver",
     "RobotArrowSchemaError",
     "RobotDriver",
-    "STANDARD_PORT_COMMANDS",
+    "STANDARD_DEVICE_COMMANDS",
     "address_info",
     "actuator_order",
     "clip_and_validate_position_action",
     "error_result",
     "ok_result",
     "print_json_result",
-    "role_info",
     "run_dora_robot_node",
     "specs_by_name",
     "unsupported_ok",

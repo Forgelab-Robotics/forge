@@ -1,4 +1,4 @@
-"""Shared helpers for robot port discovery CLI commands."""
+"""Shared helpers for robot device discovery CLI commands."""
 
 from __future__ import annotations
 
@@ -6,24 +6,18 @@ import json
 from typing import Any, Literal
 
 
-PortCapability = Literal[
-    "list_ports",
-    "activate_ports",
-    "check_ports",
-    "check_role",
-    "set_role",
+DeviceCapability = Literal[
+    "list_devices",
+    "activate_devices",
+    "check_devices",
     "test",
-    "cancel_test",
 ]
 
-STANDARD_PORT_COMMANDS = (
-    "list-ports",
-    "activate-ports",
-    "check-ports",
-    "check-role",
-    "set-role",
+STANDARD_DEVICE_COMMANDS = (
+    "list-devices",
+    "activate-devices",
+    "check-devices",
     "test",
-    "cancel-test",
 )
 
 
@@ -47,16 +41,11 @@ def address_info(
     return info
 
 
-def role_info(name: str, role: str) -> dict[str, str]:
-    return {"name": name, "role": role}
-
-
 def ok_result(
-    capability: PortCapability,
+    capability: DeviceCapability,
     *,
     message: str = "",
-    ports: list[dict[str, Any]] | None = None,
-    roles: list[dict[str, str]] | None = None,
+    devices: list[dict[str, Any]] | None = None,
     supported: bool = True,
     **extra: Any,
 ) -> dict[str, Any]:
@@ -66,20 +55,17 @@ def ok_result(
         "supported": supported,
         "message": message,
     }
-    if ports is not None:
-        result["ports"] = ports
-    if roles is not None:
-        result["roles"] = roles
+    if devices is not None:
+        result["devices"] = devices
     result.update(extra)
     return result
 
 
 def error_result(
-    capability: PortCapability,
+    capability: DeviceCapability,
     message: str,
     *,
-    ports: list[dict[str, Any]] | None = None,
-    roles: list[dict[str, str]] | None = None,
+    devices: list[dict[str, Any]] | None = None,
     supported: bool = True,
     **extra: Any,
 ) -> dict[str, Any]:
@@ -89,26 +75,26 @@ def error_result(
         "supported": supported,
         "message": message,
     }
-    if ports is not None:
-        result["ports"] = ports
-    if roles is not None:
-        result["roles"] = roles
+    if devices is not None:
+        result["devices"] = devices
     result.update(extra)
     return result
 
 
 def unsupported_ok(
-    capability: PortCapability,
+    capability: DeviceCapability,
     message: str | None = None,
     *,
-    ports: list[dict[str, Any]] | None = None,
-    roles: list[dict[str, str]] | None = None,
+    devices: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return ok_result(
         capability,
         message=message or f"{capability} is not applicable for this robot",
-        ports=[] if ports is None and capability in {"list_ports", "check_ports"} else ports,
-        roles=[] if roles is None and capability == "check_role" else roles,
+        devices=(
+            []
+            if devices is None and capability in {"list_devices", "check_devices"}
+            else devices
+        ),
         supported=False,
     )
 
