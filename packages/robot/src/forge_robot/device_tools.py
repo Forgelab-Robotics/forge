@@ -3,14 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any
 
-
-DeviceCapability = Literal[
-    "list_devices",
-    "activate_devices",
-    "test",
-] | str
 
 STANDARD_DEVICE_COMMANDS = (
     "list-devices",
@@ -40,17 +34,14 @@ def address_info(
 
 
 def ok_result(
-    capability: DeviceCapability,
     *,
     message: str = "",
     devices: list[dict[str, Any]] | None = None,
-    supported: bool = True,
     **extra: Any,
 ) -> dict[str, Any]:
+    """Create a standard successful JSON envelope."""
     result: dict[str, Any] = {
         "ok": True,
-        "capability": capability,
-        "supported": supported,
         "message": message,
     }
     if devices is not None:
@@ -60,17 +51,14 @@ def ok_result(
 
 
 def error_result(
-    capability: DeviceCapability,
     message: str,
     *,
     devices: list[dict[str, Any]] | None = None,
-    supported: bool = True,
     **extra: Any,
 ) -> dict[str, Any]:
+    """Create a standard error JSON envelope."""
     result: dict[str, Any] = {
         "ok": False,
-        "capability": capability,
-        "supported": supported,
         "message": message,
     }
     if devices is not None:
@@ -80,16 +68,14 @@ def error_result(
 
 
 def unsupported_ok(
-    capability: DeviceCapability,
-    message: str | None = None,
+    message: str = "This command is not applicable for this robot",
     *,
     devices: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Create a successful response for unsupported/not applicable commands."""
     return ok_result(
-        capability,
-        message=message or f"{capability} is not applicable for this robot",
-        devices=[] if devices is None and capability == "list_devices" else devices,
-        supported=False,
+        message=message,
+        devices=[] if devices is None else devices,
     )
 
 
