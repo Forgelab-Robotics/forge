@@ -9,14 +9,12 @@ from typing import Any, Literal
 DeviceCapability = Literal[
     "list_devices",
     "activate_devices",
-    "check_devices",
     "test",
 ]
 
 STANDARD_DEVICE_COMMANDS = (
     "list-devices",
     "activate-devices",
-    "check-devices",
     "test",
 )
 
@@ -90,11 +88,7 @@ def unsupported_ok(
     return ok_result(
         capability,
         message=message or f"{capability} is not applicable for this robot",
-        devices=(
-            []
-            if devices is None and capability in {"list_devices", "check_devices"}
-            else devices
-        ),
+        devices=[] if devices is None and capability == "list_devices" else devices,
         supported=False,
     )
 
