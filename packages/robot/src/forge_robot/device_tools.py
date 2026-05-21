@@ -10,7 +10,7 @@ DeviceCapability = Literal[
     "list_devices",
     "activate_devices",
     "test",
-]
+] | str
 
 STANDARD_DEVICE_COMMANDS = (
     "list-devices",
