@@ -9,7 +9,7 @@ from typing import Any
 
 import pyarrow as pa
 
-from forge_msgs.value import ensure_record_batch
+from forge_msgs.arrow import ensure_record_batch
 from pydantic import BaseModel
 
 

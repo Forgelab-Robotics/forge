@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 import pyarrow as pa
 from pydantic import BaseModel
 
-from forge_msgs.value import ensure_record_batch
+from forge_msgs.arrow import ensure_record_batch
 
 
 class SimControl(BaseModel):

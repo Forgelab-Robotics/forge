@@ -16,8 +16,9 @@ __all__ = [
     "RobotDriver",
     "STANDARD_DEVICE_COMMANDS",
     "address_info",
-    "actuator_order",
-    "clip_and_validate_position_action",
+    "clip_and_validate_command",
+    "clip_and_validate_position_command",
+    "joint_order",
     "error_result",
     "ok_result",
     "print_json_result",
@@ -25,20 +26,26 @@ __all__ = [
     "specs_by_name",
     "unsupported_ok",
     "validate_robot_control_arrow",
+    "validate_robot_state_arrow",
 ]
 
 
 def __getattr__(name: str):
     if name in {
         "ActuatorSpec",
-        "actuator_order",
-        "clip_and_validate_position_action",
+        "clip_and_validate_command",
+        "clip_and_validate_position_command",
+        "joint_order",
         "specs_by_name",
     }:
         from . import actuator_spec
 
         return getattr(actuator_spec, name)
-    if name in {"RobotArrowSchemaError", "validate_robot_control_arrow"}:
+    if name in {
+        "RobotArrowSchemaError",
+        "validate_robot_control_arrow",
+        "validate_robot_state_arrow",
+    }:
         from . import arrow_validation
 
         return getattr(arrow_validation, name)

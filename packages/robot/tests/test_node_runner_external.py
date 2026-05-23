@@ -17,8 +17,7 @@ fake_dora = types.ModuleType("dora")
 fake_dora.Node = object
 sys.modules.setdefault("dora", fake_dora)
 
-from forge_msgs import RobotAction, RobotState
-from forge_msgs.value import ActuatorValue
+from forge_msgs import JointCommand, JointState
 from forge_robot.node_runner import run_dora_robot_node
 
 
@@ -47,11 +46,11 @@ class FakeNode:
 
 
 class FakeDriver:
-    actuator_order = ["joint1"]
+    joint_order = ["joint1"]
 
     def __init__(self) -> None:
         self.external_payloads: list[Any] = []
-        self.actions: list[RobotAction] = []
+        self.commands: list[JointCommand] = []
         self.disconnected = False
 
     def connect(self) -> None:
@@ -60,15 +59,11 @@ class FakeDriver:
     def disconnect(self) -> None:
         self.disconnected = True
 
-    def get_state(self) -> RobotState:
-        return RobotState(
-            actuators={
-                "joint1": ActuatorValue(value=1.0, mode="position", unit="radians"),
-            },
-        )
+    def get_state(self) -> JointState:
+        return JointState(name=["joint1"], position=[1.0])
 
-    def set_actuators(self, action: RobotAction) -> None:
-        self.actions.append(action)
+    def set_command(self, command: JointCommand) -> None:
+        self.commands.append(command)
 
     def ingest_external_payload(self, payload: Any) -> None:
         self.external_payloads.append(payload)
@@ -83,7 +78,7 @@ def test_runner_ignores_external_path_by_default(
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     driver = FakeDriver()
-    assert run_dora_robot_node(driver, actuator_order=driver.actuator_order) == 0
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
     assert FakeNode.merged == []
     assert driver.disconnected is True
@@ -106,7 +101,7 @@ def test_runner_merges_and_ingests_external_events(
     assert (
         run_dora_robot_node(
             driver,
-            actuator_order=driver.actuator_order,
+            joint_order=driver.joint_order,
             external_subscriptions=["ros2-joint-state"],
             on_external_event=driver.ingest_external_payload,
         )
@@ -118,7 +113,7 @@ def test_runner_merges_and_ingests_external_events(
     assert driver.disconnected is True
 
 
-def test_runner_tick_still_sends_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_tick_sends_joint_state(monkeypatch: pytest.MonkeyPatch) -> None:
     import forge_robot.node_runner as node_runner
 
     FakeNode.reset(
@@ -130,26 +125,24 @@ def test_runner_tick_still_sends_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     driver = FakeDriver()
-    assert run_dora_robot_node(driver, actuator_order=driver.actuator_order) == 0
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
-    assert [output_id for output_id, _ in FakeNode.sent] == ["state"]
+    assert [output_id for output_id, _ in FakeNode.sent] == ["joint_state"]
+    state = JointState.from_arrow(FakeNode.sent[0][1])
+    assert state.position == [1.0]
 
 
-def test_runner_parses_action_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_parses_command_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
     import forge_robot.node_runner as node_runner
 
-    action = RobotAction(
-        actuators={
-            "joint1": ActuatorValue(value=0.5, mode="position", unit="radians"),
-        },
-    )
+    command = JointCommand(name=["joint1"], position=[0.5])
     FakeNode.reset(
         [
             {
                 "kind": "dora",
                 "type": "INPUT",
-                "id": "action",
-                "value": action.to_arrow(["joint1"]),
+                "id": "command",
+                "value": command.to_arrow(),
             },
             {"kind": "dora", "type": "STOP"},
         ]
@@ -157,10 +150,35 @@ def test_runner_parses_action_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     driver = FakeDriver()
-    assert run_dora_robot_node(driver, actuator_order=driver.actuator_order) == 0
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
-    assert len(driver.actions) == 1
-    assert driver.actions[0].actuators["joint1"].value == 0.5
+    assert len(driver.commands) == 1
+    assert driver.commands[0].position == [0.5]
+
+
+def test_runner_maps_master_joint_state_to_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    import forge_robot.node_runner as node_runner
+
+    state = JointState(name=["joint1"], position=[0.75])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "master_joint_state",
+                "value": state.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
+
+    assert len(driver.commands) == 1
+    assert driver.commands[0].position == [0.75]
+    assert driver.commands[0].velocity == []
 
 
 def test_runner_requires_external_handler() -> None:
@@ -168,6 +186,6 @@ def test_runner_requires_external_handler() -> None:
     with pytest.raises(ValueError, match="on_external_event"):
         run_dora_robot_node(
             driver,
-            actuator_order=driver.actuator_order,
+            joint_order=driver.joint_order,
             external_subscriptions=["ros2-joint-state"],
         )

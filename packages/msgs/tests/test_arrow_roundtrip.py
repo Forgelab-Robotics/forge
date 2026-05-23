@@ -1,5 +1,3 @@
-"""forge_msgs 与 Arrow 互转的往返测试及 dora 场景（bytes/Table/空 batch）。"""
-
 from __future__ import annotations
 
 import io
@@ -9,494 +7,187 @@ import pyarrow as pa
 import pytest
 from PIL import Image as PILImage
 
-from forge_msgs.robot import RobotAction, RobotState
-from forge_msgs.task_robot import Action, ActionSequence, ProprioState
-from forge_msgs.image import Image
-from forge_msgs.value import ActuatorValue, JointValue, ensure_record_batch
+from forge_msgs.arrow import ensure_record_batch
+from forge_msgs.image import CompressedImage, Image
+from forge_msgs.joint import JointCommand, JointState
 
 
-# ---------- 公共顺序 ----------
-JOINT_ORDER = ["j1", "j2", "j3"]
-ACTUATOR_ORDER = ["a1", "a2"]
+def _to_ipc_bytes(batch: pa.RecordBatch) -> bytes:
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    return sink.getvalue().to_pybytes()
 
 
-# ---------- ensure_record_batch ----------
 def test_ensure_record_batch_record_batch() -> None:
     batch = pa.RecordBatch.from_pydict({"x": [1, 2], "y": [3.0, 4.0]})
-    out = ensure_record_batch(batch)
-    assert out is batch
-    assert out.num_rows == 2
+    assert ensure_record_batch(batch) is batch
 
 
 def test_ensure_record_batch_table() -> None:
     batch = pa.RecordBatch.from_pydict({"x": [1, 2]})
-    table = pa.Table.from_batches([batch])
-    out = ensure_record_batch(table)
+    out = ensure_record_batch(pa.Table.from_batches([batch]))
     assert isinstance(out, pa.RecordBatch)
     assert out.num_rows == 2
-    assert out.column("x")[0].as_py() == 1
+    assert out["x"][0].as_py() == 1
 
 
-def test_ensure_record_batch_bytes_ipc() -> None:
-    batch = pa.RecordBatch.from_pydict({"mode": [0], "unit": [0], "j1": [1.0]})
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    out = ensure_record_batch(data)
-    assert isinstance(out, pa.RecordBatch)
-    assert out.num_rows == 1
-    assert out.column("j1")[0].as_py() == 1.0
+def test_ensure_record_batch_ipc_bytes() -> None:
+    batch = pa.RecordBatch.from_pydict({"x": [1]})
+    out = ensure_record_batch(_to_ipc_bytes(batch))
+    assert out["x"][0].as_py() == 1
 
 
 def test_ensure_record_batch_struct_array() -> None:
-    """dora 有时传 StructArray（RecordBatch 被当作单列 struct）。"""
-    batch = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([[0, 0, 0]], type=pa.list_(pa.int8())),
-            "unit": pa.array([[0, 0, 0]], type=pa.list_(pa.int8())),
-            "j1": pa.array([1.0], type=pa.float32()),
-            "j2": pa.array([2.0], type=pa.float32()),
-        }
-    )
-    # 单行 RecordBatch 转成 StructArray：每列变成 struct 的一个字段
-    struct_array = pa.StructArray.from_arrays(
+    batch = pa.RecordBatch.from_pydict({"x": [1], "y": [2]})
+    struct = pa.StructArray.from_arrays(
         [batch.column(i) for i in range(batch.num_columns)],
         names=list(batch.schema.names),
     )
-    out = ensure_record_batch(struct_array)
-    assert isinstance(out, pa.RecordBatch)
-    assert out.num_rows == 1
-    assert out.column("j1")[0].as_py() == 1.0
-    assert out.column("j2")[0].as_py() == 2.0
+    out = ensure_record_batch(struct)
+    assert out["x"][0].as_py() == 1
+    assert out["y"][0].as_py() == 2
 
 
 def test_ensure_record_batch_invalid_type() -> None:
-    with pytest.raises(TypeError, match="from_arrow 需要"):
+    with pytest.raises(TypeError, match="from_arrow expects"):
         ensure_record_batch([1, 2, 3])  # type: ignore[arg-type]
 
 
-# ---------- RobotState ----------
-def _robot_state() -> RobotState:
-    return RobotState(
-        actuators={
-            "a1": ActuatorValue(value=1.0, mode="position", unit="radians"),
-            "a2": ActuatorValue(value=2.0, mode="velocity", unit="radians/s"),
-        }
+def test_joint_state_roundtrip_record_batch_table_and_bytes() -> None:
+    state = JointState(
+        name=["j1", "j2"],
+        position=[1.0, 2.0],
+        velocity=[0.1, 0.2],
+        effort=[],
     )
+    batch = state.to_arrow()
+
+    back = JointState.from_arrow(batch)
+    assert back == state
+
+    from_table = JointState.from_arrow(pa.Table.from_batches([batch]))
+    assert from_table == state
+
+    from_bytes = JointState.from_arrow(_to_ipc_bytes(batch))
+    assert from_bytes == state
 
 
-def test_robot_state_to_arrow_from_arrow_record_batch() -> None:
-    state = _robot_state()
-    batch = state.to_arrow(ACTUATOR_ORDER)
-    assert isinstance(batch, pa.RecordBatch)
-    back = RobotState.from_arrow(batch, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == 1.0
-    assert back.actuators["a2"].value == 2.0
-    # 每个 actuator 各自保留 mode/unit
-    assert back.actuators["a1"].mode == "position"
-    assert back.actuators["a1"].unit == "radians"
-    assert back.actuators["a2"].mode == "velocity"
-    assert back.actuators["a2"].unit == "radians/s"
+def test_joint_state_validation() -> None:
+    with pytest.raises(ValueError, match="name must contain"):
+        JointState(name=[], position=[])
+
+    with pytest.raises(ValueError, match="unique"):
+        JointState(name=["j1", "j1"], position=[1.0, 2.0])
+
+    with pytest.raises(ValueError, match="same length"):
+        JointState(name=["j1", "j2"], position=[1.0])
 
 
-def test_robot_state_to_arrow_from_arrow_bytes() -> None:
-    """模拟 dora 收到 IPC 序列化后的 bytes。"""
-    state = _robot_state()
-    batch = state.to_arrow(ACTUATOR_ORDER)
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back = RobotState.from_arrow(data, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == 1.0
-    assert back.actuators["a2"].value == 2.0
+def test_joint_state_np_helpers() -> None:
+    state = JointState(name=["j2", "j1"], position=[2.0, 1.0])
+    arr = state.to_np(["j1", "j2", "missing"])
+    np.testing.assert_array_equal(arr, np.array([1.0, 2.0, 0.0], dtype=np.float64))
+
+    from_np = JointState.from_np(np.array([3.0, 4.0]), ["j1", "j2"])
+    assert from_np.name == ["j1", "j2"]
+    assert from_np.position == [3.0, 4.0]
+    assert from_np.velocity == []
 
 
-def test_robot_state_to_arrow_from_arrow_table() -> None:
-    state = _robot_state()
-    batch = state.to_arrow(ACTUATOR_ORDER)
-    table = pa.Table.from_batches([batch])
-    back = RobotState.from_arrow(table, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == 1.0
-    assert back.actuators["a2"].value == 2.0
-
-
-def test_robot_state_from_arrow_empty_batch() -> None:
-    batch = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([], type=pa.list_(pa.int8())),
-            "unit": pa.array([], type=pa.list_(pa.int8())),
-            "a1": pa.array([], type=pa.float32()),
-            "a2": pa.array([], type=pa.float32()),
-        }
+def test_joint_command_roundtrip_and_unitree_fields() -> None:
+    command = JointCommand(
+        name=["j1", "j2"],
+        position=[1.0, 2.0],
+        velocity=[0.0, 0.0],
+        effort=[0.5, 0.6],
+        kp=[20.0, 30.0],
+        kd=[1.0, 1.2],
     )
-    back = RobotState.from_arrow(batch, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == 0.0
-    assert back.actuators["a2"].value == 0.0
-    assert back.actuators["a1"].mode == "position"
+    batch = command.to_arrow()
+    back = JointCommand.from_arrow(_to_ipc_bytes(batch))
+    assert back == command
+    np.testing.assert_array_equal(back.to_np(["j2", "j1"], "kp"), np.array([30.0, 20.0]))
 
 
-def test_robot_state_to_np_from_arrow_record_batch() -> None:
-    state = _robot_state()
-    batch = state.to_arrow(ACTUATOR_ORDER)
-    arr = RobotState.to_np_from_arrow(batch, ACTUATOR_ORDER)
-    np.testing.assert_array_almost_equal(arr, np.array([1.0, 2.0], dtype=np.float32))
-
-
-def test_robot_state_to_np_from_arrow_bytes() -> None:
-    state = _robot_state()
-    batch = state.to_arrow(ACTUATOR_ORDER)
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    arr = RobotState.to_np_from_arrow(data, ACTUATOR_ORDER)
-    np.testing.assert_array_almost_equal(arr, np.array([1.0, 2.0], dtype=np.float32))
-
-
-def test_robot_state_from_arrow_order_has_extra_column() -> None:
-    """batch 中缺少某列时用 0.0 填充。"""
-    batch = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([[0, 0]], type=pa.list_(pa.int8())),
-            "unit": pa.array([[0, 0]], type=pa.list_(pa.int8())),
-            "a1": pa.array([10.0], type=pa.float32()),
-            # 无 "a2"
-        }
+def test_joint_command_from_np() -> None:
+    command = JointCommand.from_np(
+        np.array([1.0, 2.0]),
+        ["j1", "j2"],
+        field="effort",
     )
-    back = RobotState.from_arrow(batch, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == 10.0
-    assert back.actuators["a2"].value == 0.0
+    assert command.name == ["j1", "j2"]
+    assert command.effort == [1.0, 2.0]
+    assert command.position == []
 
 
-# ---------- RobotAction ----------
-def _robot_action() -> RobotAction:
-    return RobotAction(
-        actuators={
-            "a1": ActuatorValue(value=-1.0, mode="torque", unit="Nm"),
-            "a2": ActuatorValue(value=-2.0, mode="position", unit="radians"),
-        }
+def test_image_rgb_roundtrip() -> None:
+    frame = np.array(
+        [
+            [[255, 0, 0], [0, 255, 0]],
+            [[0, 0, 255], [255, 255, 255]],
+        ],
+        dtype=np.uint8,
     )
+    image = Image.from_numpy(frame, encoding="rgb8")
+    assert image.step == 6
 
-
-def test_robot_action_to_arrow_from_arrow_record_batch() -> None:
-    action = _robot_action()
-    batch = action.to_arrow(ACTUATOR_ORDER)
-    back = RobotAction.from_arrow(batch, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == -1.0
-    assert back.actuators["a2"].value == -2.0
-    assert back.actuators["a1"].unit == "Nm"
-
-
-def test_robot_action_from_arrow_bytes_and_empty_batch() -> None:
-    action = _robot_action()
-    batch = action.to_arrow(ACTUATOR_ORDER)
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back = RobotAction.from_arrow(data, ACTUATOR_ORDER)
-    assert back.actuators["a1"].value == -1.0
-
-    empty = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([], type=pa.list_(pa.int8())),
-            "unit": pa.array([], type=pa.list_(pa.int8())),
-            "a1": pa.array([], type=pa.float32()),
-            "a2": pa.array([], type=pa.float32()),
-        }
-    )
-    back_empty = RobotAction.from_arrow(empty, ACTUATOR_ORDER)
-    assert back_empty.actuators["a1"].value == 0.0
-
-
-# ---------- ProprioState ----------
-def _proprio_state(timestamp: float = 0.0) -> ProprioState:
-    return ProprioState(
-        joints={
-            "j1": JointValue(value=0.1, mode="position", unit="radians"),
-            "j2": JointValue(value=0.2, mode="position", unit="radians"),
-            "j3": JointValue(value=0.3, mode="position", unit="radians"),
-        },
-        timestamp=timestamp,
-    )
-
-
-def test_proprio_state_to_arrow_from_arrow_record_batch() -> None:
-    state = _proprio_state()
-    batch = state.to_arrow(JOINT_ORDER)
-    back = ProprioState.from_arrow(batch, JOINT_ORDER)
-    assert back.joints["j1"].value == pytest.approx(0.1)
-    assert back.joints["j2"].value == pytest.approx(0.2)
-    assert back.joints["j3"].value == pytest.approx(0.3)
-    assert back.timestamp == 0.0
-
-
-def test_proprio_state_timestamp_roundtrip() -> None:
-    state = _proprio_state(timestamp=42.0)
-    batch = state.to_arrow(JOINT_ORDER)
-    back = ProprioState.from_arrow(batch, JOINT_ORDER)
-    assert back.timestamp == pytest.approx(42.0)
-
-
-def test_proprio_state_to_arrow_from_arrow_bytes() -> None:
-    state = _proprio_state()
-    batch = state.to_arrow(JOINT_ORDER)
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back = ProprioState.from_arrow(data, JOINT_ORDER)
-    assert back.joints["j1"].value == pytest.approx(0.1)
-
-
-def test_proprio_state_to_np_from_arrow() -> None:
-    state = _proprio_state()
-    batch = state.to_arrow(JOINT_ORDER)
-    arr = ProprioState.to_np_from_arrow(batch, JOINT_ORDER)
-    np.testing.assert_array_almost_equal(
-        arr, np.array([0.1, 0.2, 0.3], dtype=np.float32)
-    )
-
-
-def test_proprio_state_from_arrow_empty_batch() -> None:
-    batch = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([], type=pa.list_(pa.int8())),
-            "unit": pa.array([], type=pa.list_(pa.int8())),
-            "timestamp": pa.array([], type=pa.float64()),
-            **{name: pa.array([], type=pa.float32()) for name in JOINT_ORDER},
-        }
-    )
-    back = ProprioState.from_arrow(batch, JOINT_ORDER)
-    for name in JOINT_ORDER:
-        assert back.joints[name].value == 0.0
-        assert back.joints[name].mode == "position"
-    assert back.timestamp == 0.0
-
-
-# ---------- Image ----------
-def test_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
-    img = Image(
-        width=2,
-        height=1,
-        channels=3,
-        encoding="rgb8",
-        data=bytes([255, 0, 0, 0, 255, 0]),
-    )
-    batch = img.to_arrow()
-    back = Image.from_arrow(batch)
+    back = Image.from_arrow(_to_ipc_bytes(image.to_arrow()))
+    assert back.height == 2
     assert back.width == 2
-    assert back.height == 1
-    assert back.channels == 3
     assert back.encoding == "rgb8"
-    assert back.data == img.data
-
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back2 = Image.from_arrow(data)
-    assert back2.data == img.data
+    np.testing.assert_array_equal(back.to_numpy(), frame)
 
 
-def test_compressed_image_to_arrow_from_arrow_record_batch_and_bytes() -> None:
-    img = Image(
-        width=640,
-        height=480,
-        channels=0,
-        encoding="jpeg",
-        data=bytes([0xFF, 0xD8, 0xFF, 0xD9]),  # minimal jpeg-like bytes for roundtrip
+def test_image_mono_and_depth_roundtrip() -> None:
+    mono = np.array([[0, 1], [2, 3]], dtype=np.uint8)
+    mono_image = Image.from_numpy(mono, encoding="mono8")
+    np.testing.assert_array_equal(Image.from_arrow(mono_image.to_arrow()).to_numpy(), mono)
+
+    depth = np.array([[100, 200], [300, 400]], dtype=np.uint16)
+    depth_image = Image.from_numpy(depth, encoding="16UC1")
+    assert depth_image.step == 4
+    np.testing.assert_array_equal(Image.from_arrow(depth_image.to_arrow()).to_numpy(), depth)
+
+
+def test_image_rejects_invalid_data_length() -> None:
+    with pytest.raises(ValueError, match="data length"):
+        Image(height=2, width=2, encoding="rgb8", step=6, data=b"too-short")
+
+
+def test_image_with_row_padding() -> None:
+    data = bytes([1, 2, 3, 4, 0, 0, 5, 6, 7, 8, 0, 0])
+    image = Image(height=2, width=2, encoding="mono8", step=6, data=data)
+    np.testing.assert_array_equal(
+        image.to_numpy(),
+        np.array([[1, 2], [5, 6]], dtype=np.uint8),
     )
-    batch = img.to_arrow()
-    back = Image.from_arrow(batch)
-    assert back.width == 640
-    assert back.height == 480
-    assert back.channels == 0
-    assert back.encoding == "jpeg"
-    assert back.data == img.data
-
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back2 = Image.from_arrow(data)
-    assert back2.data == img.data
 
 
-def test_image_to_numpy_decodes_jpeg() -> None:
-    """to_numpy() 对 encoding=jpeg 能解码为 HWC uint8。"""
-    # 用 Pillow 生成一小块真实 JPEG
-    rgb = np.zeros((4, 6, 3), dtype=np.uint8)
-    rgb[0, 0] = [255, 0, 0]
-    rgb[2, 3] = [0, 255, 0]
-    pil = PILImage.fromarray(rgb)
-    buf = io.BytesIO()
-    pil.save(buf, format="JPEG")
-    jpeg_bytes = buf.getvalue()
+def test_compressed_image_roundtrip_record_batch_and_bytes() -> None:
+    frame = np.zeros((4, 6, 3), dtype=np.uint8)
+    frame[0, 0] = [255, 0, 0]
+    compressed = CompressedImage.from_numpy(frame, format="jpeg")
+    assert compressed.format == "jpeg"
+    assert compressed.data
 
-    img = Image(
-        width=6,
-        height=4,
-        channels=0,
-        encoding="jpeg",
-        data=jpeg_bytes,
-    )
-    arr = img.to_numpy()
+    back = CompressedImage.from_arrow(compressed.to_arrow())
+    assert back.format == "jpeg"
+    assert back.data == compressed.data
+
+    from_bytes = CompressedImage.from_arrow(_to_ipc_bytes(compressed.to_arrow()))
+    arr = from_bytes.to_numpy()
     assert arr.dtype == np.uint8
-    assert arr.ndim == 3
-    assert arr.shape[0] == 4 and arr.shape[1] == 6 and arr.shape[2] == 3
-    # 解码后大致为 RGB（JPEG 有损，只做形状与类型检查）
-    assert arr.min() >= 0 and arr.max() <= 255
+    assert arr.shape == frame.shape
 
 
-def test_image_to_numpy_decodes_png() -> None:
-    """to_numpy() 对 encoding=png 能解码为 HWC uint8。"""
-    rgb = np.ones((2, 3, 3), dtype=np.uint8) * 128
-    pil = PILImage.fromarray(rgb)
-    buf = io.BytesIO()
-    pil.save(buf, format="PNG")
-    png_bytes = buf.getvalue()
+def test_compressed_image_decodes_png() -> None:
+    frame = np.ones((2, 3, 3), dtype=np.uint8) * 128
+    pil = PILImage.fromarray(frame)
+    buffer = io.BytesIO()
+    pil.save(buffer, format="PNG")
 
-    img = Image(
-        width=3,
-        height=2,
-        channels=0,
-        encoding="png",
-        data=png_bytes,
-    )
-    arr = img.to_numpy()
-    assert arr.dtype == np.uint8
-    assert arr.shape == (2, 3, 3)
+    compressed = CompressedImage(format="png", data=buffer.getvalue())
+    arr = compressed.to_numpy()
+    assert arr.shape == frame.shape
     np.testing.assert_array_equal(arr, 128)
-
-
-def test_depth_u16_to_arrow_from_arrow_and_numpy() -> None:
-    depth = np.array([[100, 200], [3000, 4000]], dtype=np.uint16)
-    img = Image.from_numpy(depth, encoding="depth_u16")
-    assert img.encoding == "depth_u16"
-    assert img.channels == 1
-    assert img.width == 2 and img.height == 2
-    back = img.to_numpy()
-    assert back.dtype == np.uint16
-    assert back.ndim == 2
-    np.testing.assert_array_equal(back, depth)
-
-    batch = img.to_arrow()
-    back2 = Image.from_arrow(batch)
-    assert back2.encoding == "depth_u16"
-    assert back2.data == img.data
-    np.testing.assert_array_equal(back2.to_numpy(), depth)
-
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back3 = Image.from_arrow(data)
-    np.testing.assert_array_equal(back3.to_numpy(), depth)
-
-    with pytest.raises(ValueError, match="depth_u16"):
-        img.to_jpeg_bytes(quality=85)
-
-
-def test_gray8_to_jpeg_bytes_not_supported() -> None:
-    g = np.zeros((2, 3, 1), dtype=np.uint8)
-    img = Image.from_numpy(g, encoding="gray8")
-    with pytest.raises(ValueError, match="gray8"):
-        img.to_jpeg_bytes()
-
-
-# ---------- Action (task_robot) ----------
-def _action() -> Action:
-    return Action(
-        joints={
-            "j1": JointValue(value=1.0, mode="velocity", unit="radians/s"),
-            "j2": JointValue(value=2.0, mode="velocity", unit="radians/s"),
-            "j3": JointValue(value=3.0, mode="velocity", unit="radians/s"),
-        }
-    )
-
-
-def test_action_to_arrow_from_arrow_record_batch() -> None:
-    action = _action()
-    batch = action.to_arrow(JOINT_ORDER)
-    back = Action.from_arrow(batch, JOINT_ORDER)
-    assert back.joints["j1"].value == 1.0
-    assert back.joints["j2"].value == 2.0
-    assert back.joints["j3"].unit == "radians/s"
-
-
-def test_action_from_arrow_bytes_and_table() -> None:
-    action = _action()
-    batch = action.to_arrow(JOINT_ORDER)
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-    back = Action.from_arrow(data, JOINT_ORDER)
-    assert back.joints["j1"].value == 1.0
-
-    table = pa.Table.from_batches([batch])
-    back2 = Action.from_arrow(table, JOINT_ORDER)
-    assert back2.joints["j1"].value == 1.0
-
-
-def test_action_from_arrow_empty_batch() -> None:
-    batch = pa.RecordBatch.from_pydict(
-        {
-            "mode": pa.array([], type=pa.list_(pa.int8())),
-            "unit": pa.array([], type=pa.list_(pa.int8())),
-            **{name: pa.array([], type=pa.float32()) for name in JOINT_ORDER},
-        }
-    )
-    back = Action.from_arrow(batch, JOINT_ORDER)
-    for name in JOINT_ORDER:
-        assert back.joints[name].value == 0.0
-
-
-def test_action_from_arrow_struct_array() -> None:
-    """模拟 dora 传入 StructArray 的场景（task_robot / mujoco 节点）。"""
-    action = _action()
-    batch = action.to_arrow(JOINT_ORDER)
-    struct_array = pa.StructArray.from_arrays(
-        [batch.column(i) for i in range(batch.num_columns)],
-        names=list(batch.schema.names),
-    )
-    back = Action.from_arrow(struct_array, JOINT_ORDER)
-    assert back.joints["j1"].value == 1.0
-    assert back.joints["j2"].value == 2.0
-    assert back.joints["j3"].value == 3.0
-
-
-# ---------- ActionSequence (task_robot) ----------
-def test_action_sequence_to_arrow_from_arrow_with_ref_timestamp() -> None:
-    a1 = _action()
-    a2 = _action()
-    seq = ActionSequence(actions=[a1, a2], ref_timestamp=1.23)
-
-    batch = seq.to_arrow(JOINT_ORDER)
-    assert isinstance(batch, pa.RecordBatch)
-    assert batch.num_rows == 2
-    assert "ref_timestamp" in batch.schema.names
-    assert batch["ref_timestamp"][0].as_py() == pytest.approx(1.23)
-
-    back = ActionSequence.from_arrow(batch, JOINT_ORDER)
-    assert len(back.actions) == 2
-    assert back.ref_timestamp == pytest.approx(1.23)
-    assert back.actions[0].joints["j1"].value == pytest.approx(a1.joints["j1"].value)
-
-
-def test_action_sequence_from_arrow_bytes_preserves_ref_timestamp() -> None:
-    a1 = _action()
-    seq = ActionSequence(actions=[a1], ref_timestamp=2.5)
-    batch = seq.to_arrow(JOINT_ORDER)
-
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, batch.schema) as writer:
-        writer.write_batch(batch)
-    data = sink.getvalue().to_pybytes()
-
-    back = ActionSequence.from_arrow(data, JOINT_ORDER)
-    assert len(back.actions) == 1
-    assert back.ref_timestamp == pytest.approx(2.5)

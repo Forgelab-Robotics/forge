@@ -1,563 +1,324 @@
 use std::sync::Arc;
 
-use arrow_array::{Array, ArrayRef, Int32Array, Int8Array, LargeBinaryArray, RecordBatch};
+use arrow_array::{Array, ArrayRef, LargeBinaryArray, RecordBatch, StringArray, UInt32Array};
 use arrow_schema::{DataType, Field, Schema};
 use bytes::Bytes;
 use image as image_crate;
 use ndarray::{Array2, Array3, ArrayView2, ArrayView3};
 
-/// 图像编码/格式，对齐 Python 版 `ImageEncoding`。
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(i8)]
-pub enum ImageEncoding {
-    Rgb8 = 0,
-    Bgr8 = 1,
-    Gray8 = 2,
-    Jpeg = 3,
-    Png = 4,
-    /// 深度图：小端 uint16，每像素 2 字节，与 Python `depth_u16` 对齐。
-    DepthU16 = 5,
-}
-
-impl ImageEncoding {
-    pub fn from_i8(v: i8) -> Self {
-        match v {
-            0 => ImageEncoding::Rgb8,
-            1 => ImageEncoding::Bgr8,
-            2 => ImageEncoding::Gray8,
-            3 => ImageEncoding::Jpeg,
-            4 => ImageEncoding::Png,
-            5 => ImageEncoding::DepthU16,
-            _ => ImageEncoding::Rgb8,
-        }
-    }
-
-    pub fn as_i8(self) -> i8 {
-        self as i8
-    }
-
-    pub fn is_compressed(self) -> bool {
-        matches!(self, ImageEncoding::Jpeg | ImageEncoding::Png)
-    }
-}
-
-/// Rust 版统一图像消息。
-///
-/// - `width` / `height`: 图像尺寸
-/// - `channels`: 原始像素通道数（压缩格式时可为 0）
-/// - `encoding`: 像素或压缩格式
-/// - `data`: 原始像素 bytes（H*W*C；`DepthU16` 时为 H*W*2 小端 u16）或压缩 bitstream
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Image {
-    pub width: i32,
-    pub height: i32,
-    pub channels: i8,
-    pub encoding: ImageEncoding,
+    pub height: u32,
+    pub width: u32,
+    pub encoding: String,
+    pub step: u32,
+    pub data: Bytes,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompressedImage {
+    pub format: String,
     pub data: Bytes,
 }
 
 impl Image {
     pub fn new(
-        width: i32,
-        height: i32,
-        channels: i8,
-        encoding: ImageEncoding,
+        height: u32,
+        width: u32,
+        encoding: impl Into<String>,
+        step: u32,
         data: Bytes,
-    ) -> Self {
-        Self {
-            width,
-            height,
-            channels,
-            encoding,
-            data,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            width: 0,
-            height: 0,
-            channels: 0,
-            encoding: ImageEncoding::Rgb8,
-            data: Bytes::new(),
-        }
-    }
-
-    pub fn is_compressed(&self) -> bool {
-        self.encoding.is_compressed()
-    }
-
-    /// 将当前图像编码为单行 Arrow `RecordBatch`。
-    ///
-    /// schema: { width: int32, height: int32, channels: int8, encoding: int8, data: large_binary }
-    pub fn to_record_batch(&self) -> RecordBatch {
-        let width_arr = Int32Array::from(vec![self.width]);
-        let height_arr = Int32Array::from(vec![self.height]);
-        let channels_arr = Int8Array::from(vec![self.channels]);
-        let encoding_arr = Int8Array::from(vec![self.encoding.as_i8()]);
-        // 这里会复制一份数据以构造 LargeBinaryArray
-        // 如果需要极致零拷贝，通常需要直接操作 arrow_buffer::Buffer，但 Bytes 类型已足够通用
-        let data_arr = LargeBinaryArray::from_iter_values(std::iter::once(&self.data));
-
-        let fields = vec![
-            Field::new("width", DataType::Int32, false),
-            Field::new("height", DataType::Int32, false),
-            Field::new("channels", DataType::Int8, false),
-            Field::new("encoding", DataType::Int8, false),
-            Field::new("data", DataType::LargeBinary, false),
-        ];
-        let schema = Arc::new(Schema::new(fields));
-
-        let columns: Vec<ArrayRef> = vec![
-            Arc::new(width_arr),
-            Arc::new(height_arr),
-            Arc::new(channels_arr),
-            Arc::new(encoding_arr),
-            Arc::new(data_arr),
-        ];
-
-        RecordBatch::try_new(schema, columns).expect("valid Image record batch")
-    }
-
-    /// 从 Arrow `RecordBatch` 解析图像。
-    ///
-    /// - 当 `batch.num_rows() == 0` 时，返回空图像。
-    /// - 当列缺失或类型不匹配时，返回空图像（避免在运行时 panic）。
-    pub fn from_record_batch(batch: &RecordBatch) -> Self {
-        if batch.num_rows() == 0 {
-            return Self::empty();
-        }
-
-        let schema = batch.schema();
-
-        macro_rules! get_column_as {
-            ($col_name:expr, $ty:ty) => {{
-                let idx = match schema.index_of($col_name) {
-                    Ok(i) => i,
-                    Err(_) => return Self::empty(),
-                };
-                let col = batch.column(idx);
-                match col.as_any().downcast_ref::<$ty>() {
-                    Some(arr) => arr,
-                    None => return Self::empty(),
-                }
-            }};
-        }
-
-        let width_arr = get_column_as!("width", Int32Array);
-        let height_arr = get_column_as!("height", Int32Array);
-        let channels_arr = get_column_as!("channels", Int8Array);
-        let encoding_arr = get_column_as!("encoding", Int8Array);
-        let data_arr = get_column_as!("data", LargeBinaryArray);
-
-        if width_arr.is_empty()
-            || height_arr.is_empty()
-            || channels_arr.is_empty()
-            || encoding_arr.is_empty()
-            || data_arr.is_empty()
-        {
-            return Self::empty();
-        }
-
-        let width = width_arr.value(0);
-        let height = height_arr.value(0);
-        let channels = channels_arr.value(0);
-        let encoding = ImageEncoding::from_i8(encoding_arr.value(0));
-
-        let data = Bytes::copy_from_slice(data_arr.value(0));
-
-        Self {
-            width,
-            height,
-            channels,
-            encoding,
-            data,
-        }
-    }
-
-    /// 将 `depth_u16` 图像转为 `Array2<u16>`（HW），小端每像素 2 字节。
-    pub fn to_depth_u16_ndarray(&self) -> Result<Array2<u16>, ImageError> {
-        if self.encoding != ImageEncoding::DepthU16 {
-            return Err(ImageError::UnsupportedEncoding(
-                "to_depth_u16_ndarray requires encoding DepthU16".to_string(),
-            ));
-        }
-        if self.width <= 0 || self.height <= 0 {
-            return Ok(Array2::zeros((0, 0)));
-        }
-        let w = self.width as usize;
-        let h = self.height as usize;
-        let expected = w
-            .checked_mul(h)
-            .and_then(|n| n.checked_mul(2))
-            .ok_or_else(|| ImageError::InvalidShape("size overflow".to_string()))?;
-        if self.data.len() != expected {
-            return Err(ImageError::InvalidShape(format!(
-                "data length {} does not match width*height*2={}",
-                self.data.len(),
-                expected
-            )));
-        }
-        let mut vec = Vec::with_capacity(w * h);
-        for chunk in self.data.chunks_exact(2) {
-            vec.push(u16::from_le_bytes([chunk[0], chunk[1]]));
-        }
-        Array2::from_shape_vec((h, w), vec).map_err(|e| ImageError::InvalidShape(e.to_string()))
-    }
-
-    /// 从 `Array2<u16>` 构建深度图（`DepthU16`，channels=1）。
-    pub fn from_depth_u16_ndarray(frame: ArrayView2<u16>) -> Result<Self, ImageError> {
-        let (h, w) = frame.dim();
-        let mut buf = Vec::with_capacity(h * w * 2);
-        for &v in frame.iter() {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
-        Ok(Self {
-            width: w as i32,
-            height: h as i32,
-            channels: 1,
-            encoding: ImageEncoding::DepthU16,
-            data: Bytes::from(buf),
-        })
-    }
-
-    /// 将图像转换为 `ndarray::Array3<u8>`（HWC）。
-    ///
-    /// - 对于 `rgb8` / `bgr8` / `gray8`：从原始像素数据 reshape。
-    /// - 对于 `jpeg` / `png`：使用 `image` crate 解码后再转换为 ndarray。
-    /// - 对于 `DepthU16`：请使用 [`Self::to_depth_u16_ndarray`]。
-    pub fn to_ndarray(&self) -> Result<Array3<u8>, ImageError> {
-        if self.encoding == ImageEncoding::DepthU16 {
-            return Err(ImageError::UnsupportedEncoding(
-                "use to_depth_u16_ndarray() for DepthU16 images".to_string(),
-            ));
-        }
-
-        if self.width <= 0 || self.height <= 0 {
-            return Ok(Array3::zeros((0, 0, 0)));
-        }
-
-        if self.is_compressed() {
-            return self.decode_compressed_to_ndarray();
-        }
-
-        let w = self.width as usize;
-        let h = self.height as usize;
-        let c = self.channels as usize;
-        if c == 0 {
-            return Err(ImageError::InvalidShape(
-                "channels must be > 0 for raw encodings".to_string(),
-            ));
-        }
-
-        let expected = w
-            .checked_mul(h)
-            .and_then(|v| v.checked_mul(c))
-            .ok_or_else(|| {
-                ImageError::InvalidShape("width * height * channels overflow".to_string())
-            })?;
-
-        if self.data.len() != expected {
-            return Err(ImageError::InvalidShape(format!(
-                "data length {} does not match width*height*channels={}",
-                self.data.len(),
-                expected
-            )));
-        }
-
-        let arr = Array3::from_shape_vec((h, w, c), self.data.to_vec())
-            .map_err(|e| ImageError::InvalidShape(e.to_string()))?;
-
-        Ok(arr)
-    }
-
-    /// 从 ndarray (HWC, u8) 构建图像（仅支持原始像素编码）。
-    pub fn from_ndarray(
-        frame: ArrayView3<u8>,
-        encoding: ImageEncoding,
     ) -> Result<Self, ImageError> {
-        if matches!(
-            encoding,
-            ImageEncoding::Jpeg | ImageEncoding::Png | ImageEncoding::DepthU16
-        ) {
-            return Err(ImageError::UnsupportedEncoding(
-                "from_ndarray does not support compressed (jpeg/png) or DepthU16; use from_depth_u16_ndarray".to_string(),
-            ));
-        }
-
-        let (h, w, c) = frame.dim();
-
-        let channels = c as i8;
-        if channels <= 0 {
-            return Err(ImageError::InvalidShape(
-                "channels must be > 0".to_string(),
-            ));
-        }
-
-        let (data, _offset) = frame.to_owned().into_raw_vec_and_offset();
-
-        Ok(Self {
-            width: w as i32,
-            height: h as i32,
-            channels,
-            encoding,
-            data: Bytes::from(data),
-        })
-    }
-
-    /// 将当前图像转为 JPEG 字节流。
-    ///
-    /// - 若当前已为 jpeg 且 data 非空，则直接返回拷贝。
-    /// - 其它格式会先解码为 ndarray，再重新编码为 jpeg。
-    ///
-    /// `Gray8` / `DepthU16` 为原始传感器语义，不支持 JPEG，请使用原始 `data`。
-    pub fn to_jpeg_bytes(&self, quality: u8) -> Result<Bytes, ImageError> {
-        if matches!(self.encoding, ImageEncoding::Jpeg) && !self.data.is_empty() {
-            return Ok(self.data.clone());
-        }
-
-        if matches!(
-            self.encoding,
-            ImageEncoding::Gray8 | ImageEncoding::DepthU16
-        ) {
-            return Err(ImageError::UnsupportedEncoding(
-                "Gray8 and DepthU16 do not support JPEG; use raw data".to_string(),
-            ));
-        }
-
-        let arr = self.to_ndarray()?;
-        if arr.is_empty() {
-            return Ok(Bytes::new());
-        }
-
-        let (_, _, c) = arr.dim();
-        let mut buf = Vec::new();
-
-        // 对 bgr8 做通道翻转，统一为 RGB
-        let mut rgb_arr = match (self.encoding, c) {
-            (ImageEncoding::Bgr8, 3) => {
-                let mut tmp = arr.to_owned();
-                for pix in tmp.iter_mut().collect::<Vec<_>>().chunks_exact_mut(3) {
-                    pix.swap(0, 2);
-                }
-                tmp
-            }
-            _ => arr,
+        let value = Self {
+            height,
+            width,
+            encoding: encoding.into(),
+            step,
+            data,
         };
-
-        // 灰度转 RGB
-        let (h, w, c) = rgb_arr.dim();
-        if c == 1 {
-            let mut rgb = Array3::<u8>::zeros((h, w, 3));
-            for y in 0..h {
-                for x in 0..w {
-                    let g = rgb_arr[(y, x, 0)];
-                    rgb[(y, x, 0)] = g;
-                    rgb[(y, x, 1)] = g;
-                    rgb[(y, x, 2)] = g;
-                }
-            }
-            rgb_arr = rgb;
-        }
-
-        let (h, w, _) = rgb_arr.dim();
-        let (rgb_flat, _offset) = rgb_arr.into_raw_vec_and_offset();
-        let img_buf = image_crate::RgbImage::from_raw(w as u32, h as u32, rgb_flat)
-            .ok_or_else(|| ImageError::InvalidShape("failed to create RgbImage".to_string()))?;
-
-        let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
-        encoder
-            .encode(
-                &img_buf,
-                img_buf.width(),
-                img_buf.height(),
-                image_crate::ColorType::Rgb8.into(),
-            )
-            .map_err(ImageError::Encode)?;
-
-        Ok(Bytes::from(buf))
+        value.validate()?;
+        Ok(value)
     }
 
-    fn decode_compressed_to_ndarray(&self) -> Result<Array3<u8>, ImageError> {
+    pub fn to_record_batch(&self) -> Result<RecordBatch, ImageError> {
+        self.validate()?;
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("height", DataType::UInt32, false),
+            Field::new("width", DataType::UInt32, false),
+            Field::new("encoding", DataType::Utf8, false),
+            Field::new("step", DataType::UInt32, false),
+            Field::new("data", DataType::LargeBinary, false),
+        ]));
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(UInt32Array::from(vec![self.height])),
+            Arc::new(UInt32Array::from(vec![self.width])),
+            Arc::new(StringArray::from(vec![self.encoding.as_str()])),
+            Arc::new(UInt32Array::from(vec![self.step])),
+            Arc::new(LargeBinaryArray::from_iter_values(std::iter::once(
+                &self.data,
+            ))),
+        ];
+        RecordBatch::try_new(schema, columns).map_err(|e| ImageError::Arrow(e.to_string()))
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, ImageError> {
+        if batch.num_rows() == 0 {
+            return Err(ImageError::Invalid(
+                "RecordBatch must contain one row".to_string(),
+            ));
+        }
+        let value = Self {
+            height: read_u32(batch, "height")?,
+            width: read_u32(batch, "width")?,
+            encoding: read_string(batch, "encoding")?,
+            step: read_u32(batch, "step")?,
+            data: read_binary(batch, "data")?,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn from_rgb8_ndarray(frame: ArrayView3<u8>) -> Result<Self, ImageError> {
+        let (height, width, channels) = frame.dim();
+        if channels != 3 {
+            return Err(ImageError::Invalid("rgb8 expects 3 channels".to_string()));
+        }
+        let (data, _offset) = frame.to_owned().into_raw_vec_and_offset();
+        Self::new(
+            height as u32,
+            width as u32,
+            "rgb8",
+            (width * 3) as u32,
+            Bytes::from(data),
+        )
+    }
+
+    pub fn to_rgb8_ndarray(&self) -> Result<Array3<u8>, ImageError> {
+        if self.encoding != "rgb8" {
+            return Err(ImageError::UnsupportedEncoding(
+                "to_rgb8_ndarray requires rgb8".to_string(),
+            ));
+        }
+        let expected_step = self.width as usize * 3;
+        if self.step as usize != expected_step {
+            return Err(ImageError::Invalid(
+                "to_rgb8_ndarray requires tightly packed rows".to_string(),
+            ));
+        }
+        Array3::from_shape_vec(
+            (self.height as usize, self.width as usize, 3),
+            self.data.to_vec(),
+        )
+        .map_err(|e| ImageError::Invalid(e.to_string()))
+    }
+
+    pub fn from_16uc1_ndarray(frame: ArrayView2<u16>) -> Result<Self, ImageError> {
+        let (height, width) = frame.dim();
+        let mut data = Vec::with_capacity(height * width * 2);
+        for &value in frame.iter() {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        Self::new(
+            height as u32,
+            width as u32,
+            "16UC1",
+            (width * 2) as u32,
+            Bytes::from(data),
+        )
+    }
+
+    pub fn to_16uc1_ndarray(&self) -> Result<Array2<u16>, ImageError> {
+        if self.encoding != "16UC1" {
+            return Err(ImageError::UnsupportedEncoding(
+                "to_16uc1_ndarray requires 16UC1".to_string(),
+            ));
+        }
+        let expected_step = self.width as usize * 2;
+        if self.step as usize != expected_step {
+            return Err(ImageError::Invalid(
+                "to_16uc1_ndarray requires tightly packed rows".to_string(),
+            ));
+        }
+        let mut values = Vec::with_capacity(self.height as usize * self.width as usize);
+        for chunk in self.data.chunks_exact(2) {
+            values.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        Array2::from_shape_vec((self.height as usize, self.width as usize), values)
+            .map_err(|e| ImageError::Invalid(e.to_string()))
+    }
+
+    fn validate(&self) -> Result<(), ImageError> {
+        let bytes_per_pixel = bytes_per_pixel(&self.encoding)?;
+        let minimum_step = self.width as usize * bytes_per_pixel;
+        if (self.step as usize) < minimum_step {
+            return Err(ImageError::Invalid(format!(
+                "step {} is smaller than width * bytes_per_pixel {}",
+                self.step, minimum_step
+            )));
+        }
+        let expected = self.step as usize * self.height as usize;
+        if self.data.len() != expected {
+            return Err(ImageError::Invalid(format!(
+                "data length {} must equal step * height {}",
+                self.data.len(),
+                expected
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl CompressedImage {
+    pub fn new(format: impl Into<String>, data: Bytes) -> Result<Self, ImageError> {
+        let value = Self {
+            format: format.into(),
+            data,
+        };
+        if value.format.is_empty() {
+            return Err(ImageError::Invalid("format must be non-empty".to_string()));
+        }
+        Ok(value)
+    }
+
+    pub fn to_record_batch(&self) -> Result<RecordBatch, ImageError> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("format", DataType::Utf8, false),
+            Field::new("data", DataType::LargeBinary, false),
+        ]));
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(StringArray::from(vec![self.format.as_str()])),
+            Arc::new(LargeBinaryArray::from_iter_values(std::iter::once(
+                &self.data,
+            ))),
+        ];
+        RecordBatch::try_new(schema, columns).map_err(|e| ImageError::Arrow(e.to_string()))
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, ImageError> {
+        if batch.num_rows() == 0 {
+            return Err(ImageError::Invalid(
+                "RecordBatch must contain one row".to_string(),
+            ));
+        }
+        Self::new(read_string(batch, "format")?, read_binary(batch, "data")?)
+    }
+
+    pub fn to_rgb8_ndarray(&self) -> Result<Array3<u8>, ImageError> {
         if self.data.is_empty() {
             return Ok(Array3::zeros((0, 0, 0)));
         }
-
-        let dyn_img =
-            image_crate::load_from_memory(&self.data).map_err(ImageError::Decode)?;
-
-        // 为了简化实现，这里区分灰度和彩色两类情况：
-        // - 灰度：输出 (H, W, 1)
-        // - 其它：统一转为 RGB，输出 (H, W, 3)
-        use image_crate::ColorType;
-        match dyn_img.color() {
-            ColorType::L8 | ColorType::La8 => {
-                let gray = dyn_img.to_luma8();
-                let (w, h) = gray.dimensions();
-                let (h_usize, w_usize) = (h as usize, w as usize);
-                let data = gray.into_raw();
-                let arr = Array3::from_shape_vec((h_usize, w_usize, 1), data)
-                    .map_err(|e| ImageError::InvalidShape(e.to_string()))?;
-                Ok(arr)
-            }
-            _ => {
-                let rgb = dyn_img.to_rgb8();
-                let (w, h) = rgb.dimensions();
-                let (h_usize, w_usize) = (h as usize, w as usize);
-                let data = rgb.into_raw();
-                let arr = Array3::from_shape_vec((h_usize, w_usize, 3), data)
-                    .map_err(|e| ImageError::InvalidShape(e.to_string()))?;
-                Ok(arr)
-            }
-        }
+        let dynamic = image_crate::load_from_memory(&self.data).map_err(ImageError::Decode)?;
+        let rgb = dynamic.to_rgb8();
+        let (width, height) = rgb.dimensions();
+        Array3::from_shape_vec((height as usize, width as usize, 3), rgb.into_raw())
+            .map_err(|e| ImageError::Invalid(e.to_string()))
     }
+}
+
+fn bytes_per_pixel(encoding: &str) -> Result<usize, ImageError> {
+    match encoding {
+        "rgb8" | "bgr8" => Ok(3),
+        "mono8" => Ok(1),
+        "16UC1" => Ok(2),
+        "32FC1" => Ok(4),
+        _ => Err(ImageError::UnsupportedEncoding(encoding.to_string())),
+    }
+}
+
+fn read_u32(batch: &RecordBatch, name: &str) -> Result<u32, ImageError> {
+    let array = column_as::<UInt32Array>(batch, name)?;
+    Ok(array.value(0))
+}
+
+fn read_string(batch: &RecordBatch, name: &str) -> Result<String, ImageError> {
+    let array = column_as::<StringArray>(batch, name)?;
+    Ok(array.value(0).to_string())
+}
+
+fn read_binary(batch: &RecordBatch, name: &str) -> Result<Bytes, ImageError> {
+    let array = column_as::<LargeBinaryArray>(batch, name)?;
+    Ok(Bytes::copy_from_slice(array.value(0)))
+}
+
+fn column_as<'a, T: 'static + Array>(
+    batch: &'a RecordBatch,
+    name: &str,
+) -> Result<&'a T, ImageError> {
+    let idx = batch
+        .schema()
+        .index_of(name)
+        .map_err(|_| ImageError::Invalid(format!("missing {name} column")))?;
+    batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<T>()
+        .ok_or_else(|| ImageError::Invalid(format!("{name} column has unexpected type")))
 }
 
 #[derive(Debug)]
 pub enum ImageError {
+    Arrow(String),
     Decode(image_crate::ImageError),
-    Encode(image_crate::ImageError),
-    InvalidShape(String),
+    Invalid(String),
     UnsupportedEncoding(String),
 }
 
 impl std::fmt::Display for ImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ImageError::Arrow(msg) => write!(f, "arrow error: {msg}"),
             ImageError::Decode(e) => write!(f, "decode error: {e}"),
-            ImageError::Encode(e) => write!(f, "encode error: {e}"),
-            ImageError::InvalidShape(msg) => write!(f, "invalid shape: {msg}"),
+            ImageError::Invalid(msg) => write!(f, "invalid image message: {msg}"),
             ImageError::UnsupportedEncoding(msg) => write!(f, "unsupported encoding: {msg}"),
         }
     }
 }
 
-impl std::error::Error for ImageError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ImageError::Decode(e) => Some(e),
-            ImageError::Encode(e) => Some(e),
-            ImageError::InvalidShape(_) => None,
-            ImageError::UnsupportedEncoding(_) => None,
-        }
-    }
-}
-
-impl From<image_crate::ImageError> for ImageError {
-    fn from(e: image_crate::ImageError) -> Self {
-        ImageError::Decode(e)
-    }
-}
-
+impl std::error::Error for ImageError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Image, ImageEncoding, ImageError};
-    use ndarray::{array, Array2, Array3};
+    use super::{CompressedImage, Image};
+    use bytes::Bytes;
+    use ndarray::{Array2, Array3, array};
 
     #[test]
-    fn raw_rgb_roundtrip_record_batch_and_ndarray() {
-        // 构造一个 2x2 RGB 小图
+    fn rgb8_roundtrip_record_batch_and_ndarray() {
         let frame: Array3<u8> = array![
             [[10u8, 20, 30], [40, 50, 60]],
             [[70u8, 80, 90], [100, 110, 120]]
         ];
-        let img = Image::from_ndarray(frame.view(), ImageEncoding::Rgb8).unwrap();
-
-        // Image -> RecordBatch
-        let batch = img.to_record_batch();
-        assert_eq!(batch.num_rows(), 1);
-
-        // RecordBatch -> Image
-        let img2 = Image::from_record_batch(&batch);
-        assert_eq!(img2.width, img.width);
-        assert_eq!(img2.height, img.height);
-        assert_eq!(img2.channels, img.channels);
-        assert_eq!(img2.encoding, img.encoding);
-        assert_eq!(img2.data, img.data);
-
-        // 再转回 ndarray，检查内容一致
-        let frame2 = img2.to_ndarray().unwrap();
-        assert_eq!(frame2.shape(), frame.shape());
+        let image = Image::from_rgb8_ndarray(frame.view()).unwrap();
+        let batch = image.to_record_batch().unwrap();
+        let back = Image::from_record_batch(&batch).unwrap();
+        assert_eq!(back, image);
+        let frame2 = back.to_rgb8_ndarray().unwrap();
         assert_eq!(frame2.as_slice().unwrap(), frame.as_slice().unwrap());
     }
 
     #[test]
-    fn gray_roundtrip_preserves_shape() {
-        // 2x2 灰度图，channels = 1
-        let frame: Array3<u8> = array![
-            [[0u8], [128u8]],
-            [[200u8], [255u8]],
-        ];
-        let img = Image::from_ndarray(frame.view(), ImageEncoding::Gray8).unwrap();
-
-        let batch = img.to_record_batch();
-        let img2 = Image::from_record_batch(&batch);
-
-        let frame2 = img2.to_ndarray().unwrap();
-        assert_eq!(frame2.shape(), frame.shape());
+    fn depth_16uc1_roundtrip_record_batch_and_ndarray() {
+        let frame: Array2<u16> = array![[100u16, 200], [300, 400]];
+        let image = Image::from_16uc1_ndarray(frame.view()).unwrap();
+        let batch = image.to_record_batch().unwrap();
+        let back = Image::from_record_batch(&batch).unwrap();
+        assert_eq!(back, image);
+        let frame2 = back.to_16uc1_ndarray().unwrap();
         assert_eq!(frame2.as_slice().unwrap(), frame.as_slice().unwrap());
     }
 
     #[test]
-    fn gray8_to_jpeg_bytes_unsupported() {
-        let frame: Array3<u8> = array![[[0u8], [1u8]], [[2u8], [3u8]]];
-        let img = Image::from_ndarray(frame.view(), ImageEncoding::Gray8).unwrap();
-        let err = img.to_jpeg_bytes(90).unwrap_err();
-        assert!(matches!(err, ImageError::UnsupportedEncoding(_)));
+    fn rejects_invalid_data_length() {
+        let result = Image::new(2, 2, "rgb8", 6, Bytes::from_static(b"bad"));
+        assert!(result.is_err());
     }
 
     #[test]
-    fn depth_u16_to_jpeg_bytes_unsupported() {
-        let frame: Array2<u16> = array![[1u16, 2], [3, 4]];
-        let img = Image::from_depth_u16_ndarray(frame.view()).unwrap();
-        let err = img.to_jpeg_bytes(90).unwrap_err();
-        assert!(matches!(err, ImageError::UnsupportedEncoding(_)));
-    }
-
-    #[test]
-    fn depth_u16_roundtrip_record_batch_and_ndarray() {
-        let frame: Array2<u16> = array![[100u16, 200], [3000, 4000]];
-        let img = Image::from_depth_u16_ndarray(frame.view()).unwrap();
-        assert_eq!(img.width, 2);
-        assert_eq!(img.height, 2);
-        assert_eq!(img.channels, 1);
-        assert_eq!(img.encoding, ImageEncoding::DepthU16);
-
-        let batch = img.to_record_batch();
-        let img2 = Image::from_record_batch(&batch);
-        assert_eq!(img2.data, img.data);
-
-        let d2 = img2.to_depth_u16_ndarray().unwrap();
-        assert_eq!(d2.shape(), frame.shape());
-        assert_eq!(d2.as_slice().unwrap(), frame.as_slice().unwrap());
-    }
-
-    #[test]
-    fn jpeg_roundtrip_to_ndarray_has_correct_shape() {
-        // 构造一个 2x2 RGB 图像
-        let frame: Array3<u8> = array![
-            [[10u8, 20, 30], [40, 50, 60]],
-            [[70u8, 80, 90], [100, 110, 120]]
-        ];
-        let img = Image::from_ndarray(frame.view(), ImageEncoding::Rgb8).unwrap();
-
-        let jpeg_bytes = img.to_jpeg_bytes(90).unwrap();
-        assert!(!jpeg_bytes.is_empty());
-
-        // 构造压缩编码的 Image（channels 对压缩格式可以为 0）
-        let compressed = Image::new(
-            img.width,
-            img.height,
-            0,
-            ImageEncoding::Jpeg,
-            jpeg_bytes,
-        );
-
-        let decoded = compressed.to_ndarray().unwrap();
-        // 解码后统一为 HWC, 3 通道 RGB
-        assert_eq!(decoded.shape(), &[img.height as usize, img.width as usize, 3]);
+    fn compressed_image_roundtrip_record_batch() {
+        let image =
+            CompressedImage::new("jpeg", Bytes::from_static(&[0xff, 0xd8, 0xff, 0xd9])).unwrap();
+        let batch = image.to_record_batch().unwrap();
+        let back = CompressedImage::from_record_batch(&batch).unwrap();
+        assert_eq!(back, image);
     }
 }
-
-
