@@ -8,6 +8,7 @@ import pytest
 from PIL import Image as PILImage
 
 from forge_msgs.arrow import ensure_record_batch
+from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 
@@ -191,3 +192,65 @@ def test_compressed_image_decodes_png() -> None:
     arr = compressed.to_numpy()
     assert arr.shape == frame.shape
     np.testing.assert_array_equal(arr, 128)
+
+
+def test_policy_command_roundtrip_record_batch_table_and_bytes() -> None:
+    command = PolicyCommand.from_inputs(
+        policy_id="default",
+        command="start_recording",
+        request_id="rec-001",
+        inputs={"output_path": "runs/demo.mcap"},
+    )
+    assert command.inputs() == {"output_path": "runs/demo.mcap"}
+
+    batch = command.to_arrow()
+    assert PolicyCommand.from_arrow(batch) == command
+    assert PolicyCommand.from_arrow(pa.Table.from_batches([batch])) == command
+    assert PolicyCommand.from_arrow(_to_ipc_bytes(batch)) == command
+
+
+def test_policy_command_validation() -> None:
+    with pytest.raises(ValueError, match="policy_id"):
+        PolicyCommand(policy_id="", command="start")
+
+    with pytest.raises(ValueError, match="snake_case"):
+        PolicyCommand(policy_id="default", command="StartRecording")
+
+    with pytest.raises(ValueError, match="JSON"):
+        PolicyCommand(policy_id="default", command="start", inputs_json="not-json")
+
+    with pytest.raises(ValueError, match="JSON object"):
+        PolicyCommand(policy_id="default", command="start", inputs_json="[]")
+
+
+def test_policy_command_status_roundtrip_and_outputs() -> None:
+    status = PolicyCommandStatus.from_outputs(
+        policy_id="default",
+        command="start_recording",
+        request_id="rec-001",
+        status="done",
+        message="recording started",
+        outputs={"path": "runs/demo.mcap"},
+    )
+    assert status.outputs() == {"path": "runs/demo.mcap"}
+
+    batch = status.to_arrow()
+    assert PolicyCommandStatus.from_arrow(batch) == status
+    assert PolicyCommandStatus.from_arrow(_to_ipc_bytes(batch)) == status
+
+
+def test_policy_command_status_validation() -> None:
+    with pytest.raises(ValueError, match="Input should be"):
+        PolicyCommandStatus(
+            policy_id="default",
+            command="start",
+            status="unknown",  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="JSON object"):
+        PolicyCommandStatus(
+            policy_id="default",
+            command="start",
+            status="error",
+            outputs_json="[]",
+        )

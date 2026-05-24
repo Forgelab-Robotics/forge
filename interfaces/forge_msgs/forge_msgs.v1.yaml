@@ -177,3 +177,101 @@ messages:
         required: true
     validation:
       - data may be empty only for an empty image payload.
+
+  PolicyCommand:
+    purpose: Command payload sent from gateway to policy through Dora.
+    row_count: single
+    delivery_topic: policy_command
+    fields:
+      policy_id:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Target policy instance id. Use "default" for single-policy setups.
+      command:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        naming: snake_case
+        recommended_values:
+          - load
+          - start
+          - stop
+          - pause
+          - resume
+          - reset
+          - start_recording
+          - stop_recording
+          - load_playback
+          - start_playback
+          - pause_playback
+          - resume_playback
+          - reset_playback
+          - seek_playback
+          - set_playback_rate
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Optional correlation id for PolicyCommandStatus.
+      inputs_json:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        default: "{}"
+        json_type: object
+    validation:
+      - policy_id must be non-empty.
+      - command must be non-empty and use snake_case.
+      - request_id may be empty when no response is expected.
+      - inputs_json must parse as a JSON object.
+      - A PolicyCommandStatus response is optional.
+
+  PolicyCommandStatus:
+    purpose: Optional status payload sent from policy to gateway through Dora.
+    row_count: single
+    delivery_topic: policy_command_status
+    optional_response: true
+    fields:
+      policy_id:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Policy instance id that handled the command.
+      command:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Command name copied from PolicyCommand.
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Correlation id copied from PolicyCommand when present.
+      status:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        allowed_values:
+          - accepted
+          - rejected
+          - running
+          - done
+          - error
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Human-readable status text.
+      outputs_json:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        default: "{}"
+        json_type: object
+    validation:
+      - policy_id must be non-empty.
+      - command must be non-empty.
+      - status must be one of accepted, rejected, running, done, or error.
+      - outputs_json must parse as a JSON object.
+      - This message is optional; policies may omit status output when no response is required.

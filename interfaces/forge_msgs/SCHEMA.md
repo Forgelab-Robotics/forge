@@ -94,6 +94,73 @@ Recommended formats:
 - `png`
 - `webp`
 
+### PolicyCommand
+
+Command payload sent from gateway to policy through Dora.
+
+Delivery topic:
+
+- `policy_command`
+
+Fields:
+
+- `policy_id: utf8`
+- `command: utf8`
+- `request_id: utf8`
+- `inputs_json: utf8`
+
+Rules:
+
+- `policy_id` must be non-empty. Use `default` for single-policy setups.
+- `command` must be non-empty and use snake_case.
+- `request_id` may be empty when no response is expected.
+- `inputs_json` must parse as a JSON object. Use `{}` when there are no inputs.
+- A `PolicyCommandStatus` response is optional.
+
+Recommended commands:
+
+- `load`
+- `start`
+- `stop`
+- `pause`
+- `resume`
+- `reset`
+- `start_recording`
+- `stop_recording`
+- `load_playback`
+- `start_playback`
+- `pause_playback`
+- `resume_playback`
+- `reset_playback`
+- `seek_playback`
+- `set_playback_rate`
+
+### PolicyCommandStatus
+
+Optional status payload sent from policy to gateway through Dora.
+
+Delivery topic:
+
+- `policy_command_status`
+
+Fields:
+
+- `policy_id: utf8`
+- `command: utf8`
+- `request_id: utf8`
+- `status: utf8`
+- `message: utf8`
+- `outputs_json: utf8`
+
+Rules:
+
+- This message is optional. Policies may omit status output when no response is required.
+- `policy_id` and `command` must be non-empty.
+- `request_id` should match the originating `PolicyCommand` when present.
+- `status` must be one of `accepted`, `rejected`, `running`, `done`, or `error`.
+- `message` may be empty.
+- `outputs_json` must parse as a JSON object. Use `{}` when there are no outputs.
+
 ## Cross-Language Implementation Notes
 
 - Python, Rust, and C++ structs should use the same field names as the schema.
