@@ -11,6 +11,7 @@ from forge_msgs.arrow import ensure_record_batch
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
+from forge_msgs.pose import Pose, PoseSet
 
 
 def _to_ipc_bytes(batch: pa.RecordBatch) -> bytes:
@@ -253,4 +254,67 @@ def test_policy_command_status_validation() -> None:
             command="start",
             status="error",
             outputs_json="[]",
+        )
+
+
+def test_pose_roundtrip_record_batch_table_and_bytes() -> None:
+    pose = Pose(x=1.0, y=2.0, z=3.0, qx=0.0, qy=0.0, qz=0.0, qw=1.0)
+    batch = pose.to_arrow()
+    assert Pose.from_arrow(batch) == pose
+    assert Pose.from_arrow(pa.Table.from_batches([batch])) == pose
+    assert Pose.from_arrow(_to_ipc_bytes(batch)) == pose
+
+
+def test_pose_xy_yaw_helpers() -> None:
+    pose = Pose.from_xy_yaw(1.0, 2.0, np.pi / 2.0)
+    x, y, yaw = pose.to_xy_yaw()
+    assert x == pytest.approx(1.0)
+    assert y == pytest.approx(2.0)
+    assert yaw == pytest.approx(np.pi / 2.0)
+
+
+def test_pose_rejects_zero_quaternion() -> None:
+    with pytest.raises(ValueError, match="quaternion"):
+        Pose(x=0.0, y=0.0, qx=0.0, qy=0.0, qz=0.0, qw=0.0)
+
+
+def test_pose_set_roundtrip_and_helpers() -> None:
+    poses = {
+        "b": Pose.from_xy_yaw(2.0, 3.0, 0.5),
+        "a": Pose(x=1.0, y=2.0),
+    }
+    pose_set = PoseSet.from_poses(poses)
+    assert pose_set.name == ["a", "b"]
+
+    back = PoseSet.from_arrow(_to_ipc_bytes(pose_set.to_arrow()))
+    assert back == pose_set
+    assert back.to_poses()["a"] == poses["a"]
+
+
+def test_pose_set_validation() -> None:
+    with pytest.raises(ValueError, match="name"):
+        PoseSet(name=[], x=[], y=[], z=[], qx=[], qy=[], qz=[], qw=[])
+
+    with pytest.raises(ValueError, match="unique"):
+        PoseSet(
+            name=["a", "a"],
+            x=[0.0, 1.0],
+            y=[0.0, 1.0],
+            z=[0.0, 0.0],
+            qx=[0.0, 0.0],
+            qy=[0.0, 0.0],
+            qz=[0.0, 0.0],
+            qw=[1.0, 1.0],
+        )
+
+    with pytest.raises(ValueError, match="same length"):
+        PoseSet(
+            name=["a", "b"],
+            x=[0.0],
+            y=[0.0, 1.0],
+            z=[0.0, 0.0],
+            qx=[0.0, 0.0],
+            qy=[0.0, 0.0],
+            qz=[0.0, 0.0],
+            qw=[1.0, 1.0],
         )

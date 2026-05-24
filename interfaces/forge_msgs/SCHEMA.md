@@ -94,6 +94,48 @@ Recommended formats:
 - `png`
 - `webp`
 
+### Pose
+
+Header-less 3D pose payload with position and quaternion orientation.
+
+Fields:
+
+- `x: float64`
+- `y: float64`
+- `z: float64`
+- `qx: float64`
+- `qy: float64`
+- `qz: float64`
+- `qw: float64`
+
+Rules:
+
+- Quaternion `qx`, `qy`, `qz`, `qw` must not be all zero.
+- Implementations should not silently normalize quaternion values.
+- 2D pose should use helpers such as `Pose.from_xy_yaw(...)`, not a separate wire schema.
+
+### PoseSet
+
+Single-row named collection of poses.
+
+Fields:
+
+- `name: list<utf8>`
+- `x: list<float64>`
+- `y: list<float64>`
+- `z: list<float64>`
+- `qx: list<float64>`
+- `qy: list<float64>`
+- `qz: list<float64>`
+- `qw: list<float64>`
+
+Rules:
+
+- `name` must be non-empty.
+- `name` items must be unique.
+- Every numeric list must have the same length as `name`.
+- Each quaternion must not be all zero.
+
 ### PolicyCommand
 
 Command payload sent from gateway to policy through Dora.

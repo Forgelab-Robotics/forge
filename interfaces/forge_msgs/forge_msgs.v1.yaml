@@ -178,6 +178,80 @@ messages:
     validation:
       - data may be empty only for an empty image payload.
 
+  Pose:
+    purpose: Header-less 3D pose payload with position and quaternion orientation.
+    row_count: single
+    fields:
+      x:
+        arrow: float64
+        required: true
+      y:
+        arrow: float64
+        required: true
+      z:
+        arrow: float64
+        required: true
+      qx:
+        arrow: float64
+        required: true
+      qy:
+        arrow: float64
+        required: true
+      qz:
+        arrow: float64
+        required: true
+      qw:
+        arrow: float64
+        required: true
+    validation:
+      - Quaternion qx, qy, qz, qw must not be all zero.
+      - Implementations should not silently normalize quaternion values.
+    helper_notes:
+      - 2D pose should be represented through Pose.from_xy_yaw style helpers, not a separate wire schema.
+
+  PoseSet:
+    purpose: Single-row named collection of poses.
+    row_count: single
+    fields:
+      name:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      x:
+        arrow: list<float64>
+        required: true
+        length: name
+      y:
+        arrow: list<float64>
+        required: true
+        length: name
+      z:
+        arrow: list<float64>
+        required: true
+        length: name
+      qx:
+        arrow: list<float64>
+        required: true
+        length: name
+      qy:
+        arrow: list<float64>
+        required: true
+        length: name
+      qz:
+        arrow: list<float64>
+        required: true
+        length: name
+      qw:
+        arrow: list<float64>
+        required: true
+        length: name
+    validation:
+      - name must contain at least one item.
+      - name items must be unique.
+      - x, y, z, qx, qy, qz, and qw must have the same length as name.
+      - Each quaternion qx, qy, qz, qw must not be all zero.
+
   PolicyCommand:
     purpose: Command payload sent from gateway to policy through Dora.
     row_count: single

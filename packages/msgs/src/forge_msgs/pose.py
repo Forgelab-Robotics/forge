@@ -1,72 +1,182 @@
 from __future__ import annotations
 
-from typing import Dict
+import math
+from typing import Self
 
 import pyarrow as pa
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, model_validator
 
 from forge_msgs.arrow import ensure_record_batch
 
 
-class Pose2D(BaseModel):
-    """二维位姿 (x, y, theta)，世界系位置 + 朝向（yaw，弧度）；单条记录。"""
+def _validate_quaternion(qx: float, qy: float, qz: float, qw: float) -> None:
+    if qx == 0.0 and qy == 0.0 and qz == 0.0 and qw == 0.0:
+        raise ValueError("quaternion must not be all zero")
+
+
+def _float_list(values: list[float]) -> pa.Array:
+    return pa.array([values], type=pa.list_(pa.float64()))
+
+
+def _str_list(values: list[str]) -> pa.Array:
+    return pa.array([values], type=pa.list_(pa.string()))
+
+
+def _read_float_list(batch: pa.RecordBatch, field: str) -> list[float]:
+    values = batch[field][0].as_py()
+    return [float(value) for value in values]
+
+
+class Pose(BaseModel):
+    """Header-less 3D pose payload with position and quaternion orientation."""
 
     x: float
     y: float
-    theta: float = 0.0
+    z: float = 0.0
+    qx: float = 0.0
+    qy: float = 0.0
+    qz: float = 0.0
+    qw: float = 1.0
 
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        _validate_quaternion(self.qx, self.qy, self.qz, self.qw)
+        return self
 
-class Pose2DList(BaseModel):
-    """二维位姿集合（按 id keyed）；独立 topic。
+    @classmethod
+    def from_xy_yaw(cls, x: float, y: float, yaw: float, z: float = 0.0) -> "Pose":
+        half = yaw * 0.5
+        return cls(
+            x=x,
+            y=y,
+            z=z,
+            qx=0.0,
+            qy=0.0,
+            qz=math.sin(half),
+            qw=math.cos(half),
+        )
 
-    Arrow 负载为多行 RecordBatch，包含列：id/x/y/theta，每行一条 pose。
-    """
-
-    poses: Dict[str, Pose2D] = Field(default_factory=dict)
+    def to_xy_yaw(self) -> tuple[float, float, float]:
+        # Standard yaw extraction from quaternion around Z for planar use.
+        yaw = math.atan2(
+            2.0 * (self.qw * self.qz + self.qx * self.qy),
+            1.0 - 2.0 * (self.qy * self.qy + self.qz * self.qz),
+        )
+        return self.x, self.y, yaw
 
     def to_arrow(self) -> pa.RecordBatch:
-        """列式 Arrow 格式（多行），每行一个 Pose2D。"""
-        if not self.poses:
-            return pa.RecordBatch.from_pydict(
-                {
-                    "id": pa.array([], type=pa.string()),
-                    "x": pa.array([], type=pa.float64()),
-                    "y": pa.array([], type=pa.float64()),
-                    "theta": pa.array([], type=pa.float64()),
-                }
-            )
-
-        # 为可复现与跨进程一致性，按 id 排序输出
-        ids = sorted(self.poses.keys())
         return pa.RecordBatch.from_pydict(
             {
-                "id": pa.array(ids, type=pa.string()),
-                "x": pa.array([self.poses[i].x for i in ids], type=pa.float64()),
-                "y": pa.array([self.poses[i].y for i in ids], type=pa.float64()),
-                "theta": pa.array(
-                    [self.poses[i].theta for i in ids], type=pa.float64()
-                ),
+                "x": pa.array([self.x], type=pa.float64()),
+                "y": pa.array([self.y], type=pa.float64()),
+                "z": pa.array([self.z], type=pa.float64()),
+                "qx": pa.array([self.qx], type=pa.float64()),
+                "qy": pa.array([self.qy], type=pa.float64()),
+                "qz": pa.array([self.qz], type=pa.float64()),
+                "qw": pa.array([self.qw], type=pa.float64()),
             }
         )
 
     @classmethod
-    def from_arrow(cls, batch: "pa.RecordBatch | pa.Table | bytes") -> "Pose2DList":
-        """从 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。"""
-        batch = ensure_record_batch(batch)
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "Pose":
+        batch = ensure_record_batch(data)
         if batch.num_rows == 0:
-            return cls(poses={})
+            raise ValueError("Pose RecordBatch must contain one row")
+        return cls(
+            x=float(batch["x"][0].as_py()),
+            y=float(batch["y"][0].as_py()),
+            z=float(batch["z"][0].as_py()),
+            qx=float(batch["qx"][0].as_py()),
+            qy=float(batch["qy"][0].as_py()),
+            qz=float(batch["qz"][0].as_py()),
+            qw=float(batch["qw"][0].as_py()),
+        )
 
-        # 兼容旧格式：无 id 列时，用行号作为 key
-        has_id = "id" in batch.schema.names
 
-        poses: Dict[str, Pose2D] = {}
-        for i in range(batch.num_rows):
-            pid = str(batch["id"][i].as_py()) if has_id else str(i)
-            x = float(batch["x"][i].as_py())
-            y = float(batch["y"][i].as_py())
-            theta = float(batch["theta"][i].as_py())
-            if pid in poses:
-                raise ValueError(f"Pose2DList.from_arrow: duplicate id '{pid}'")
-            poses[pid] = Pose2D(x=x, y=y, theta=theta)
-        return cls(poses=poses)
+class PoseSet(BaseModel):
+    """Single-row named collection of poses."""
 
+    name: list[str]
+    x: list[float]
+    y: list[float]
+    z: list[float]
+    qx: list[float]
+    qy: list[float]
+    qz: list[float]
+    qw: list[float]
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not self.name:
+            raise ValueError("name must contain at least one pose")
+        if len(set(self.name)) != len(self.name):
+            raise ValueError("name items must be unique")
+        for field in ("x", "y", "z", "qx", "qy", "qz", "qw"):
+            values = getattr(self, field)
+            if len(values) != len(self.name):
+                raise ValueError(f"{field} must have the same length as name")
+        for values in zip(self.qx, self.qy, self.qz, self.qw, strict=True):
+            _validate_quaternion(*values)
+        return self
+
+    @classmethod
+    def from_poses(cls, poses: dict[str, Pose]) -> "PoseSet":
+        names = sorted(poses)
+        return cls(
+            name=names,
+            x=[poses[name].x for name in names],
+            y=[poses[name].y for name in names],
+            z=[poses[name].z for name in names],
+            qx=[poses[name].qx for name in names],
+            qy=[poses[name].qy for name in names],
+            qz=[poses[name].qz for name in names],
+            qw=[poses[name].qw for name in names],
+        )
+
+    def to_poses(self) -> dict[str, Pose]:
+        return {
+            name: Pose(
+                x=self.x[i],
+                y=self.y[i],
+                z=self.z[i],
+                qx=self.qx[i],
+                qy=self.qy[i],
+                qz=self.qz[i],
+                qw=self.qw[i],
+            )
+            for i, name in enumerate(self.name)
+        }
+
+    def to_arrow(self) -> pa.RecordBatch:
+        return pa.RecordBatch.from_pydict(
+            {
+                "name": _str_list(self.name),
+                "x": _float_list(self.x),
+                "y": _float_list(self.y),
+                "z": _float_list(self.z),
+                "qx": _float_list(self.qx),
+                "qy": _float_list(self.qy),
+                "qz": _float_list(self.qz),
+                "qw": _float_list(self.qw),
+            }
+        )
+
+    @classmethod
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "PoseSet":
+        batch = ensure_record_batch(data)
+        if batch.num_rows == 0:
+            raise ValueError("PoseSet RecordBatch must contain one row")
+        return cls(
+            name=list(batch["name"][0].as_py() or []),
+            x=_read_float_list(batch, "x"),
+            y=_read_float_list(batch, "y"),
+            z=_read_float_list(batch, "z"),
+            qx=_read_float_list(batch, "qx"),
+            qy=_read_float_list(batch, "qy"),
+            qz=_read_float_list(batch, "qz"),
+            qw=_read_float_list(batch, "qw"),
+        )
