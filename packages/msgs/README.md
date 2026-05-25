@@ -1,150 +1,77 @@
 # forge-msgs
 
-Forge 消息定义，用于 Dora 数据流。采用列式 Arrow 格式，支持零拷贝序列化。
+Forge message definitions for Dora dataflow.
 
-## 安装
+The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs.v1.yaml`. Python, Rust, and future C++ implementations should conform to that schema.
 
-```bash
-uv add forge-msgs
-# 或
-pip install forge-msgs
-```
+## Core Messages
 
-## 数据类型
+### `JointState`
 
-### 基础值类型
+Robot or simulator joint observation payload.
 
-- **`JointValue`**：关节/关节空间量
-  - `value`: float
-  - `mode`: `"position"` | `"velocity"` | `"torque"` | `"prismatic"`
-  - `unit`: `"radians"` | `"millimeters"` | `"meters"` | `"radians/s"` | `"millimeters/s"` | `"meters/s"` | `"Nm"` | `"A"`（直线关节默认 millimeters / millimeters/s）
+- `name: list[str]`
+- `position: list[float]`
+- `velocity: list[float]`
+- `effort: list[float]`
 
-- **`ActuatorValue`**：执行器/驱动空间量，字段与 `JointValue` 相同
+`name` must be non-empty and unique. Numeric lists must either be empty or have the same length as `name`.
 
-- **`JointMode`** / **`JointUnit`**：IntEnum，用于 Arrow 列式格式的零拷贝（mode/unit 以 int8 存储）
+### `JointCommand`
 
-### TaskRobot 层
+Command payload for robot drivers and controllers.
 
-- **`ProprioState`**：TaskRobot 产出，本体状态（joints，不含图像）
-  - `timestamp`: float
-  - `joints`: Dict[str, JointValue]
+- `name: list[str]`
+- `position: list[float]`
+- `velocity: list[float]`
+- `effort: list[float]`
+- `kp: list[float]`
+- `kd: list[float]`
 
-- **`Action`**：输入 TaskRobot 的动作
-  - `ref_timestamp`: float
-  - `joints`: Dict[str, JointValue]
+For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 
-### Robot 层
+### `Image`
 
-- **`RobotState`**：Robot 产出，机器人状态
-  - `timestamp`: float
-  - `actuators`: Dict[str, ActuatorValue]
+Uncompressed image payload.
 
-- **`RobotAction`**：输入 Robot 的动作
-  - `timestamp`: float
-  - `actuators`: Dict[str, ActuatorValue]
+- `height: int`
+- `width: int`
+- `encoding: str`
+- `step: int`
+- `data: bytes`
 
-## 列式 Arrow 格式
+Supported encodings are `rgb8`, `bgr8`, `mono8`, `16UC1`, and `32FC1`. Multi-byte pixels are little-endian. Compressed images use `CompressedImage`.
 
-所有消息使用列式 `pa.RecordBatch`，支持零拷贝。`to_arrow()` 和 `from_arrow()` 均需传入 `joint_order` 或 `actuator_order` 以确定列顺序。时间/对齐字段（`ProprioState.timestamp`、`ActionSequence.ref_timestamp`）均作为正式列写入，不使用 schema metadata，避免 dora/IPC 传递时丢失。
+### `CompressedImage`
 
-### 发送数据
+Compressed image bitstream payload.
 
-```python
-from dora import Node
-from forge_msgs import (
-    ProprioState,
-    Action,
-    RobotState,
-    RobotAction,
-    JointValue,
-    ActuatorValue,
-)
+- `format: str`
+- `data: bytes`
 
-node = Node()
-joint_order = ["joint1", "joint2"]
-actuator_order = ["act1"]
+Recommended formats are `jpeg`, `png`, and `webp`.
 
-# 发送 ProprioState（TaskRobot 产出）
-state = ProprioState(
-    timestamp=1.0,
-    joints={
-        "joint1": JointValue(value=0.5, mode="position", unit="radians"),
-        "joint2": JointValue(value=0.1, mode="velocity", unit="radians/s"),
-    },
-)
-node.send_output("proprio_state", state.to_arrow(joint_order))
+## Arrow Format
 
-# 发送 Action（输入 TaskRobot）
-action = Action(
-    ref_timestamp=2.0,
-    joints={"joint1": JointValue(value=0.6, mode="position", unit="radians")},
-)
-node.send_output("action", action.to_arrow(joint_order))
-
-# 发送 RobotState（Robot 产出）
-robot_state = RobotState(
-    timestamp=1.0,
-    actuators={"act1": ActuatorValue(value=0.5, mode="position", unit="radians")},
-)
-node.send_output("robot_state", robot_state.to_arrow(actuator_order))
-
-# 发送 RobotAction（输入 Robot）
-robot_action = RobotAction(
-    timestamp=2.0,
-    actuators={"act1": ActuatorValue(value=0.6, mode="torque", unit="Nm")},
-)
-node.send_output("robot_action", robot_action.to_arrow(actuator_order))
-```
-
-### 接收数据
+All core messages encode to a single-row `pyarrow.RecordBatch`.
 
 ```python
-from dora import Node
-from forge_msgs import (
-    ProprioState,
-    Action,
-    RobotState,
-    RobotAction,
+from forge_msgs import JointCommand, JointState
+
+state = JointState(
+    name=["joint1", "joint2"],
+    position=[0.1, 0.2],
+    velocity=[0.0, 0.0],
+    effort=[],
 )
+batch = state.to_arrow()
+back = JointState.from_arrow(batch)
 
-node = Node()
-joint_order = ["joint1", "joint2"]
-actuator_order = ["act1"]
-
-for event in node:
-    if event["type"] != "INPUT":
-        continue
-
-    match event["id"]:
-        case "proprio_state":
-            state = ProprioState.from_arrow(event["value"], joint_order)
-            # 或零拷贝直接得到 numpy：
-            state_np = ProprioState.to_np_from_arrow(event["value"], joint_order)
-
-        case "action":
-            action = Action.from_arrow(event["value"], joint_order)
-            # 使用 action.ref_timestamp, action.joints ...
-
-        case "robot_state":
-            robot_state = RobotState.from_arrow(event["value"], actuator_order)
-            # 或零拷贝：state_np = RobotState.to_np_from_arrow(event["value"], actuator_order)
-
-        case "robot_action":
-            robot_action = RobotAction.from_arrow(event["value"], actuator_order)
+command = JointCommand.from_np(
+    values=[0.3, 0.4],
+    order=["joint1", "joint2"],
+    field="position",
+)
 ```
 
-### 零拷贝与 numpy 互转
-
-```python
-# ProprioState -> numpy（零拷贝）
-state_np = ProprioState.to_np_from_arrow(event["value"], joint_order)
-
-# RobotState -> numpy（零拷贝）
-state_np = RobotState.to_np_from_arrow(event["value"], actuator_order)
-
-# numpy -> Action
-action = Action.from_np(action_np, joint_order, ref_timestamp=2.0)
-
-# numpy -> RobotAction
-robot_action = RobotAction.from_np(action_np, actuator_order, timestamp=2.0)
-```
+Timing and frame data are intentionally not part of the core schema. Carry them in Dora event context, topic naming, node configuration, or adapter layers.

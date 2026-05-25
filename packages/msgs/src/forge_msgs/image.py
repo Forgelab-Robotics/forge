@@ -1,210 +1,233 @@
 from __future__ import annotations
 
 import io
-from enum import IntEnum
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 import pyarrow as pa
 from PIL import Image as PILImage
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from forge_msgs.value import ensure_record_batch
+from forge_msgs.arrow import ensure_record_batch
 
+ImageEncoding = Literal["rgb8", "bgr8", "mono8", "16UC1", "32FC1"]
+CompressedImageFormat = Literal["jpeg", "png", "webp"]
 
-class ImageEncoding(IntEnum):
-    """图像编码/格式，用于 Arrow 列式格式的序列化。"""
-
-    rgb8 = 0
-    bgr8 = 1
-    gray8 = 2
-    jpeg = 3
-    png = 4
-    depth_u16 = 5
-
-
-ENCODING_STR_TO_INT = {
-    "rgb8": ImageEncoding.rgb8,
-    "bgr8": ImageEncoding.bgr8,
-    "gray8": ImageEncoding.gray8,
-    "jpeg": ImageEncoding.jpeg,
-    "png": ImageEncoding.png,
-    "depth_u16": ImageEncoding.depth_u16,
+_ENCODING_INFO: dict[str, tuple[np.dtype, int]] = {
+    "rgb8": (np.dtype("uint8"), 3),
+    "bgr8": (np.dtype("uint8"), 3),
+    "mono8": (np.dtype("uint8"), 1),
+    "16UC1": (np.dtype("<u2"), 1),
+    "32FC1": (np.dtype("<f4"), 1),
 }
-ENCODING_INT_TO_STR = {v: k for k, v in ENCODING_STR_TO_INT.items()}
+
+
+def _data_array(data: bytes) -> pa.Array:
+    n = len(data)
+    offsets = np.array([0, n], dtype=np.int64)
+    return pa.Array.from_buffers(
+        pa.large_binary(),
+        1,
+        [None, pa.py_buffer(offsets), pa.py_buffer(data)],
+        null_count=0,
+    )
+
+
+def _bytes_from_cell(value: object) -> bytes:
+    if hasattr(value, "as_py"):
+        value = value.as_py()
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    return bytes(value)  # type: ignore[arg-type]
 
 
 class Image(BaseModel):
-    """统一图像消息（原始像素或压缩），用于 dora 节点之间传递。
+    """Uncompressed image payload for Dora/Arrow transport."""
 
-    字段说明：
-    - width/height: 图像尺寸（压缩时为原始尺寸，供下游校验）
-    - channels: 原始像素时有效（1=灰度/深度单通道, 3=RGB/BGR）；压缩格式时为 0
-    - encoding: 像素或压缩格式（rgb8/bgr8/gray8/depth_u16 为原始，jpeg/png 为压缩）
-    - data: 原始像素 bytes（H*W*channels 或 depth_u16 时为 H*W*2 小端 uint16）或压缩 bitstream
-    """
-
-    width: int
     height: int
-    channels: int = 3
-    encoding: Literal["rgb8", "bgr8", "gray8", "jpeg", "png", "depth_u16"] = "rgb8"
+    width: int
+    encoding: str
+    step: int
     data: bytes
 
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if self.height < 0:
+            raise ValueError("height must be >= 0")
+        if self.width < 0:
+            raise ValueError("width must be >= 0")
+        if self.step < 0:
+            raise ValueError("step must be >= 0")
+        if self.encoding not in _ENCODING_INFO:
+            raise ValueError(f"unsupported image encoding: {self.encoding}")
+        dtype, channels = _ENCODING_INFO[self.encoding]
+        minimum_step = self.width * dtype.itemsize * channels
+        if self.step < minimum_step:
+            raise ValueError(
+                f"step must be at least width * bytes_per_pixel ({self.step} < {minimum_step})"
+            )
+        expected = self.step * self.height
+        if len(self.data) != expected:
+            raise ValueError(f"data length must equal step * height ({len(self.data)} != {expected})")
+        return self
+
     @property
-    def is_compressed(self) -> bool:
-        """是否为压缩格式（jpeg/png）。"""
-        return self.encoding in ("jpeg", "png")
+    def channels(self) -> int:
+        return _ENCODING_INFO[self.encoding][1]
+
+    @property
+    def dtype(self) -> np.dtype:
+        return _ENCODING_INFO[self.encoding][0]
 
     def to_numpy(self) -> np.ndarray:
-        """将 data 解码为 numpy 数组。
+        if self.height == 0 or self.width == 0:
+            if self.channels == 1:
+                return np.zeros((self.height, self.width), dtype=self.dtype)
+            return np.zeros((self.height, self.width, self.channels), dtype=self.dtype)
 
-        - rgb8/bgr8/gray8：uint8，形状 (H, W, C)。
-        - depth_u16：uint16，形状 (H, W)（深度图，小端每像素 2 字节）。
-        - jpeg/png：解码后为 uint8 (H, W, C)。
-        """
-        if self.is_compressed:
-            return self._decode_compressed_to_numpy()
-        if self.encoding == "depth_u16":
-            if self.width <= 0 or self.height <= 0:
-                return np.zeros((0, 0), dtype=np.uint16)
-            expected = self.width * self.height * 2
-            arr = np.frombuffer(self.data, dtype=np.uint16)
-            if arr.size != self.width * self.height:
-                raise ValueError(
-                    f"depth_u16 data 大小不匹配：{arr.size} != {self.width * self.height} uint16"
-                )
-            return arr.reshape((self.height, self.width))
-        if self.width <= 0 or self.height <= 0 or self.channels <= 0:
-            return np.zeros((0, 0, 0), dtype=np.uint8)
-        arr = np.frombuffer(self.data, dtype=np.uint8)
-        expected = self.width * self.height * self.channels
-        if arr.size != expected:
-            raise ValueError(f"data 大小不匹配：{arr.size} != {expected}")
-        return arr.reshape((self.height, self.width, self.channels))
+        tight_step = self.width * self.dtype.itemsize * self.channels
+        if self.step == tight_step:
+            arr = np.frombuffer(self.data, dtype=self.dtype)
+            if self.channels == 1:
+                return arr.reshape((self.height, self.width))
+            return arr.reshape((self.height, self.width, self.channels))
 
-    def _decode_compressed_to_numpy(self) -> np.ndarray:
-        """用 Pillow 解码 jpeg/png，返回 HWC uint8 rgb8。"""
+        shape = (
+            (self.height, self.width)
+            if self.channels == 1
+            else (self.height, self.width, self.channels)
+        )
+        strides = (
+            (self.step, self.dtype.itemsize)
+            if self.channels == 1
+            else (self.step, self.dtype.itemsize * self.channels, self.dtype.itemsize)
+        )
+        return np.ndarray(shape=shape, dtype=self.dtype, buffer=self.data, strides=strides).copy()
+
+    @classmethod
+    def from_numpy(cls, frame: np.ndarray, encoding: ImageEncoding = "rgb8") -> "Image":
+        if encoding not in _ENCODING_INFO:
+            raise ValueError(f"unsupported image encoding: {encoding}")
+        dtype, channels = _ENCODING_INFO[encoding]
+        expected_dtype = np.dtype(dtype)
+        if frame.dtype != expected_dtype:
+            raise ValueError(f"{encoding} expects dtype {expected_dtype}, got {frame.dtype}")
+
+        if channels == 1:
+            if frame.ndim == 3 and frame.shape[2] == 1:
+                frame = frame.reshape(frame.shape[0], frame.shape[1])
+            if frame.ndim != 2:
+                raise ValueError(f"{encoding} expects shape (H, W) or (H, W, 1), got {frame.shape}")
+            height, width = frame.shape
+        else:
+            if frame.ndim != 3 or frame.shape[2] != channels:
+                raise ValueError(f"{encoding} expects shape (H, W, {channels}), got {frame.shape}")
+            height, width, _ = frame.shape
+
+        contiguous = np.ascontiguousarray(frame)
+        step = int(width * expected_dtype.itemsize * channels)
+        return cls(
+            height=int(height),
+            width=int(width),
+            encoding=encoding,
+            step=step,
+            data=contiguous.tobytes(),
+        )
+
+    def to_arrow(self) -> pa.RecordBatch:
+        return pa.RecordBatch.from_arrays(
+            [
+                pa.array([self.height], type=pa.uint32()),
+                pa.array([self.width], type=pa.uint32()),
+                pa.array([self.encoding], type=pa.string()),
+                pa.array([self.step], type=pa.uint32()),
+                _data_array(self.data),
+            ],
+            names=["height", "width", "encoding", "step", "data"],
+        )
+
+    @classmethod
+    def from_arrow(cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes) -> "Image":
+        batch = ensure_record_batch(data)
+        if batch.num_rows == 0:
+            raise ValueError("Image RecordBatch must contain one row")
+        return cls(
+            height=int(batch["height"][0].as_py()),
+            width=int(batch["width"][0].as_py()),
+            encoding=str(batch["encoding"][0].as_py()),
+            step=int(batch["step"][0].as_py()),
+            data=_bytes_from_cell(batch["data"][0]),
+        )
+
+
+class CompressedImage(BaseModel):
+    """Compressed image bitstream payload."""
+
+    format: str
+    data: bytes
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not self.format:
+            raise ValueError("format must be non-empty")
+        return self
+
+    def to_numpy(self) -> np.ndarray:
         if not self.data:
             return np.zeros((0, 0, 0), dtype=np.uint8)
-        img = PILImage.open(io.BytesIO(self.data))
-        if img.mode == "RGBA":
-            img = img.convert("RGB")  # 统一为 3 通道
-        elif img.mode != "RGB" and img.mode != "L":
-            img = img.convert("RGB")
-        arr = np.array(img, dtype=np.uint8)
-        if arr.ndim == 2:
-            arr = arr[:, :, np.newaxis]  # HWC, channels=1
-        return arr
-
-    def to_jpeg_bytes(self, quality: int = 85) -> bytes:
-        """将当前图像转为 JPEG 字节流。已为 jpeg 时直接返回 data；png 会先解码再编码。
-
-        gray8 / depth_u16 为原始传感器语义，不支持转为 JPEG，请使用原始 data 或自行编码。
-        """
-        if self.encoding == "jpeg" and self.data:
-            return self.data
-        if self.encoding in ("gray8", "depth_u16"):
-            raise ValueError(
-                f"encoding={self.encoding} 不支持 to_jpeg_bytes，请使用原始像素 data"
-            )
-        arr = self.to_numpy()
-        if arr.size == 0:
-            return b""
-        if self.encoding == "bgr8" and arr.shape[-1] == 3:
-            arr = arr[:, :, ::-1].copy()
-        if arr.ndim == 3 and arr.shape[-1] == 1:
-            pil_img = PILImage.fromarray(arr.squeeze(-1), mode="L")
-        else:
-            pil_img = PILImage.fromarray(arr, mode="RGB")
-        buf = io.BytesIO()
-        pil_img.save(buf, format="JPEG", quality=quality)
-        return buf.getvalue()
+        image = PILImage.open(io.BytesIO(self.data))
+        if image.mode == "L":
+            arr = np.array(image, dtype=np.uint8)
+            return arr[:, :, np.newaxis]
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        return np.array(image, dtype=np.uint8)
 
     @classmethod
     def from_numpy(
         cls,
         frame: np.ndarray,
-        encoding: Literal["rgb8", "bgr8", "gray8", "depth_u16"] = "rgb8",
-    ) -> "Image":
-        """从 numpy 构建 Image：rgb8/bgr8/gray8 为 uint8 (H,W,C)；depth_u16 为 uint16 (H,W) 或 (H,W,1)。"""
-        if encoding == "depth_u16":
-            if frame.dtype != np.uint16:
-                raise ValueError(f"depth_u16 期望 uint16，但得到 {frame.dtype}")
-            if frame.ndim == 2:
-                height, width = frame.shape
-                data = frame.tobytes()
-            elif frame.ndim == 3 and frame.shape[2] == 1:
-                height, width, _ = frame.shape
-                data = frame.reshape(height, width).tobytes()
-            else:
-                raise ValueError(
-                    f"depth_u16 期望形状 (H,W) 或 (H,W,1)，但得到 {frame.shape}"
-                )
-            return cls(
-                width=int(width),
-                height=int(height),
-                channels=1,
-                encoding="depth_u16",
-                data=data,
-            )
+        format: CompressedImageFormat = "jpeg",
+        quality: int = 85,
+    ) -> "CompressedImage":
         if frame.dtype != np.uint8:
-            raise ValueError(f"期望 uint8，但得到 {frame.dtype}")
-        if frame.ndim != 3:
-            raise ValueError(f"期望 3 维数组 (HWC)，但得到 ndim={frame.ndim}")
-        height, width, channels = frame.shape
-        return cls(
-            width=int(width),
-            height=int(height),
-            channels=int(channels),
-            encoding=encoding,
-            data=frame.tobytes(),
-        )
+            raise ValueError(f"compressed image expects uint8 frame, got {frame.dtype}")
+        if frame.ndim == 2:
+            image = PILImage.fromarray(frame, mode="L")
+        elif frame.ndim == 3 and frame.shape[2] == 1:
+            image = PILImage.fromarray(frame.squeeze(-1), mode="L")
+        elif frame.ndim == 3 and frame.shape[2] == 3:
+            image = PILImage.fromarray(frame, mode="RGB")
+        else:
+            raise ValueError(f"compressed image expects HW, HW1, or HW3 frame, got {frame.shape}")
+
+        buffer = io.BytesIO()
+        save_format = format.upper()
+        kwargs = {"quality": quality} if format == "jpeg" else {}
+        image.save(buffer, format=save_format, **kwargs)
+        return cls(format=format, data=buffer.getvalue())
 
     def to_arrow(self) -> pa.RecordBatch:
-        """列式 Arrow 格式（单行），便于跨节点传递；data 列通过 py_buffer 复用原始 buffer，下游解析可零拷贝读取。"""
-        # data 列：from_buffers + py_buffer 复用 self.data，避免大块拷贝
-        n = len(self.data)
-        data_offsets = np.array([0, n], dtype=np.int64)
-        data_arr = pa.Array.from_buffers(
-            pa.large_binary(),
-            1,
-            [None, pa.py_buffer(data_offsets), pa.py_buffer(self.data)],
-            null_count=0,
+        return pa.RecordBatch.from_arrays(
+            [
+                pa.array([self.format], type=pa.string()),
+                _data_array(self.data),
+            ],
+            names=["format", "data"],
         )
-        # encoding 列：与 JointMode 一致，用 IntEnum 存 int8
-        encoding_arr = pa.array([ENCODING_STR_TO_INT[self.encoding]], type=pa.int8())
-        columns = {
-            "width": pa.array([self.width], type=pa.int32()),
-            "height": pa.array([self.height], type=pa.int32()),
-            "channels": pa.array([self.channels], type=pa.int8()),
-            "encoding": encoding_arr,
-            "data": data_arr,
-        }
-        return pa.RecordBatch.from_pydict(columns)
 
     @classmethod
-    def from_arrow(cls, batch: pa.RecordBatch | pa.Table | bytes) -> "Image":
-        """从 Arrow 解析；batch 可为 RecordBatch、Table 或 IPC bytes。"""
-        batch = ensure_record_batch(batch)
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "CompressedImage":
+        batch = ensure_record_batch(data)
         if batch.num_rows == 0:
-            return cls(width=0, height=0, channels=0, encoding="rgb8", data=b"")
-
-        width = int(batch["width"][0].as_py())
-        height = int(batch["height"][0].as_py())
-        channels = int(batch["channels"][0].as_py())
-        enc_val = batch["encoding"][0].as_py()
-        encoding = (
-            ENCODING_INT_TO_STR[enc_val] if isinstance(enc_val, int) else str(enc_val)
-        )
-        data = batch["data"][0].as_py()
-        if isinstance(data, memoryview):
-            data = data.tobytes()
-        if not isinstance(data, (bytes, bytearray)):
-            data = bytes(data)
+            raise ValueError("CompressedImage RecordBatch must contain one row")
         return cls(
-            width=width,
-            height=height,
-            channels=channels,
-            encoding=encoding,  # type: ignore[arg-type]
-            data=bytes(data),
+            format=str(batch["format"][0].as_py()),
+            data=_bytes_from_cell(batch["data"][0]),
         )

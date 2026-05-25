@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from forge_msgs import RobotAction
-from forge_msgs.value import ActuatorValue
+from forge_msgs import JointCommand
 
 ActuatorKind = Literal["revolute", "continuous", "prismatic", "other"]
 ControlMode = Literal["position", "velocity", "torque"]
@@ -70,7 +69,7 @@ class ActuatorSpec:
             object.__setattr__(self, "effort_unit", e_unit)
 
 
-def actuator_order(specs: tuple[ActuatorSpec, ...]) -> list[str]:
+def joint_order(specs: tuple[ActuatorSpec, ...]) -> list[str]:
     return [spec.name for spec in specs]
 
 
@@ -78,71 +77,73 @@ def specs_by_name(specs: tuple[ActuatorSpec, ...]) -> dict[str, ActuatorSpec]:
     return {spec.name: spec for spec in specs}
 
 
-def clip_and_validate_action(
-    action: RobotAction,
-    specs: dict[str, ActuatorSpec],
-) -> RobotAction:
-    """根据执行器规格校验并限制动作值。
+def _clip_symmetric(value: float, limit: float | None) -> float:
+    if limit is None:
+        return value
+    return max(min(value, limit), -limit)
 
-    支持不同控制模式（position、velocity、torque 等）的单位校验与数值限位。
-    对 continuous 类型的关节，位置控制模式下自动免除位置裁剪。
-    内部自动将历史不标准动作模式（prismatic）映射归一化为标准的 position 进行校验，确保健壮性。
+
+def _field_by_name(names: list[str], values: list[float]) -> dict[str, float]:
+    if not values:
+        return {}
+    return dict(zip(names, values, strict=False))
+
+
+def _ordered_field(names: list[str], values_by_name: dict[str, float]) -> list[float]:
+    if not values_by_name:
+        return []
+    return [values_by_name[name] for name in names]
+
+
+def clip_and_validate_command(
+    command: JointCommand,
+    specs: dict[str, ActuatorSpec],
+) -> JointCommand:
+    """根据执行器规格限制命令值。
+
+    新消息不在 payload 中携带 unit/mode；单位约定来自 forge_msgs interface。
+    对 continuous 类型的关节，位置字段不做位置裁剪。
     """
-    actuators: dict[str, ActuatorValue] = {}
-    for name, actuator in action.actuators.items():
+    names: list[str] = []
+    position = _field_by_name(command.name, command.position)
+    velocity = _field_by_name(command.name, command.velocity)
+    effort = _field_by_name(command.name, command.effort)
+    kp = _field_by_name(command.name, command.kp)
+    kd = _field_by_name(command.name, command.kd)
+
+    for name in command.name:
         spec = specs.get(name)
         if spec is None:
             continue
+        names.append(name)
 
-        value = actuator.value
-        raw_mode = actuator.mode
-
-        # 兼容性语义映射：将历史不标准的 prismatic 模式归一化为标准的 position
-        norm_mode = "position" if raw_mode == "prismatic" else raw_mode
-
-        # 1. 位置控制模式
-        if norm_mode == "position":
-            if actuator.unit != spec.position_unit:
-                raise ValueError(
-                    f"actuator '{name}' 期望单位 {spec.position_unit}，收到 {actuator.unit}"
-                )
-            # 对 continuous 种类关节不进行位置裁剪
+        if name in position:
             if spec.kind != "continuous":
                 if spec.min_position is not None:
-                    value = max(value, spec.min_position)
+                    position[name] = max(position[name], spec.min_position)
                 if spec.max_position is not None:
-                    value = min(value, spec.max_position)
+                    position[name] = min(position[name], spec.max_position)
 
-        # 2. 速度控制模式
-        elif norm_mode == "velocity":
-            if actuator.unit != spec.velocity_unit:
-                raise ValueError(
-                    f"actuator '{name}' 期望单位 {spec.velocity_unit}，收到 {actuator.unit}"
-                )
-            if spec.max_velocity is not None:
-                value = max(min(value, spec.max_velocity), -spec.max_velocity)
+        if name in velocity:
+            velocity[name] = _clip_symmetric(velocity[name], spec.max_velocity)
 
-        # 3. 力矩/电流控制模式
-        elif norm_mode == "torque":
-            if actuator.unit != spec.effort_unit:
-                raise ValueError(
-                    f"actuator '{name}' 期望单位 {spec.effort_unit}，收到 {actuator.unit}"
-                )
-            if spec.max_effort is not None:
-                value = max(min(value, spec.max_effort), -spec.max_effort)
+        if name in effort:
+            effort[name] = _clip_symmetric(effort[name], spec.max_effort)
 
-        actuators[name] = ActuatorValue(
-            value=value,
-            mode=actuator.mode,  # 保持其原始输入 mode 发出，确保不影响下游解析
-            unit=actuator.unit,
-        )
-    return RobotAction(actuators=actuators)
+    return JointCommand(
+        name=names,
+        position=_ordered_field(names, position),
+        velocity=_ordered_field(names, velocity),
+        effort=_ordered_field(names, effort),
+        kp=_ordered_field(names, kp),
+        kd=_ordered_field(names, kd),
+    )
 
 
-def clip_and_validate_position_action(
-    action: RobotAction,
+def clip_and_validate_position_command(
+    command: JointCommand,
     specs: dict[str, ActuatorSpec],
-) -> RobotAction:
-    """旧版位置裁剪校验的包装层，确保完美向前兼容。"""
-    return clip_and_validate_action(action, specs)
+) -> JointCommand:
+    """位置命令裁剪包装。"""
+    return clip_and_validate_command(command, specs)
 

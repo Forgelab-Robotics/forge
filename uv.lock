@@ -6,7 +6,6 @@ requires-python = ">=3.12"
 members = [
     "forge",
     "forge-common",
-    "forge-configs",
     "forge-msgs",
     "forge-robot",
 ]
@@ -60,21 +59,6 @@ source = { virtual = "." }
 name = "forge-common"
 version = "0.1.0"
 source = { editable = "packages/common" }
-
-[[package]]
-name = "forge-configs"
-version = "0.1.0"
-source = { editable = "packages/configs" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
 
 [[package]]
 name = "forge-msgs"

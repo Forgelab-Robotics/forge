@@ -1,160 +1,171 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+import json
+import re
+from typing import Literal, Self
 
 import pyarrow as pa
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from forge_msgs.value import ensure_record_batch
+from forge_msgs.arrow import ensure_record_batch
 
-
-class SimControl(BaseModel):
-    """仿真控制消息：通过 Dora 的 sim_control topic 传递。"""
-
-    action: Literal["START", "PAUSE", "RESUME", "RESET", "STOP"]
-
-    def to_arrow(self) -> pa.RecordBatch:
-        """编码为单行 RecordBatch，schema: { action: string }。"""
-        return pa.RecordBatch.from_pydict({"action": pa.array([self.action])})
-
-    @classmethod
-    def from_arrow(cls, value: Any) -> Optional["SimControl"]:
-        """从 dora 传入的 value 解析出 SimControl；无法解析时返回 None。"""
-        if value is None:
-            return None
-        try:
-            batch = ensure_record_batch(value)
-        except Exception:
-            return None
-        if batch.num_rows == 0 or "action" not in batch.schema.names:
-            return None
-        cell = batch["action"][0]
-        if hasattr(cell, "as_py"):
-            cell = cell.as_py()
-        if not isinstance(cell, str):
-            return None
-        action = cell.strip()
-        if not action:
-            return None
-        try:
-            return cls(action=action)
-        except Exception:
-            return None
+PolicyCommandStatusValue = Literal["accepted", "rejected", "running", "done", "error"]
+_SNAKE_CASE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-class RecordControl(BaseModel):
-    """录制控制消息：开始/停止录制以及可选输出路径。"""
+def _validate_json_object(value: str, field_name: str) -> None:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{field_name} must be valid JSON") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
 
-    action: Literal["START", "STOP"]
-    output_path: Optional[str] = None
+
+def _read_str(batch: pa.RecordBatch, field_name: str) -> str:
+    value = batch[field_name][0]
+    if hasattr(value, "as_py"):
+        value = value.as_py()
+    return str(value)
+
+
+class PolicyCommand(BaseModel):
+    """Command payload sent from gateway to policy through Dora."""
+
+    policy_id: str
+    command: str
+    request_id: str = ""
+    inputs_json: str = "{}"
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not self.policy_id:
+            raise ValueError("policy_id must be non-empty")
+        if not self.command:
+            raise ValueError("command must be non-empty")
+        if not _SNAKE_CASE_RE.match(self.command):
+            raise ValueError("command must use snake_case")
+        _validate_json_object(self.inputs_json, "inputs_json")
+        return self
 
     def to_arrow(self) -> pa.RecordBatch:
-        """编码为单行 RecordBatch，schema: { action: string, output_path: string? }。"""
-        action = (self.action or "").strip()
-        output = (self.output_path or "").strip()
-        data: dict[str, pa.Array] = {
-            "action": pa.array([action]),
-        }
-        if output:
-            data["output_path"] = pa.array([output])
-        else:
-            # 使用可空列以便 from_arrow 能区分“未提供”与“空字符串”
-            data["output_path"] = pa.array([None], type=pa.string())
-        return pa.RecordBatch.from_pydict(data)
+        return pa.RecordBatch.from_pydict(
+            {
+                "policy_id": pa.array([self.policy_id], type=pa.string()),
+                "command": pa.array([self.command], type=pa.string()),
+                "request_id": pa.array([self.request_id], type=pa.string()),
+                "inputs_json": pa.array([self.inputs_json], type=pa.string()),
+            }
+        )
 
     @classmethod
-    def from_arrow(cls, value: Any) -> Optional["RecordControl"]:
-        """从 dora 传入的 value 解析出 RecordControl；无法解析时返回 None。"""
-        if value is None:
-            return None
-        try:
-            batch = ensure_record_batch(value)
-        except Exception:
-            return None
-        if batch.num_rows == 0 or "action" not in batch.schema.names:
-            return None
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "PolicyCommand":
+        batch = ensure_record_batch(data)
+        if batch.num_rows == 0:
+            raise ValueError("PolicyCommand RecordBatch must contain one row")
+        return cls(
+            policy_id=_read_str(batch, "policy_id"),
+            command=_read_str(batch, "command"),
+            request_id=_read_str(batch, "request_id"),
+            inputs_json=_read_str(batch, "inputs_json"),
+        )
 
-        # action
-        cell_action = batch["action"][0]
-        if hasattr(cell_action, "as_py"):
-            cell_action = cell_action.as_py()
-        if not isinstance(cell_action, str):
-            return None
-        action = cell_action.strip()
-        if not action:
-            return None
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        policy_id: str,
+        command: str,
+        inputs: dict | None = None,
+        request_id: str = "",
+    ) -> "PolicyCommand":
+        return cls(
+            policy_id=policy_id,
+            command=command,
+            request_id=request_id,
+            inputs_json=json.dumps(inputs or {}, separators=(",", ":")),
+        )
 
-        # output_path（可选）
-        output_path: Optional[str] = None
-        if "output_path" in batch.schema.names:
-            cell = batch["output_path"][0]
-            if hasattr(cell, "as_py"):
-                cell = cell.as_py()
-            if isinstance(cell, str):
-                s = cell.strip()
-                if s:
-                    output_path = s
-
-        try:
-            return cls(action=action, output_path=output_path)
-        except Exception:
-            return None
+    def inputs(self) -> dict:
+        parsed = json.loads(self.inputs_json)
+        if not isinstance(parsed, dict):
+            raise ValueError("inputs_json must be a JSON object")
+        return parsed
 
 
-class PlaybackControl(BaseModel):
-    """回放控制消息：START/PAUSE/RESUME/RESET 以及可选 MCAP 路径。"""
+class PolicyCommandStatus(BaseModel):
+    """Optional command status payload sent from policy to gateway through Dora."""
 
-    action: Literal["START", "PAUSE", "RESUME", "RESET"]
-    mcap_path: Optional[str] = None
+    policy_id: str
+    command: str
+    request_id: str = ""
+    status: PolicyCommandStatusValue
+    message: str = ""
+    outputs_json: str = "{}"
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not self.policy_id:
+            raise ValueError("policy_id must be non-empty")
+        if not self.command:
+            raise ValueError("command must be non-empty")
+        if not _SNAKE_CASE_RE.match(self.command):
+            raise ValueError("command must use snake_case")
+        _validate_json_object(self.outputs_json, "outputs_json")
+        return self
 
     def to_arrow(self) -> pa.RecordBatch:
-        """编码为单行 RecordBatch，schema: { action: string, mcap_path: string? }。"""
-        action = (self.action or "").strip()
-        mcap = (self.mcap_path or "").strip()
-        data: dict[str, pa.Array] = {
-            "action": pa.array([action]),
-        }
-        if mcap:
-            data["mcap_path"] = pa.array([mcap])
-        else:
-            data["mcap_path"] = pa.array([None], type=pa.string())
-        return pa.RecordBatch.from_pydict(data)
+        return pa.RecordBatch.from_pydict(
+            {
+                "policy_id": pa.array([self.policy_id], type=pa.string()),
+                "command": pa.array([self.command], type=pa.string()),
+                "request_id": pa.array([self.request_id], type=pa.string()),
+                "status": pa.array([self.status], type=pa.string()),
+                "message": pa.array([self.message], type=pa.string()),
+                "outputs_json": pa.array([self.outputs_json], type=pa.string()),
+            }
+        )
 
     @classmethod
-    def from_arrow(cls, value: Any) -> Optional["PlaybackControl"]:
-        """从 dora 传入的 value 解析出 PlaybackControl；无法解析时返回 None。"""
-        if value is None:
-            return None
-        try:
-            batch = ensure_record_batch(value)
-        except Exception:
-            return None
-        if batch.num_rows == 0 or "action" not in batch.schema.names:
-            return None
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "PolicyCommandStatus":
+        batch = ensure_record_batch(data)
+        if batch.num_rows == 0:
+            raise ValueError("PolicyCommandStatus RecordBatch must contain one row")
+        return cls(
+            policy_id=_read_str(batch, "policy_id"),
+            command=_read_str(batch, "command"),
+            request_id=_read_str(batch, "request_id"),
+            status=_read_str(batch, "status"),  # type: ignore[arg-type]
+            message=_read_str(batch, "message"),
+            outputs_json=_read_str(batch, "outputs_json"),
+        )
 
-        # action
-        cell_action = batch["action"][0]
-        if hasattr(cell_action, "as_py"):
-            cell_action = cell_action.as_py()
-        if not isinstance(cell_action, str):
-            return None
-        action = cell_action.strip()
-        if not action:
-            return None
+    @classmethod
+    def from_outputs(
+        cls,
+        *,
+        policy_id: str,
+        command: str,
+        status: PolicyCommandStatusValue,
+        outputs: dict | None = None,
+        request_id: str = "",
+        message: str = "",
+    ) -> "PolicyCommandStatus":
+        return cls(
+            policy_id=policy_id,
+            command=command,
+            request_id=request_id,
+            status=status,
+            message=message,
+            outputs_json=json.dumps(outputs or {}, separators=(",", ":")),
+        )
 
-        # mcap_path（可选）
-        mcap_path: Optional[str] = None
-        if "mcap_path" in batch.schema.names:
-            cell = batch["mcap_path"][0]
-            if hasattr(cell, "as_py"):
-                cell = cell.as_py()
-            if isinstance(cell, str):
-                s = cell.strip()
-                if s:
-                    mcap_path = s
-
-        try:
-            return cls(action=action, mcap_path=mcap_path)
-        except Exception:
-            return None
-
+    def outputs(self) -> dict:
+        parsed = json.loads(self.outputs_json)
+        if not isinstance(parsed, dict):
+            raise ValueError("outputs_json must be a JSON object")
+        return parsed

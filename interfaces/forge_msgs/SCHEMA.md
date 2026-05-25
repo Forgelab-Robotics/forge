@@ -1,0 +1,212 @@
+# forge_msgs Interface Schema v1
+
+This directory is the language-neutral contract for `forge_msgs`.
+
+Python (`packages/msgs`), Rust (`crates/forge_msgs`), and future C++ implementations should treat `forge_msgs.v1.yaml` as the source of truth. The implementations may be handwritten at first, but their Arrow schemas and validation rules should conform to this interface.
+
+## Transport Contract
+
+- Payloads are single-row Apache Arrow `RecordBatch` values.
+- The schema does not require Arrow metadata. Dora/IPC paths may drop metadata, so required semantics must be represented as real columns.
+- Core messages do not contain ROS-style `Header`, timestamp, or `frame_id`.
+- Timing and frame information should live in Dora event context, topic naming, node configuration, or adapter layers.
+
+## Messages
+
+### JointState
+
+Robot or simulator joint observation payload.
+
+Fields:
+
+- `name: list<utf8>`
+- `position: list<float64>`
+- `velocity: list<float64>`
+- `effort: list<float64>`
+
+Rules:
+
+- `name` must be non-empty.
+- `name` items must be unique.
+- `position`, `velocity`, and `effort` must either be empty or have the same length as `name`.
+- Units follow common robotics convention: revolute position in radians, velocity in radians/s, effort in Nm; prismatic position in meters, velocity in meters/s, effort in N.
+
+### JointCommand
+
+Joint command payload for robot drivers and controllers.
+
+Fields:
+
+- `name: list<utf8>`
+- `position: list<float64>`
+- `velocity: list<float64>`
+- `effort: list<float64>`
+- `kp: list<float64>`
+- `kd: list<float64>`
+
+Rules:
+
+- `name` must be non-empty.
+- `name` items must be unique.
+- Each numeric list must either be empty or have the same length as `name`.
+- `kp` and `kd` are optional low-level gains. For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
+
+### Image
+
+Uncompressed image payload.
+
+Fields:
+
+- `height: uint32`
+- `width: uint32`
+- `encoding: utf8`
+- `step: uint32`
+- `data: large_binary`
+
+Rules:
+
+- `step` is the full row length in bytes and may include row padding.
+- `data` length must equal `step * height`.
+- For known encodings, `step` must be at least `width * bytes_per_pixel`.
+- Multi-byte pixel encodings are little-endian.
+- Compressed `jpeg`, `png`, or `webp` payloads use `CompressedImage`.
+
+Recommended encodings:
+
+- `rgb8`
+- `bgr8`
+- `mono8`
+- `16UC1`
+- `32FC1`
+
+### CompressedImage
+
+Compressed image bitstream payload.
+
+Fields:
+
+- `format: utf8`
+- `data: large_binary`
+
+Recommended formats:
+
+- `jpeg`
+- `png`
+- `webp`
+
+### Pose
+
+Header-less 3D pose payload with position and quaternion orientation.
+
+Fields:
+
+- `x: float64`
+- `y: float64`
+- `z: float64`
+- `qx: float64`
+- `qy: float64`
+- `qz: float64`
+- `qw: float64`
+
+Rules:
+
+- Quaternion `qx`, `qy`, `qz`, `qw` must not be all zero.
+- Implementations should not silently normalize quaternion values.
+- 2D pose should use helpers such as `Pose.from_xy_yaw(...)`, not a separate wire schema.
+
+### PoseSet
+
+Single-row named collection of poses.
+
+Fields:
+
+- `name: list<utf8>`
+- `x: list<float64>`
+- `y: list<float64>`
+- `z: list<float64>`
+- `qx: list<float64>`
+- `qy: list<float64>`
+- `qz: list<float64>`
+- `qw: list<float64>`
+
+Rules:
+
+- `name` must be non-empty.
+- `name` items must be unique.
+- Every numeric list must have the same length as `name`.
+- Each quaternion must not be all zero.
+
+### PolicyCommand
+
+Command payload sent from gateway to policy through Dora.
+
+Delivery topic:
+
+- `policy_command`
+
+Fields:
+
+- `policy_id: utf8`
+- `command: utf8`
+- `request_id: utf8`
+- `inputs_json: utf8`
+
+Rules:
+
+- `policy_id` must be non-empty. Use `default` for single-policy setups.
+- `command` must be non-empty and use snake_case.
+- `request_id` may be empty when no response is expected.
+- `inputs_json` must parse as a JSON object. Use `{}` when there are no inputs.
+- A `PolicyCommandStatus` response is optional.
+
+Recommended commands:
+
+- `load`
+- `start`
+- `stop`
+- `pause`
+- `resume`
+- `reset`
+- `start_recording`
+- `stop_recording`
+- `load_playback`
+- `start_playback`
+- `pause_playback`
+- `resume_playback`
+- `reset_playback`
+- `seek_playback`
+- `set_playback_rate`
+
+### PolicyCommandStatus
+
+Optional status payload sent from policy to gateway through Dora.
+
+Delivery topic:
+
+- `policy_command_status`
+
+Fields:
+
+- `policy_id: utf8`
+- `command: utf8`
+- `request_id: utf8`
+- `status: utf8`
+- `message: utf8`
+- `outputs_json: utf8`
+
+Rules:
+
+- This message is optional. Policies may omit status output when no response is required.
+- `policy_id` and `command` must be non-empty.
+- `request_id` should match the originating `PolicyCommand` when present.
+- `status` must be one of `accepted`, `rejected`, `running`, `done`, or `error`.
+- `message` may be empty.
+- `outputs_json` must parse as a JSON object. Use `{}` when there are no outputs.
+
+## Cross-Language Implementation Notes
+
+- Python, Rust, and C++ structs should use the same field names as the schema.
+- Arrow field order should match `forge_msgs.v1.yaml`.
+- Implementations should reject duplicate joint names and invalid list lengths.
+- Implementations should not infer missing columns. A payload either conforms to the schema or fails validation.
+- Helper methods may convert to fixed-order arrays, but fixed order is not part of the wire schema.
