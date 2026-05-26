@@ -113,7 +113,7 @@ def test_runner_merges_and_ingests_external_events(
     assert driver.disconnected is True
 
 
-def test_runner_tick_sends_joint_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_tick_sends_state(monkeypatch: pytest.MonkeyPatch) -> None:
     import forge_robot.node_runner as node_runner
 
     FakeNode.reset(
@@ -127,12 +127,16 @@ def test_runner_tick_sends_joint_state(monkeypatch: pytest.MonkeyPatch) -> None:
     driver = FakeDriver()
     assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
-    assert [output_id for output_id, _ in FakeNode.sent] == ["joint_state"]
+    assert [output_id for output_id, _ in FakeNode.sent] == ["state"]
     state = JointState.from_arrow(FakeNode.sent[0][1])
     assert state.position == [1.0]
 
 
-def test_runner_parses_command_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("input_id", ["action", "command"])
+def test_runner_parses_command_arrow(
+    monkeypatch: pytest.MonkeyPatch,
+    input_id: str,
+) -> None:
     import forge_robot.node_runner as node_runner
 
     command = JointCommand(name=["joint1"], position=[0.5])
@@ -141,7 +145,7 @@ def test_runner_parses_command_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
             {
                 "kind": "dora",
                 "type": "INPUT",
-                "id": "command",
+                "id": input_id,
                 "value": command.to_arrow(),
             },
             {"kind": "dora", "type": "STOP"},
@@ -156,7 +160,11 @@ def test_runner_parses_command_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
     assert driver.commands[0].position == [0.5]
 
 
-def test_runner_maps_master_joint_state_to_command(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("input_id", ["master_state", "master_joint_state"])
+def test_runner_maps_master_state_to_command(
+    monkeypatch: pytest.MonkeyPatch,
+    input_id: str,
+) -> None:
     import forge_robot.node_runner as node_runner
 
     state = JointState(name=["joint1"], position=[0.75])
@@ -165,7 +173,7 @@ def test_runner_maps_master_joint_state_to_command(monkeypatch: pytest.MonkeyPat
             {
                 "kind": "dora",
                 "type": "INPUT",
-                "id": "master_joint_state",
+                "id": input_id,
                 "value": state.to_arrow(),
             },
             {"kind": "dora", "type": "STOP"},

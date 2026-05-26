@@ -1,4 +1,4 @@
-"""标准 Dora 机器人节点循环：tick/command/master_joint_state 处理与 joint_state 输出。"""
+"""标准 Dora 机器人节点循环：tick/action/master_state 处理与 state 输出。"""
 
 from __future__ import annotations
 
@@ -38,9 +38,9 @@ def _handle_control_input(
     validate_control_arrow: bool,
     strict_extra_arrow_columns: bool,
 ) -> None:
-    """标准控制输入处理：command / master_joint_state → set_command。"""
+    """标准控制输入处理：action / master_state → set_command。"""
     match input_id:
-        case "command":
+        case "action" | "command":
             if is_follower:
                 if validate_control_arrow:
                     try:
@@ -50,7 +50,7 @@ def _handle_control_input(
                             strict_extra_columns=strict_extra_arrow_columns,
                         )
                     except RobotArrowSchemaError as e:
-                        logger.error("忽略无效 command（Arrow schema）: %s", e)
+                        logger.error("忽略无效 %s（Arrow schema）: %s", input_id, e)
                         return
                 command = JointCommand.from_arrow(value)
                 if debug:
@@ -59,12 +59,12 @@ def _handle_control_input(
                             name: float(command.to_np([name], "position")[0])
                             for name in joint_order[:3]
                         }
-                        logger.debug("收到 command，sample_joints=%s", sample)
+                        logger.debug("收到 %s，sample_joints=%s", input_id, sample)
                     except Exception:
                         pass
                 driver.set_command(command)
             return
-        case "master_joint_state":
+        case "master_state" | "master_joint_state":
             if is_follower:
                 master_state = JointState.from_arrow(value)
                 mirror_command = _joint_state_to_command(master_state)
@@ -75,7 +75,8 @@ def _handle_control_input(
                             for name in joint_order[:3]
                         }
                         logger.debug(
-                            "收到 master_joint_state 并转换为 command，sample_joints=%s",
+                            "收到 %s 并转换为 command，sample_joints=%s",
+                            input_id,
                             sample,
                         )
                     except Exception:
@@ -94,9 +95,9 @@ def _handle_tick(
     debug: bool,
     on_tick_after_state: Callable[[Node, RobotDriver], None] | None,
 ) -> None:
-    """标准 tick 处理：读取并发送 joint_state，再执行可选附加输出。"""
+    """标准 tick 处理：读取并发送 state，再执行可选附加输出。"""
     state = driver.get_state()
-    node.send_output("joint_state", state.to_arrow())
+    node.send_output("state", state.to_arrow())
     if debug:
         try:
             sample = {
@@ -104,7 +105,7 @@ def _handle_tick(
                 for name in joint_order[:3]
             }
             logger.debug(
-                "tick 输出当前 joint_state，sample_joints=%s",
+                "tick 输出当前 state，sample_joints=%s",
                 sample,
             )
         except Exception:
@@ -126,17 +127,17 @@ def run_dora_robot_node(
     strict_extra_arrow_columns: bool = False,
 ) -> int:
     """
-    运行标准 Dora 机器人节点循环：tick 发 joint_state，处理 command/master_joint_state，支持可选每 tick 额外输出。
+    运行标准 Dora 机器人节点循环：tick 发 state，处理 action/master_state，支持可选每 tick 额外输出。
 
     Args:
         driver: 已连接并满足 RobotDriver 的驱动实例。
         joint_order: 关节顺序，用于命令校验和 debug 采样；若 None 且 driver 为 BaseRobotDriver 则用 driver.joint_order。
         is_follower: 是否从站（仅从站才执行 set_command）。
-        debug: 是否打 debug 日志（command/master_joint_state 采样）。
+        debug: 是否打 debug 日志（action/master_state 采样）。
         on_tick_after_state: 可选；每 tick 发送 state 后调用 (node, driver)，用于额外输出（如 image）。
         external_subscriptions: 可选 Dora external subscriptions；传入后会在 Node 上 merge_external_events。
         on_external_event: 可选 external payload handler；通常用于将 ROS2 payload 写入 driver 内部缓存。
-        validate_control_arrow: 为 True 时，在解析 command 前校验 Arrow 是否包含所需关节名。
+        validate_control_arrow: 为 True 时，在解析 action/command 前校验 Arrow 是否包含所需关节名。
         strict_extra_arrow_columns: 为 True 时，除上述列外不允许多余列（需 validate_control_arrow=True）。
 
     Returns:
