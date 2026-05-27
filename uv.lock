@@ -7,6 +7,7 @@ members = [
     "forge",
     "forge-common",
     "forge-msgs",
+    "forge-policy",
     "forge-robot",
 ]
 
@@ -85,6 +86,21 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
 ]
 provides-extras = ["test"]
+
+[[package]]
+name = "forge-policy"
+version = "0.1.0"
+source = { editable = "packages/policy" }
+dependencies = [
+    { name = "dora-rs" },
+    { name = "forge-msgs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dora-rs", specifier = "==0.4.1" },
+    { name = "forge-msgs", editable = "packages/msgs" },
+]
 
 [[package]]
 name = "forge-robot"
