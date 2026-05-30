@@ -38,6 +38,7 @@ Joint command payload for robot drivers and controllers.
 Fields:
 
 - `name: list<utf8>`
+- `mode: utf8`
 - `position: list<float64>`
 - `velocity: list<float64>`
 - `effort: list<float64>`
@@ -48,6 +49,7 @@ Rules:
 
 - `name` must be non-empty.
 - `name` items must be unique.
+- `mode` must be one of `position`, `velocity`, `effort`, or `hybrid`. Payloads written before `mode` existed may omit it; readers treat missing or null `mode` as `position`.
 - Each numeric list must either be empty or have the same length as `name`.
 - `kp` and `kd` are optional low-level gains. For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 
@@ -208,5 +210,5 @@ Rules:
 - Python, Rust, and C++ structs should use the same field names as the schema.
 - Arrow field order should match `forge_msgs.v1.yaml`.
 - Implementations should reject duplicate joint names and invalid list lengths.
-- Implementations should not infer missing columns. A payload either conforms to the schema or fails validation.
+- Implementations should not infer missing columns unless a field explicitly defines a compatibility default. Otherwise, a payload either conforms to the schema or fails validation.
 - Helper methods may convert to fixed-order arrays, but fixed order is not part of the wire schema.

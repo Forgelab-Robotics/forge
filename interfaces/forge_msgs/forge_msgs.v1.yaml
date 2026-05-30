@@ -89,6 +89,16 @@ messages:
         required: true
         unique_items: true
         empty_allowed: false
+      mode:
+        arrow: utf8
+        required: false
+        default: position
+        allowed_values:
+          - position
+          - velocity
+          - effort
+          - hybrid
+        compatibility: Payloads written before mode existed may omit this field; readers must treat a missing or null mode as position.
       position:
         arrow: list<float64>
         required: true
@@ -117,8 +127,14 @@ messages:
     validation:
       - name must contain at least one item.
       - name items must be unique.
+      - mode, when present, must be one of position, velocity, effort, or hybrid.
       - position, velocity, effort, kp, and kd must either be empty or have the same length as name.
     mapping_notes:
+      control_modes:
+        position: Position command interface.
+        velocity: Velocity command interface.
+        effort: Effort command interface.
+        hybrid: Low-level position/velocity/effort command with optional kp/kd gains.
       unitree_low_level:
         q: position
         dq: velocity

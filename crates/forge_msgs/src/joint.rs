@@ -15,6 +15,7 @@ pub struct JointState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JointCommand {
     pub name: Vec<String>,
+    pub mode: String,
     pub position: Vec<f64>,
     pub velocity: Vec<f64>,
     pub effort: Vec<f64>,
@@ -104,8 +105,21 @@ impl JointCommand {
         kp: Vec<f64>,
         kd: Vec<f64>,
     ) -> Result<Self, JointError> {
+        Self::with_mode("position", name, position, velocity, effort, kp, kd)
+    }
+
+    pub fn with_mode(
+        mode: impl Into<String>,
+        name: Vec<String>,
+        position: Vec<f64>,
+        velocity: Vec<f64>,
+        effort: Vec<f64>,
+        kp: Vec<f64>,
+        kd: Vec<f64>,
+    ) -> Result<Self, JointError> {
         let value = Self {
             name,
+            mode: mode.into(),
             position,
             velocity,
             effort,
@@ -121,6 +135,10 @@ impl JointCommand {
         record_batch(
             vec![
                 ("name", Arc::new(string_list_array(&self.name)) as ArrayRef),
+                (
+                    "mode",
+                    Arc::new(StringArray::from(vec![self.mode.as_str()])) as ArrayRef,
+                ),
                 (
                     "position",
                     Arc::new(float_list_array(&self.position)) as ArrayRef,
@@ -142,6 +160,7 @@ impl JointCommand {
                     DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
                     false,
                 ),
+                Field::new("mode", DataType::Utf8, false),
                 Field::new("position", float_list_type(), false),
                 Field::new("velocity", float_list_type(), false),
                 Field::new("effort", float_list_type(), false),
@@ -159,6 +178,7 @@ impl JointCommand {
         }
         let value = Self {
             name: read_string_list(batch, "name")?,
+            mode: read_optional_string_scalar(batch, "mode", "position")?,
             position: read_float_list(batch, "position")?,
             velocity: read_float_list(batch, "velocity")?,
             effort: read_float_list(batch, "effort")?,
@@ -171,6 +191,7 @@ impl JointCommand {
 
     fn validate_command(&self) -> Result<(), JointError> {
         validate_names(&self.name)?;
+        validate_mode(&self.mode)?;
         validate_len("position", &self.position, &self.name)?;
         validate_len("velocity", &self.velocity, &self.name)?;
         validate_len("effort", &self.effort, &self.name)?;
@@ -231,6 +252,29 @@ fn read_float_list(batch: &RecordBatch, name: &str) -> Result<Vec<f64>, JointErr
     Ok((0..array.len()).map(|i| array.value(i)).collect())
 }
 
+fn read_optional_string_scalar(
+    batch: &RecordBatch,
+    name: &str,
+    default: &str,
+) -> Result<String, JointError> {
+    let idx = match batch.schema().index_of(name) {
+        Ok(idx) => idx,
+        Err(_) => return Ok(default.to_string()),
+    };
+    let array = batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| JointError::Invalid(format!("{name} column must be utf8")))?;
+    if array.is_empty() {
+        return Err(JointError::Invalid(format!("{name} column is empty")));
+    }
+    if array.is_null(0) {
+        return Ok(default.to_string());
+    }
+    Ok(array.value(0).to_string())
+}
+
 fn read_list(batch: &RecordBatch, name: &str) -> Result<ArrayRef, JointError> {
     let idx = batch
         .schema()
@@ -262,6 +306,15 @@ fn validate_names(names: &[String]) -> Result<(), JointError> {
     Ok(())
 }
 
+fn validate_mode(mode: &str) -> Result<(), JointError> {
+    if matches!(mode, "position" | "velocity" | "effort" | "hybrid") {
+        return Ok(());
+    }
+    Err(JointError::Invalid(format!(
+        "mode must be one of position, velocity, effort, hybrid (got {mode})"
+    )))
+}
+
 fn validate_len(field: &str, values: &[f64], names: &[String]) -> Result<(), JointError> {
     if !values.is_empty() && values.len() != names.len() {
         return Err(JointError::Invalid(format!(
@@ -290,7 +343,12 @@ impl std::error::Error for JointError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{JointCommand, JointState};
+    use std::sync::Arc;
+
+    use arrow_array::ArrayRef;
+    use arrow_schema::{DataType, Field};
+
+    use super::{JointCommand, JointState, float_list_array, record_batch, string_list_array};
 
     #[test]
     fn joint_state_roundtrip_record_batch() {
@@ -308,7 +366,8 @@ mod tests {
 
     #[test]
     fn joint_command_roundtrip_record_batch() {
-        let command = JointCommand::new(
+        let command = JointCommand::with_mode(
+            "hybrid",
             vec!["j1".to_string()],
             vec![1.0],
             vec![0.0],
@@ -320,6 +379,55 @@ mod tests {
         let batch = command.to_record_batch().unwrap();
         let back = JointCommand::from_record_batch(&batch).unwrap();
         assert_eq!(back, command);
+    }
+
+    #[test]
+    fn joint_command_reads_legacy_record_batch_without_mode() {
+        let batch = record_batch(
+            vec![
+                (
+                    "name",
+                    Arc::new(string_list_array(&["j1".to_string()])) as ArrayRef,
+                ),
+                ("position", Arc::new(float_list_array(&[1.0])) as ArrayRef),
+                ("velocity", Arc::new(float_list_array(&[])) as ArrayRef),
+                ("effort", Arc::new(float_list_array(&[])) as ArrayRef),
+                ("kp", Arc::new(float_list_array(&[])) as ArrayRef),
+                ("kd", Arc::new(float_list_array(&[])) as ArrayRef),
+            ],
+            vec![
+                Field::new(
+                    "name",
+                    DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+                    false,
+                ),
+                Field::new("position", super::float_list_type(), false),
+                Field::new("velocity", super::float_list_type(), false),
+                Field::new("effort", super::float_list_type(), false),
+                Field::new("kp", super::float_list_type(), false),
+                Field::new("kd", super::float_list_type(), false),
+            ],
+        )
+        .unwrap();
+
+        let command = JointCommand::from_record_batch(&batch).unwrap();
+
+        assert_eq!(command.mode, "position");
+        assert_eq!(command.position, vec![1.0]);
+    }
+
+    #[test]
+    fn rejects_invalid_mode() {
+        let err = JointCommand::with_mode(
+            "invalid",
+            vec!["j1".to_string()],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
+        assert!(err.is_err());
     }
 
     #[test]

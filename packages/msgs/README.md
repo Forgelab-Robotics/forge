@@ -11,6 +11,7 @@ The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs
 Robot or simulator joint observation payload.
 
 - `name: list[str]`
+- `mode: "position" | "velocity" | "effort" | "hybrid"`
 - `position: list[float]`
 - `velocity: list[float]`
 - `effort: list[float]`
@@ -27,6 +28,8 @@ Command payload for robot drivers and controllers.
 - `effort: list[float]`
 - `kp: list[float]`
 - `kd: list[float]`
+
+`mode` describes the command semantics. `position`, `velocity`, and `effort` match the common ROS2 command interfaces; `hybrid` is for low-level position/velocity/effort commands with optional `kp`/`kd` gains. Payloads written before `mode` existed are read as `mode="position"`.
 
 For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 

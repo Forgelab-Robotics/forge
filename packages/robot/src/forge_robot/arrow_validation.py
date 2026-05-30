@@ -7,6 +7,8 @@ from typing import Any
 import pyarrow as pa
 from forge_msgs.arrow import ensure_record_batch
 
+COMMAND_MODES = {"position", "velocity", "effort", "hybrid"}
+
 
 class RobotArrowSchemaError(ValueError):
     """Arrow RecordBatch 不满足当前机器人 joint_order 约定时抛出。"""
@@ -36,6 +38,18 @@ def _validate_vector_lengths(batch: pa.RecordBatch, names: list[str], fields: tu
             )
 
 
+def _validate_command_mode(batch: pa.RecordBatch) -> None:
+    if "mode" not in batch.schema.names:
+        return
+    try:
+        raw_mode = batch["mode"][0].as_py()
+    except Exception as e:
+        raise RobotArrowSchemaError("无法读取 mode 列") from e
+    mode = "position" if raw_mode is None else str(raw_mode)
+    if mode not in COMMAND_MODES:
+        raise RobotArrowSchemaError(f"mode 必须是 {sorted(COMMAND_MODES)} 之一")
+
+
 def validate_robot_control_arrow(
     value: Any,
     joint_order: list[str],
@@ -45,7 +59,8 @@ def validate_robot_control_arrow(
     """
     将 dora 传入的 JointCommand payload 规范为 RecordBatch，并校验列名和 name。
 
-    JointCommand schema 固定为 name / position / velocity / effort / kp / kd。
+    JointCommand schema 固定为 name / position / velocity / effort / kp / kd，
+    mode 为兼容新增列；缺失时按 position 处理。
     ``joint_order`` 用于校验本节点期望的关节是否都在 payload 中。
 
     Args:
@@ -78,6 +93,7 @@ def validate_robot_control_arrow(
 
     names = _read_name_list(batch)
     _validate_vector_lengths(batch, names, ("position", "velocity", "effort", "kp", "kd"))
+    _validate_command_mode(batch)
 
     missing = set(joint_order) - set(names)
     if missing:

@@ -19,6 +19,7 @@ def _joint_state_to_command(master_state: JointState) -> JointCommand:
     """将 master 的 JointState 映射为可下发的 JointCommand。"""
     return JointCommand(
         name=master_state.name,
+        mode="position",
         position=master_state.position,
         velocity=[],
         effort=[],

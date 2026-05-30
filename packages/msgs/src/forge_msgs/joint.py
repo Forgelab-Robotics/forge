@@ -10,6 +10,7 @@ from forge_msgs.arrow import ensure_record_batch
 
 JointField = Literal["position", "velocity", "effort"]
 CommandField = Literal["position", "velocity", "effort", "kp", "kd"]
+CommandMode = Literal["position", "velocity", "effort", "hybrid"]
 
 
 def _validate_names(name: list[str]) -> None:
@@ -43,6 +44,15 @@ def _name_array(names: list[str]) -> pa.Array:
 
 def _float_list_array(values: list[float]) -> pa.Array:
     return pa.array([values], type=pa.list_(pa.float64()))
+
+
+def _command_mode(batch: pa.RecordBatch) -> str:
+    if "mode" not in batch.schema.names:
+        return "position"
+    mode = batch["mode"][0].as_py()
+    if mode is None:
+        return "position"
+    return str(mode)
 
 
 class JointState(BaseModel):
@@ -113,6 +123,7 @@ class JointCommand(BaseModel):
     """Joint command payload for robot drivers and controllers."""
 
     name: list[str]
+    mode: CommandMode = "position"
     position: list[float] = []
     velocity: list[float] = []
     effort: list[float] = []
@@ -133,6 +144,7 @@ class JointCommand(BaseModel):
         return pa.RecordBatch.from_pydict(
             {
                 "name": _name_array(self.name),
+                "mode": pa.array([self.mode], type=pa.string()),
                 "position": _float_list_array(self.position),
                 "velocity": _float_list_array(self.velocity),
                 "effort": _float_list_array(self.effort),
@@ -150,6 +162,7 @@ class JointCommand(BaseModel):
             raise ValueError("JointCommand RecordBatch must contain one row")
         return cls(
             name=list(batch["name"][0].as_py() or []),
+            mode=_command_mode(batch),
             position=_field_values(batch, "position"),
             velocity=_field_values(batch, "velocity"),
             effort=_field_values(batch, "effort"),

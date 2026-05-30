@@ -8,7 +8,7 @@ from typing import Literal
 from forge_msgs import JointCommand
 
 ActuatorKind = Literal["revolute", "continuous", "prismatic", "other"]
-ControlMode = Literal["position", "velocity", "torque"]
+ControlMode = Literal["position", "velocity", "effort", "hybrid"]
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,7 @@ def clip_and_validate_command(
 ) -> JointCommand:
     """根据执行器规格限制命令值。
 
-    新消息不在 payload 中携带 unit/mode；单位约定来自 forge_msgs interface。
+    unit 约定来自 forge_msgs interface；mode 描述 payload 的控制语义。
     对 continuous 类型的关节，位置字段不做位置裁剪。
     """
     names: list[str] = []
@@ -132,6 +132,7 @@ def clip_and_validate_command(
 
     return JointCommand(
         name=names,
+        mode=command.mode,
         position=_ordered_field(names, position),
         velocity=_ordered_field(names, velocity),
         effort=_ordered_field(names, effort),

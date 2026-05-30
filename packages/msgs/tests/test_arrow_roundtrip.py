@@ -100,6 +100,7 @@ def test_joint_state_np_helpers() -> None:
 def test_joint_command_roundtrip_and_unitree_fields() -> None:
     command = JointCommand(
         name=["j1", "j2"],
+        mode="hybrid",
         position=[1.0, 2.0],
         velocity=[0.0, 0.0],
         effort=[0.5, 0.6],
@@ -107,9 +108,33 @@ def test_joint_command_roundtrip_and_unitree_fields() -> None:
         kd=[1.0, 1.2],
     )
     batch = command.to_arrow()
+    assert batch["mode"][0].as_py() == "hybrid"
     back = JointCommand.from_arrow(_to_ipc_bytes(batch))
     assert back == command
     np.testing.assert_array_equal(back.to_np(["j2", "j1"], "kp"), np.array([30.0, 20.0]))
+
+
+def test_joint_command_reads_legacy_arrow_without_mode() -> None:
+    batch = pa.RecordBatch.from_pydict(
+        {
+            "name": pa.array([["j1"]], type=pa.list_(pa.string())),
+            "position": pa.array([[1.0]], type=pa.list_(pa.float64())),
+            "velocity": pa.array([[]], type=pa.list_(pa.float64())),
+            "effort": pa.array([[]], type=pa.list_(pa.float64())),
+            "kp": pa.array([[]], type=pa.list_(pa.float64())),
+            "kd": pa.array([[]], type=pa.list_(pa.float64())),
+        }
+    )
+
+    command = JointCommand.from_arrow(batch)
+
+    assert command.mode == "position"
+    assert command.position == [1.0]
+
+
+def test_joint_command_rejects_invalid_mode() -> None:
+    with pytest.raises(ValueError):
+        JointCommand(name=["j1"], mode="invalid")  # type: ignore[arg-type]
 
 
 def test_joint_command_from_np() -> None:
