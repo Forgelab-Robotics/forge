@@ -1,4 +1,10 @@
-"""标准 Dora 机器人节点循环：tick/action/master_state 处理与 state 输出。"""
+"""标准 Dora 机器人节点循环。
+
+输入语义：
+- action: low-level JointCommand，通常来自 VLA/policy 的关节级动作。
+- master_state: leader JointState，镜像为 low-level position JointCommand。
+- locomotion_command: high-level LocomotionCommand，表达整机平面移动速度。
+"""
 
 from __future__ import annotations
 
@@ -7,10 +13,10 @@ from collections.abc import Callable
 from typing import Any
 
 from dora import Node
-from forge_msgs import JointCommand, JointState
+from forge_msgs import JointCommand, JointState, LocomotionCommand
 
 from .arrow_validation import RobotArrowSchemaError, validate_robot_control_arrow
-from .robot_protocol import BaseRobotDriver, RobotDriver
+from .robot_protocol import BaseRobotDriver, LocomotionRobotDriver, RobotDriver
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +34,13 @@ def _joint_state_to_command(master_state: JointState) -> JointCommand:
     )
 
 
+def _has_joint_order(input_id: str, joint_order: list[str]) -> bool:
+    if joint_order:
+        return True
+    logger.error("忽略 %s：joint_order 不能为空", input_id)
+    return False
+
+
 def _handle_control_input(
     input_id: str,
     value: Any,
@@ -39,10 +52,12 @@ def _handle_control_input(
     validate_control_arrow: bool,
     strict_extra_arrow_columns: bool,
 ) -> None:
-    """标准控制输入处理：action / master_state → set_command。"""
+    """处理低层 action、leader master_state 和高层 locomotion_command。"""
     match input_id:
-        case "action" | "command":
+        case "action":
             if is_follower:
+                if not _has_joint_order(input_id, joint_order):
+                    return
                 if validate_control_arrow:
                     try:
                         validate_robot_control_arrow(
@@ -65,8 +80,10 @@ def _handle_control_input(
                         pass
                 driver.set_command(command)
             return
-        case "master_state" | "master_joint_state":
+        case "master_state":
             if is_follower:
+                if not _has_joint_order(input_id, joint_order):
+                    return
                 master_state = JointState.from_arrow(value)
                 mirror_command = _joint_state_to_command(master_state)
                 if debug:
@@ -83,6 +100,21 @@ def _handle_control_input(
                     except Exception:
                         pass
                 driver.set_command(mirror_command)
+            return
+        case "locomotion_command":
+            if is_follower:
+                if not isinstance(driver, LocomotionRobotDriver):
+                    logger.warning("忽略 locomotion_command：driver 不支持移动控制")
+                    return
+                command = LocomotionCommand.from_arrow(value)
+                if debug:
+                    logger.debug(
+                        "收到 locomotion_command，vx=%s, vy=%s, wz=%s",
+                        command.vx,
+                        command.vy,
+                        command.wz,
+                    )
+                driver.set_locomotion_command(command)
             return
         case _:
             return
@@ -128,17 +160,19 @@ def run_dora_robot_node(
     strict_extra_arrow_columns: bool = False,
 ) -> int:
     """
-    运行标准 Dora 机器人节点循环：tick 发 state，处理 action/master_state，支持可选每 tick 额外输出。
+    运行标准 Dora 机器人节点循环：tick 发 state，并处理固定输入语义：
+    action 为 low-level JointCommand，master_state 为 leader JointState 镜像，
+    locomotion_command 为 high-level LocomotionCommand。
 
     Args:
         driver: 已连接并满足 RobotDriver 的驱动实例。
-        joint_order: 关节顺序，用于命令校验和 debug 采样；若 None 且 driver 为 BaseRobotDriver 则用 driver.joint_order。
+        joint_order: 关节顺序，用于低层 action/master_state 校验和 debug 采样；若 None 且 driver 为 BaseRobotDriver 则用 driver.joint_order。
         is_follower: 是否从站（仅从站才执行 set_command）。
         debug: 是否打 debug 日志（action/master_state 采样）。
         on_tick_after_state: 可选；每 tick 发送 state 后调用 (node, driver)，用于额外输出（如 image）。
         external_subscriptions: 可选 Dora external subscriptions；传入后会在 Node 上 merge_external_events。
         on_external_event: 可选 external payload handler；通常用于将 ROS2 payload 写入 driver 内部缓存。
-        validate_control_arrow: 为 True 时，在解析 action/command 前校验 Arrow 是否包含所需关节名。
+        validate_control_arrow: 为 True 时，在解析 action 前校验 Arrow 是否包含所需关节名。
         strict_extra_arrow_columns: 为 True 时，除上述列外不允许多余列（需 validate_control_arrow=True）。
 
     Returns:
@@ -149,11 +183,7 @@ def run_dora_robot_node(
         if isinstance(driver, BaseRobotDriver):
             order = driver.joint_order
         else:
-            raise ValueError(
-                "joint_order 必须传入，或 driver 需为 BaseRobotDriver 并实现 joint_order"
-            )
-    if not order:
-        raise ValueError("joint_order 不能为空")
+            order = []
 
     if external_subscriptions and on_external_event is None:
         raise ValueError("external_subscriptions 需要同时传入 on_external_event")

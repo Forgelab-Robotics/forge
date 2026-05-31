@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable
 
-from forge_msgs import JointCommand, JointState
+from forge_msgs import JointCommand, JointState, LocomotionCommand
 
 
 @runtime_checkable
@@ -31,6 +31,15 @@ class RobotDriver(Protocol):
 
     def set_command(self, command: JointCommand) -> None:
         """下发关节命令到硬件；实现方应做限位等安全处理。"""
+        ...
+
+
+@runtime_checkable
+class LocomotionRobotDriver(Protocol):
+    """可选移动控制能力：支持平面机体系速度命令的 driver 实现此协议。"""
+
+    def set_locomotion_command(self, command: LocomotionCommand) -> None:
+        """下发平面移动速度命令到硬件；实现方应做限速和安全处理。"""
         ...
 
 

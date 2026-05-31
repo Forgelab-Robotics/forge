@@ -12,11 +12,14 @@ from .device_tools import (
 __all__ = [
     "ActuatorSpec",
     "BaseRobotDriver",
+    "LocomotionRobotDriver",
+    "LocomotionSpec",
     "RobotArrowSchemaError",
     "RobotDriver",
     "STANDARD_DEVICE_COMMANDS",
     "address_info",
     "clip_and_validate_command",
+    "clip_and_validate_locomotion_command",
     "clip_and_validate_position_command",
     "joint_order",
     "error_result",
@@ -42,6 +45,13 @@ def __getattr__(name: str):
 
         return getattr(actuator_spec, name)
     if name in {
+        "LocomotionSpec",
+        "clip_and_validate_locomotion_command",
+    }:
+        from . import locomotion_spec
+
+        return getattr(locomotion_spec, name)
+    if name in {
         "RobotArrowSchemaError",
         "validate_robot_control_arrow",
         "validate_robot_state_arrow",
@@ -53,7 +63,7 @@ def __getattr__(name: str):
         from .node_runner import run_dora_robot_node
 
         return run_dora_robot_node
-    if name in {"BaseRobotDriver", "RobotDriver"}:
+    if name in {"BaseRobotDriver", "LocomotionRobotDriver", "RobotDriver"}:
         from . import robot_protocol
 
         return getattr(robot_protocol, name)

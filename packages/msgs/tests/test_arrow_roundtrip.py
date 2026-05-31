@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 
 import numpy as np
 import pyarrow as pa
@@ -11,6 +12,7 @@ from forge_msgs.arrow import ensure_record_batch
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
+from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.pose import Pose, PoseSet
 
 
@@ -280,6 +282,24 @@ def test_policy_command_status_validation() -> None:
             status="error",
             outputs_json="[]",
         )
+
+
+def test_locomotion_command_roundtrip_record_batch_table_and_bytes() -> None:
+    command = LocomotionCommand(vx=0.5, vy=0.1, wz=0.2)
+    batch = command.to_arrow()
+
+    assert LocomotionCommand.from_arrow(batch) == command
+    assert LocomotionCommand.from_arrow(pa.Table.from_batches([batch])) == command
+    assert LocomotionCommand.from_arrow(_to_ipc_bytes(batch)) == command
+
+
+@pytest.mark.parametrize("field", ["vx", "vy", "wz"])
+def test_locomotion_command_rejects_non_finite(field: str) -> None:
+    payload = {"vx": 0.0, "vy": 0.0, "wz": 0.0}
+    payload[field] = math.inf
+
+    with pytest.raises(ValueError, match="finite"):
+        LocomotionCommand(**payload)
 
 
 def test_pose_roundtrip_record_batch_table_and_bytes() -> None:

@@ -17,8 +17,8 @@ fake_dora = types.ModuleType("dora")
 fake_dora.Node = object
 sys.modules.setdefault("dora", fake_dora)
 
-from forge_msgs import JointCommand, JointState
-from forge_robot.node_runner import run_dora_robot_node
+from forge_msgs import JointCommand, JointState, LocomotionCommand  # noqa: E402
+from forge_robot.node_runner import run_dora_robot_node  # noqa: E402
 
 
 class FakeNode:
@@ -51,6 +51,7 @@ class FakeDriver:
     def __init__(self) -> None:
         self.external_payloads: list[Any] = []
         self.commands: list[JointCommand] = []
+        self.locomotion_commands: list[LocomotionCommand] = []
         self.disconnected = False
 
     def connect(self) -> None:
@@ -65,8 +66,49 @@ class FakeDriver:
     def set_command(self, command: JointCommand) -> None:
         self.commands.append(command)
 
+    def set_locomotion_command(self, command: LocomotionCommand) -> None:
+        self.locomotion_commands.append(command)
+
     def ingest_external_payload(self, payload: Any) -> None:
         self.external_payloads.append(payload)
+
+
+class FakeJointOnlyDriver:
+    joint_order = ["joint1"]
+
+    def __init__(self) -> None:
+        self.commands: list[JointCommand] = []
+        self.disconnected = False
+
+    def connect(self) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+    def get_state(self) -> JointState:
+        return JointState(name=["joint1"], position=[1.0])
+
+    def set_command(self, command: JointCommand) -> None:
+        self.commands.append(command)
+
+
+class FakeLocomotionOnlyDriver:
+    def __init__(self) -> None:
+        self.locomotion_commands: list[LocomotionCommand] = []
+        self.disconnected = False
+
+    def connect(self) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+    def get_state(self) -> JointState:
+        return JointState(name=["base"], position=[0.0])
+
+    def set_locomotion_command(self, command: LocomotionCommand) -> None:
+        self.locomotion_commands.append(command)
 
 
 def test_runner_ignores_external_path_by_default(
@@ -132,8 +174,61 @@ def test_runner_tick_sends_state(monkeypatch: pytest.MonkeyPatch) -> None:
     assert state.position == [1.0]
 
 
-@pytest.mark.parametrize("input_id", ["action", "command"])
 def test_runner_parses_command_arrow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    command = JointCommand(name=["joint1"], position=[0.5])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "action",
+                "value": command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
+
+    assert len(driver.commands) == 1
+    assert driver.commands[0].position == [0.5]
+
+
+def test_runner_maps_master_state_to_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    state = JointState(name=["joint1"], position=[0.75])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "master_state",
+                "value": state.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
+
+    assert len(driver.commands) == 1
+    assert driver.commands[0].position == [0.75]
+    assert driver.commands[0].velocity == []
+
+
+@pytest.mark.parametrize("input_id", ["command", "master_joint_state", "cmd_vel", "locomotion"])
+def test_runner_ignores_non_standard_control_aliases(
     monkeypatch: pytest.MonkeyPatch,
     input_id: str,
 ) -> None:
@@ -156,25 +251,23 @@ def test_runner_parses_command_arrow(
     driver = FakeDriver()
     assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
-    assert len(driver.commands) == 1
-    assert driver.commands[0].position == [0.5]
+    assert driver.commands == []
+    assert driver.locomotion_commands == []
 
 
-@pytest.mark.parametrize("input_id", ["master_state", "master_joint_state"])
-def test_runner_maps_master_state_to_command(
+def test_runner_parses_locomotion_command_arrow(
     monkeypatch: pytest.MonkeyPatch,
-    input_id: str,
 ) -> None:
     import forge_robot.node_runner as node_runner
 
-    state = JointState(name=["joint1"], position=[0.75])
+    command = LocomotionCommand(vx=0.5, vy=0.1, wz=0.2)
     FakeNode.reset(
         [
             {
                 "kind": "dora",
                 "type": "INPUT",
-                "id": input_id,
-                "value": state.to_arrow(),
+                "id": "locomotion_command",
+                "value": command.to_arrow(),
             },
             {"kind": "dora", "type": "STOP"},
         ]
@@ -184,9 +277,82 @@ def test_runner_maps_master_state_to_command(
     driver = FakeDriver()
     assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
 
-    assert len(driver.commands) == 1
-    assert driver.commands[0].position == [0.75]
-    assert driver.commands[0].velocity == []
+    assert driver.locomotion_commands == [command]
+
+
+def test_runner_ignores_locomotion_command_for_joint_only_driver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    command = LocomotionCommand(vx=0.5, vy=0.1, wz=0.2)
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "locomotion_command",
+                "value": command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeJointOnlyDriver()
+    assert run_dora_robot_node(driver, joint_order=driver.joint_order) == 0
+
+    assert driver.commands == []
+
+
+def test_runner_accepts_locomotion_without_joint_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    command = LocomotionCommand(vx=0.5, vy=0.1, wz=0.2)
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "locomotion_command",
+                "value": command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeLocomotionOnlyDriver()
+    assert run_dora_robot_node(driver) == 0
+
+    assert driver.locomotion_commands == [command]
+
+
+def test_runner_ignores_action_without_joint_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    command = JointCommand(name=["joint1"], position=[0.5])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "action",
+                "value": command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert run_dora_robot_node(driver, joint_order=[]) == 0
+
+    assert driver.commands == []
 
 
 def test_runner_requires_external_handler() -> None:

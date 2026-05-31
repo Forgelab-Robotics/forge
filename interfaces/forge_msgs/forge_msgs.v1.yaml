@@ -142,6 +142,36 @@ messages:
         kp: kp
         kd: kd
 
+  LocomotionCommand:
+    purpose: Planar body-frame locomotion velocity command for ground robots.
+    row_count: single
+    fields:
+      vx:
+        arrow: float64
+        required: true
+        unit: meter_per_second
+        frame: robot_body
+        sign_convention: positive_forward
+      vy:
+        arrow: float64
+        required: true
+        unit: meter_per_second
+        frame: robot_body
+        sign_convention: positive_left
+      wz:
+        arrow: float64
+        required: true
+        unit: radian_per_second
+        frame: robot_body
+        sign_convention: positive_counter_clockwise_about_z
+        ros2_mapping: geometry_msgs/Twist.angular.z
+    validation:
+      - vx, vy, and wz must be finite float64 values.
+    notes:
+      - This message covers the common ground robot cmd_vel semantics linear.x, linear.y, and angular.z without adopting cmd_vel as a Forge input name.
+      - Stop is represented by vx=0, vy=0, and wz=0.
+      - The message intentionally has no mode, duration, gait, body height, frame_id, timestamp, linear_z, angular_x, or angular_y fields.
+
   Image:
     purpose: Uncompressed image payload.
     row_count: single

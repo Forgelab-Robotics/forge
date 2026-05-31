@@ -53,6 +53,25 @@ Rules:
 - Each numeric list must either be empty or have the same length as `name`.
 - `kp` and `kd` are optional low-level gains. For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 
+### LocomotionCommand
+
+Planar body-frame locomotion velocity command for ground robots.
+
+Fields:
+
+- `vx: float64`
+- `vy: float64`
+- `wz: float64`
+
+Rules:
+
+- `vx` is body-frame X linear velocity in m/s; positive means forward.
+- `vy` is body-frame Y linear velocity in m/s; positive means left. Differential-drive robots may require `vy == 0`.
+- `wz` is angular velocity about the body-frame Z axis in rad/s; positive means counter-clockwise and corresponds to ROS2 `Twist.angular.z` / yaw rate.
+- `vx`, `vy`, and `wz` must be finite values.
+- Stop is represented by `vx=0`, `vy=0`, and `wz=0`.
+- This message intentionally does not include `mode`, `duration`, `gait`, `body_height`, `frame_id`, timestamp, or full 6D `Twist` fields.
+
 ### Image
 
 Uncompressed image payload.

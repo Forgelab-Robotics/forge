@@ -11,7 +11,6 @@ The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs
 Robot or simulator joint observation payload.
 
 - `name: list[str]`
-- `mode: "position" | "velocity" | "effort" | "hybrid"`
 - `position: list[float]`
 - `velocity: list[float]`
 - `effort: list[float]`
@@ -23,6 +22,7 @@ Robot or simulator joint observation payload.
 Command payload for robot drivers and controllers.
 
 - `name: list[str]`
+- `mode: "position" | "velocity" | "effort" | "hybrid"`
 - `position: list[float]`
 - `velocity: list[float]`
 - `effort: list[float]`
@@ -32,6 +32,16 @@ Command payload for robot drivers and controllers.
 `mode` describes the command semantics. `position`, `velocity`, and `effort` match the common ROS2 command interfaces; `hybrid` is for low-level position/velocity/effort commands with optional `kp`/`kd` gains. Payloads written before `mode` existed are read as `mode="position"`.
 
 For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
+
+### `LocomotionCommand`
+
+Planar body-frame locomotion velocity command for ground robots.
+
+- `vx: float`
+- `vy: float`
+- `wz: float`
+
+`vx` and `vy` are body-frame linear velocities in m/s, with positive X forward and positive Y left. `wz` is angular velocity about the body-frame Z axis in rad/s, positive counter-clockwise, corresponding to ROS2 `Twist.angular.z` / yaw rate. Stop is represented by all zeros. This message intentionally omits `mode`, `duration`, `gait`, `body_height`, timestamp/frame fields, and full 6D Twist fields.
 
 ### `Image`
 

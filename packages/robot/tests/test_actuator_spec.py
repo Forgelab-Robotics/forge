@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ MSGS_SRC = FRAMEWORK_ROOT / "forge" / "packages" / "msgs" / "src"
 sys.path.insert(0, str(FORGE_ROBOT_ROOT / "src"))
 sys.path.insert(0, str(MSGS_SRC))
 
-from forge_msgs import JointCommand
+from forge_msgs import JointCommand, LocomotionCommand
 from forge_robot.actuator_spec import (
     ActuatorSpec,
     clip_and_validate_command,
@@ -21,6 +22,10 @@ from forge_robot.actuator_spec import (
 from forge_robot.arrow_validation import (
     RobotArrowSchemaError,
     validate_robot_control_arrow,
+)
+from forge_robot.locomotion_spec import (
+    LocomotionSpec,
+    clip_and_validate_locomotion_command,
 )
 
 
@@ -137,3 +142,23 @@ def test_validate_robot_control_arrow_rejects_invalid_mode() -> None:
 
     with pytest.raises(RobotArrowSchemaError, match="mode"):
         validate_robot_control_arrow(bad_batch, ["joint_rev"])
+
+
+def test_clip_and_validate_locomotion_command_limits_and_lateral() -> None:
+    command = LocomotionCommand(vx=2.0, vy=1.0, wz=-3.0)
+    spec = LocomotionSpec(
+        max_vx=1.0,
+        max_vy=0.5,
+        max_wz=2.0,
+        allow_lateral=False,
+    )
+
+    result = clip_and_validate_locomotion_command(command, spec)
+
+    assert result == LocomotionCommand(vx=1.0, vy=0.0, wz=-2.0)
+
+
+@pytest.mark.parametrize("limit", [-1.0, math.inf, math.nan])
+def test_locomotion_spec_rejects_invalid_limits(limit: float) -> None:
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        LocomotionSpec(max_vx=limit)
