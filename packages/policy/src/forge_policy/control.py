@@ -97,6 +97,14 @@ def apply_policy_command(
                     outputs={"phase": state.phase},
                     reset_observation_cache=True,
                 )
+            case "reset_scene":
+                _call_optional(policy, "reset")
+                return CommandResult(
+                    command,
+                    "done",
+                    outputs={"phase": state.phase},
+                    reset_observation_cache=True,
+                )
             case "set_instruction":
                 instruction = inputs.get("instruction")
                 if not isinstance(instruction, str):

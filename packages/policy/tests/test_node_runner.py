@@ -171,6 +171,82 @@ def test_runner_reset_clears_cached_observation(monkeypatch) -> None:
     ]
 
 
+def test_runner_reset_scene_clears_cache_and_preserves_running(monkeypatch) -> None:
+    import forge_policy.node_runner as node_runner
+
+    FakeNode.reset(
+        [
+            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
+            {"type": "INPUT", "id": "image/top", "value": _image_payload()},
+            {"type": "INPUT", "id": "policy_command", "value": _command_payload("reset_scene")},
+            {"type": "INPUT", "id": "tick"},
+            {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
+            {"type": "INPUT", "id": "image/top", "value": _image_payload()},
+            {"type": "INPUT", "id": "tick"},
+            {"type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    policy = FakePolicy()
+    assert run_dora_policy_node(
+        policy,
+        joint_order=["joint1"],
+        image_input_id_to_alias={"image/top": "top"},
+        build_action=_build_action,
+    ) == 0
+
+    assert policy.reset_count == 1
+    assert len(policy.generated) == 1
+    assert [output_id for output_id, _ in FakeNode.sent] == [
+        "policy_command_status",
+        "policy_command_status",
+        "action",
+    ]
+    status = PolicyCommandStatus.from_arrow(FakeNode.sent[1][1])
+    assert status.command == "reset_scene"
+    assert status.status == "done"
+    assert status.outputs()["phase"] == "running"
+
+
+def test_runner_reset_scene_preserves_paused_phase(monkeypatch) -> None:
+    import forge_policy.node_runner as node_runner
+
+    FakeNode.reset(
+        [
+            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {"type": "INPUT", "id": "policy_command", "value": _command_payload("pause")},
+            {"type": "INPUT", "id": "policy_command", "value": _command_payload("reset_scene")},
+            {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
+            {"type": "INPUT", "id": "image/top", "value": _image_payload()},
+            {"type": "INPUT", "id": "tick"},
+            {"type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    policy = FakePolicy()
+    assert run_dora_policy_node(
+        policy,
+        joint_order=["joint1"],
+        image_input_id_to_alias={"image/top": "top"},
+        build_action=_build_action,
+    ) == 0
+
+    assert policy.reset_count == 1
+    assert policy.generated == []
+    assert [output_id for output_id, _ in FakeNode.sent] == [
+        "policy_command_status",
+        "policy_command_status",
+        "policy_command_status",
+    ]
+    status = PolicyCommandStatus.from_arrow(FakeNode.sent[2][1])
+    assert status.command == "reset_scene"
+    assert status.status == "done"
+    assert status.outputs()["phase"] == "paused"
+
+
 def test_runner_ignores_other_policy_id(monkeypatch) -> None:
     import forge_policy.node_runner as node_runner
 
