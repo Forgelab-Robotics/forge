@@ -1,0 +1,397 @@
+version: 1
+package: forge_msgs
+transport:
+  format: arrow_record_batch
+  row_count: single
+  metadata_policy: no_required_schema_metadata
+  notes:
+    - Payloads are optimized for Dora and are represented as single-row Arrow RecordBatch values.
+    - Message schemas do not include ROS-style Header, timestamp, or frame_id fields.
+    - If timing or frame information is required, carry it in Dora event context, topic naming, node configuration, or an adapter layer.
+
+conventions:
+  numeric:
+    joint_scalar: float64
+    image_dimension: uint32
+  joints:
+    revolute:
+      position: radians
+      velocity: radians_per_second
+      effort: newton_meter
+    prismatic:
+      position: meter
+      velocity: meter_per_second
+      effort: newton
+  image:
+    byte_order: little_endian
+    compressed_formats:
+      - jpeg
+      - png
+      - webp
+    encodings:
+      rgb8:
+        channels: 3
+        scalar: uint8
+        bytes_per_pixel: 3
+      bgr8:
+        channels: 3
+        scalar: uint8
+        bytes_per_pixel: 3
+      mono8:
+        channels: 1
+        scalar: uint8
+        bytes_per_pixel: 1
+      16UC1:
+        channels: 1
+        scalar: uint16
+        bytes_per_pixel: 2
+      32FC1:
+        channels: 1
+        scalar: float32
+        bytes_per_pixel: 4
+
+messages:
+  JointState:
+    purpose: Robot or simulator joint observation payload.
+    row_count: single
+    fields:
+      name:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      position:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      velocity:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      effort:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+    validation:
+      - name must contain at least one item.
+      - name items must be unique.
+      - position, velocity, and effort must either be empty or have the same length as name.
+
+  JointCommand:
+    purpose: Joint command payload for robot drivers and controllers.
+    row_count: single
+    fields:
+      name:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      mode:
+        arrow: utf8
+        required: false
+        default: position
+        allowed_values:
+          - position
+          - velocity
+          - effort
+          - hybrid
+        compatibility: Payloads written before mode existed may omit this field; readers must treat a missing or null mode as position.
+      position:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      velocity:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      effort:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      kp:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+      kd:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: name_or_empty
+    validation:
+      - name must contain at least one item.
+      - name items must be unique.
+      - mode, when present, must be one of position, velocity, effort, or hybrid.
+      - position, velocity, effort, kp, and kd must either be empty or have the same length as name.
+    mapping_notes:
+      control_modes:
+        position: Position command interface.
+        velocity: Velocity command interface.
+        effort: Effort command interface.
+        hybrid: Low-level position/velocity/effort command with optional kp/kd gains.
+      unitree_low_level:
+        q: position
+        dq: velocity
+        tau: effort
+        kp: kp
+        kd: kd
+
+  LocomotionCommand:
+    purpose: Planar body-frame locomotion velocity command for ground robots.
+    row_count: single
+    fields:
+      vx:
+        arrow: float64
+        required: true
+        unit: meter_per_second
+        frame: robot_body
+        sign_convention: positive_forward
+      vy:
+        arrow: float64
+        required: true
+        unit: meter_per_second
+        frame: robot_body
+        sign_convention: positive_left
+      wz:
+        arrow: float64
+        required: true
+        unit: radian_per_second
+        frame: robot_body
+        sign_convention: positive_counter_clockwise_about_z
+        ros2_mapping: geometry_msgs/Twist.angular.z
+    validation:
+      - vx, vy, and wz must be finite float64 values.
+    notes:
+      - This message covers the common ground robot cmd_vel semantics linear.x, linear.y, and angular.z without adopting cmd_vel as a Forge input name.
+      - Stop is represented by vx=0, vy=0, and wz=0.
+      - The message intentionally has no mode, duration, gait, body height, frame_id, timestamp, linear_z, angular_x, or angular_y fields.
+
+  Image:
+    purpose: Uncompressed image payload.
+    row_count: single
+    fields:
+      height:
+        arrow: uint32
+        required: true
+        minimum: 0
+      width:
+        arrow: uint32
+        required: true
+        minimum: 0
+      encoding:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - rgb8
+          - bgr8
+          - mono8
+          - 16UC1
+          - 32FC1
+      step:
+        arrow: uint32
+        required: true
+        description: Full row length in bytes. May be larger than width * bytes_per_pixel because of row padding.
+      data:
+        arrow: large_binary
+        required: true
+        length: step_times_height
+    validation:
+      - data length must equal step * height.
+      - step must be at least width * bytes_per_pixel for known encodings.
+      - Multi-byte pixel encodings use little-endian byte order.
+      - Compressed jpeg, png, or webp payloads must use CompressedImage instead.
+
+  CompressedImage:
+    purpose: Compressed image bitstream payload.
+    row_count: single
+    fields:
+      format:
+        arrow: utf8
+        required: true
+        recommended_values:
+          - jpeg
+          - png
+          - webp
+      data:
+        arrow: large_binary
+        required: true
+    validation:
+      - data may be empty only for an empty image payload.
+
+  Pose:
+    purpose: Header-less 3D pose payload with position and quaternion orientation.
+    row_count: single
+    fields:
+      x:
+        arrow: float64
+        required: true
+      y:
+        arrow: float64
+        required: true
+      z:
+        arrow: float64
+        required: true
+      qx:
+        arrow: float64
+        required: true
+      qy:
+        arrow: float64
+        required: true
+      qz:
+        arrow: float64
+        required: true
+      qw:
+        arrow: float64
+        required: true
+    validation:
+      - Quaternion qx, qy, qz, qw must not be all zero.
+      - Implementations should not silently normalize quaternion values.
+    helper_notes:
+      - 2D pose should be represented through Pose.from_xy_yaw style helpers, not a separate wire schema.
+
+  PoseSet:
+    purpose: Single-row named collection of poses.
+    row_count: single
+    fields:
+      name:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      x:
+        arrow: list<float64>
+        required: true
+        length: name
+      y:
+        arrow: list<float64>
+        required: true
+        length: name
+      z:
+        arrow: list<float64>
+        required: true
+        length: name
+      qx:
+        arrow: list<float64>
+        required: true
+        length: name
+      qy:
+        arrow: list<float64>
+        required: true
+        length: name
+      qz:
+        arrow: list<float64>
+        required: true
+        length: name
+      qw:
+        arrow: list<float64>
+        required: true
+        length: name
+    validation:
+      - name must contain at least one item.
+      - name items must be unique.
+      - x, y, z, qx, qy, qz, and qw must have the same length as name.
+      - Each quaternion qx, qy, qz, qw must not be all zero.
+
+  PolicyCommand:
+    purpose: Command payload sent from gateway to policy through Dora.
+    row_count: single
+    delivery_topic: policy_command
+    fields:
+      policy_id:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Target policy instance id. Use "default" for single-policy setups.
+      command:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        naming: snake_case
+        recommended_values:
+          - load
+          - start
+          - stop
+          - pause
+          - resume
+          - reset
+          - start_recording
+          - stop_recording
+          - load_playback
+          - start_playback
+          - pause_playback
+          - resume_playback
+          - reset_playback
+          - seek_playback
+          - set_playback_rate
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Optional correlation id for PolicyCommandStatus.
+      inputs_json:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        default: "{}"
+        json_type: object
+    validation:
+      - policy_id must be non-empty.
+      - command must be non-empty and use snake_case.
+      - request_id may be empty when no response is expected.
+      - inputs_json must parse as a JSON object.
+      - A PolicyCommandStatus response is optional.
+
+  PolicyCommandStatus:
+    purpose: Optional status payload sent from policy to gateway through Dora.
+    row_count: single
+    delivery_topic: policy_command_status
+    optional_response: true
+    fields:
+      policy_id:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Policy instance id that handled the command.
+      command:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        description: Command name copied from PolicyCommand.
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Correlation id copied from PolicyCommand when present.
+      status:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        allowed_values:
+          - accepted
+          - rejected
+          - running
+          - done
+          - error
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+        description: Human-readable status text.
+      outputs_json:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        default: "{}"
+        json_type: object
+    validation:
+      - policy_id must be non-empty.
+      - command must be non-empty.
+      - status must be one of accepted, rejected, running, done, or error.
+      - outputs_json must parse as a JSON object.
+      - This message is optional; policies may omit status output when no response is required.

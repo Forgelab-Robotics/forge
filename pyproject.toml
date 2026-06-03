@@ -11,6 +11,8 @@ members = [
     "packages/msgs",
     "packages/common",
     "packages/configs",
+    "packages/policy",
+    "packages/robot",
     "packages/robots/*",
     "packages/simulators/*",
 ]

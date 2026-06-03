@@ -1,34 +1,21 @@
 """Forge message definitions for Dora dataflow."""
 
-from forge_msgs.robot import RobotAction, RobotState
-from forge_msgs.task_robot import Action, ActionSequence, ProprioState
-from forge_msgs.image import Image, ImageEncoding
-from forge_msgs.value import (
-    ActuatorValue,
-    JointMode,
-    JointUnit,
-    JointValue,
-)
-from forge_msgs.pose import Pose2D, Pose2DList
-from forge_msgs.record import RecordingPath
-from forge_msgs.control import SimControl, RecordControl, PlaybackControl
+from forge_msgs.arrow import ensure_record_batch
+from forge_msgs.joint import JointCommand, JointState
+from forge_msgs.image import CompressedImage, Image
+from forge_msgs.locomotion import LocomotionCommand
+from forge_msgs.pose import Pose, PoseSet
+from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 
 __all__ = [
-    "Action",
-    "ActionSequence",
-    "ActuatorValue",
+    "CompressedImage",
     "Image",
-    "Pose2D",
-    "Pose2DList",
-    "ImageEncoding",
-    "JointMode",
-    "JointUnit",
-    "JointValue",
-    "ProprioState",
-    "RecordingPath",
-    "RobotAction",
-    "RobotState",
-    "SimControl",
-    "RecordControl",
-    "PlaybackControl",
+    "JointCommand",
+    "JointState",
+    "LocomotionCommand",
+    "PolicyCommand",
+    "PolicyCommandStatus",
+    "Pose",
+    "PoseSet",
+    "ensure_record_batch",
 ]

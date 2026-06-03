@@ -1,0 +1,17 @@
+[project]
+name = "forge-policy"
+version = "0.1.0"
+description = "通用 policy 节点协议与 Dora runner，供算法策略节点复用。"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dora-rs==0.4.1",
+    "forge-msgs",
+]
+
+[tool.uv.sources]
+forge-msgs = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
