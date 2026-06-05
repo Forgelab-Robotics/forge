@@ -64,6 +64,18 @@ Compressed image bitstream payload.
 
 Recommended formats are `jpeg`, `png`, and `webp`.
 
+### `TeleopObservation`
+
+XR device raw teleop observation for embodiment-specific teleop policies.
+
+- `device: list[str]` — tracked device ids such as `left`, `right`, `headset`
+- `x/y/z/qx/qy/qz/qw: list[float]` — pose fields aligned with `device`
+- `confidence: list[float]` — per-device tracking confidence in `[0, 1]`
+- `buttons_json: str` — JSON object of button bool/float values
+- `axes_json: str` — JSON object of trigger/grip/joystick axis values
+
+Timing and frame metadata are intentionally not part of the core schema. Carry them in Dora topic naming, node configuration, or adapter layers.
+
 ## Arrow Format
 
 All core messages encode to a single-row `pyarrow.RecordBatch`.
