@@ -6,6 +6,7 @@ from forge_msgs.image import CompressedImage, Image
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
+from forge_msgs.teleop import TeleopObservation
 
 __all__ = [
     "CompressedImage",
@@ -17,5 +18,6 @@ __all__ = [
     "PolicyCommandStatus",
     "Pose",
     "PoseSet",
+    "TeleopObservation",
     "ensure_record_batch",
 ]

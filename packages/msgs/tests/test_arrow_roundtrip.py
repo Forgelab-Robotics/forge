@@ -14,6 +14,7 @@ from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.pose import Pose, PoseSet
+from forge_msgs.teleop import TeleopObservation
 
 
 def _to_ipc_bytes(batch: pa.RecordBatch) -> bytes:
@@ -334,6 +335,54 @@ def test_pose_set_roundtrip_and_helpers() -> None:
     back = PoseSet.from_arrow(_to_ipc_bytes(pose_set.to_arrow()))
     assert back == pose_set
     assert back.to_poses()["a"] == poses["a"]
+
+
+def test_teleop_observation_roundtrip_record_batch_table_and_bytes() -> None:
+    observation = TeleopObservation.from_device_poses(
+        {
+            "headset": (0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0),
+            "left": (0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+            "right": (-0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+        },
+        confidence={"headset": 0.95, "left": 0.8, "right": 0.85},
+        buttons={"left_X": True, "right_A": False},
+        axes={"left_trigger": 0.3, "right_axis": [0.1, -0.2]},
+    )
+    batch = observation.to_arrow()
+    assert TeleopObservation.from_arrow(batch) == observation
+    assert TeleopObservation.from_arrow(pa.Table.from_batches([batch])) == observation
+    assert TeleopObservation.from_arrow(_to_ipc_bytes(batch)) == observation
+    assert observation.buttons() == {"left_X": True, "right_A": False}
+    assert observation.axes()["left_trigger"] == 0.3
+
+
+def test_teleop_observation_validation() -> None:
+    with pytest.raises(ValueError, match="device"):
+        TeleopObservation(
+            device=[],
+            x=[],
+            y=[],
+            z=[],
+            qx=[],
+            qy=[],
+            qz=[],
+            qw=[],
+            confidence=[],
+        )
+
+    with pytest.raises(ValueError, match="JSON"):
+        TeleopObservation(
+            device=["left"],
+            x=[0.0],
+            y=[0.0],
+            z=[0.0],
+            qx=[0.0],
+            qy=[0.0],
+            qz=[0.0],
+            qw=[1.0],
+            confidence=[1.0],
+            buttons_json="not-json",
+        )
 
 
 def test_pose_set_validation() -> None:

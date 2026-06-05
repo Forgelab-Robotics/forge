@@ -298,6 +298,65 @@ messages:
       - x, y, z, qx, qy, qz, and qw must have the same length as name.
       - Each quaternion qx, qy, qz, qw must not be all zero.
 
+  TeleopObservation:
+    purpose: XR device raw teleop observation for embodiment-specific teleop policies.
+    row_count: single
+    fields:
+      device:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+        description: Tracked XR device ids such as left, right, headset.
+      x:
+        arrow: list<float64>
+        required: true
+        length: device
+      y:
+        arrow: list<float64>
+        required: true
+        length: device
+      z:
+        arrow: list<float64>
+        required: true
+        length: device
+      qx:
+        arrow: list<float64>
+        required: true
+        length: device
+      qy:
+        arrow: list<float64>
+        required: true
+        length: device
+      qz:
+        arrow: list<float64>
+        required: true
+        length: device
+      qw:
+        arrow: list<float64>
+        required: true
+        length: device
+      confidence:
+        arrow: list<float64>
+        required: true
+        length: device
+      buttons_json:
+        arrow: utf8
+        required: true
+        default: "{}"
+        description: JSON object of button bool/float values keyed by button id.
+      axes_json:
+        arrow: utf8
+        required: true
+        default: "{}"
+        description: JSON object of trigger/grip/joystick axis values.
+    validation:
+      - device must contain at least one item.
+      - device items must be unique.
+      - x, y, z, qx, qy, qz, qw, and confidence must have the same length as device.
+      - Each quaternion qx, qy, qz, qw must not be all zero.
+      - buttons_json and axes_json must be JSON objects.
+
   PolicyCommand:
     purpose: Command payload sent from gateway to policy through Dora.
     row_count: single
