@@ -1,18 +1,39 @@
 [project]
 name = "forge"
 version = "0.1.0"
-description = "Add your description here"
+description = "Core message schemas and Dora node helpers for Forge robotics applications."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+license = "Apache-2.0"
+authors = [
+    { name = "X-ERA" }
+]
+dependencies = [
+    "forge-common",
+    "forge-msgs",
+    "forge-policy",
+    "forge-robot",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.14.0",
+]
 
 [tool.uv.workspace]
 members = [
     "packages/msgs",
     "packages/common",
-    "packages/configs",
     "packages/policy",
     "packages/robot",
-    "packages/robots/*",
-    "packages/simulators/*",
 ]
+
+[tool.uv.sources]
+forge-common = { workspace = true }
+forge-msgs = { workspace = true }
+forge-policy = { workspace = true }
+forge-robot = { workspace = true }
+
+[tool.ruff.lint.per-file-ignores]
+"packages/*/tests/*.py" = ["E402"]

@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "通用 policy 节点协议与 Dora runner，供算法策略节点复用。"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+    { name = "X-ERA" }
+]
 dependencies = [
     "dora-rs==0.4.1",
     "forge-msgs",
