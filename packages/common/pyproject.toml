@@ -1,12 +1,13 @@
 [project]
-name = "forge_common"
+name = "forge-common"
 version = "0.1.0"
-description = "Add your description here"
+description = "Shared Python utilities for Forge packages."
 readme = "README.md"
 authors = [
-    { name = "chipunderblade", email = "pfjhyyj@qq.com" }
+    { name = "X-ERA" }
 ]
 requires-python = ">=3.11"
+license = "Apache-2.0"
 dependencies = []
 
 [build-system]

@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 FORGE_ROBOT_ROOT = Path(__file__).parents[1]
-FRAMEWORK_ROOT = FORGE_ROBOT_ROOT.parents[2]
-MSGS_SRC = FRAMEWORK_ROOT / "forge" / "packages" / "msgs" / "src"
+REPO_ROOT = FORGE_ROBOT_ROOT.parents[2]
+MSGS_SRC = REPO_ROOT / "packages" / "msgs" / "src"
 sys.path.insert(0, str(FORGE_ROBOT_ROOT / "src"))
 sys.path.insert(0, str(MSGS_SRC))
 

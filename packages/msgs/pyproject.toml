@@ -1,12 +1,13 @@
 [project]
 name = "forge-msgs"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python message models and Arrow serialization for Forge robotics dataflows."
 readme = "README.md"
 authors = [
-    { name = "chipunderblade", email = "pfjhyyj@qq.com" }
+    { name = "X-ERA" }
 ]
 requires-python = ">=3.11"
+license = "Apache-2.0"
 dependencies = [
     "numpy>=2.4.2",
     "pillow>=11.0.0",
