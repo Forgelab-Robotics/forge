@@ -1,0 +1,20 @@
+[project]
+name = "forge-teleop"
+version = "0.1.0"
+description = "通用遥操作安全策略，供各构型 teleop policy 复用。"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "forge-msgs",
+    "numpy>=2.4.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0.0"]
+
+[tool.uv.sources]
+forge-msgs = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
