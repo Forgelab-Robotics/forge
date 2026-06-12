@@ -1,0 +1,56 @@
+version: 1
+package: forge_msgs
+domain: sensor
+
+messages:
+  Image:
+    purpose: Uncompressed image payload.
+    row_count: single
+    fields:
+      height:
+        arrow: uint32
+        required: true
+        minimum: 0
+      width:
+        arrow: uint32
+        required: true
+        minimum: 0
+      encoding:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - rgb8
+          - bgr8
+          - mono8
+          - 16UC1
+          - 32FC1
+      step:
+        arrow: uint32
+        required: true
+        description: Full row length in bytes. May be larger than width * bytes_per_pixel because of row padding.
+      data:
+        arrow: large_binary
+        required: true
+        length: step_times_height
+    validation:
+      - data length must equal step * height.
+      - step must be at least width * bytes_per_pixel for known encodings.
+      - Multi-byte pixel encodings use little-endian byte order.
+      - Compressed jpeg, png, or webp payloads must use CompressedImage instead.
+
+  CompressedImage:
+    purpose: Compressed image bitstream payload.
+    row_count: single
+    fields:
+      format:
+        arrow: utf8
+        required: true
+        recommended_values:
+          - jpeg
+          - png
+          - webp
+      data:
+        arrow: large_binary
+        required: true
+    validation:
+      - data may be empty only for an empty image payload.

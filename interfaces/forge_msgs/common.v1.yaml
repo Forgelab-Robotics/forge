@@ -1,0 +1,58 @@
+version: 1
+package: forge_msgs
+domain: common
+
+conventions:
+  timing:
+    source: dora_event
+    payload_timestamp: omitted
+    derived_output: inherit_source_event_timestamp
+  spatial_context:
+    source: node_configuration_or_dora_metadata
+    payload_frame_id: omitted
+  result_sets:
+    empty_result: empty_lists
+  numeric:
+    joint_scalar: float64
+    image_dimension: uint32
+  joints:
+    revolute:
+      position: radians
+      velocity: radians_per_second
+      effort: newton_meter
+    prismatic:
+      position: meter
+      velocity: meter_per_second
+      effort: newton
+  image:
+    byte_order: little_endian
+    coordinate_system:
+      origin: top_left
+      x_axis: right
+      y_axis: down
+      unit: pixel
+    compressed_formats:
+      - jpeg
+      - png
+      - webp
+    encodings:
+      rgb8:
+        channels: 3
+        scalar: uint8
+        bytes_per_pixel: 3
+      bgr8:
+        channels: 3
+        scalar: uint8
+        bytes_per_pixel: 3
+      mono8:
+        channels: 1
+        scalar: uint8
+        bytes_per_pixel: 1
+      16UC1:
+        channels: 1
+        scalar: uint16
+        bytes_per_pixel: 2
+      32FC1:
+        channels: 1
+        scalar: float32
+        bytes_per_pixel: 4

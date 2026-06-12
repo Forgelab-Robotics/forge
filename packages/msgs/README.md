@@ -2,7 +2,10 @@
 
 Forge message definitions for Dora dataflow.
 
-The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs.v1.yaml`. Python, Rust, and future C++ implementations should conform to that schema.
+The canonical cross-language contract starts at
+`interfaces/forge_msgs/forge_msgs.v1.yaml`. That manifest references the
+versioned domain schemas that Python, Rust, and future C++ implementations
+should follow.
 
 ## Core Messages
 

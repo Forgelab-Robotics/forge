@@ -1,15 +1,35 @@
-# forge_msgs Interface Schema v1
+# forge_msgs Interface Schemas
 
 This directory is the language-neutral contract for `forge_msgs`.
 
-Python (`packages/msgs`), Rust (`crates/forge_msgs`), and future C++ implementations should treat `forge_msgs.v1.yaml` as the source of truth. The implementations may be handwritten at first, but their Arrow schemas and validation rules should conform to this interface.
+Python (`packages/msgs`), Rust (`crates/forge_msgs`), and future C++
+implementations should treat `forge_msgs.v1.yaml` and its referenced domain
+schemas as the source of truth. The implementations may be handwritten at
+first, but their Arrow schemas and validation rules should conform to these
+interfaces.
+
+## Schema Layout
+
+- `forge_msgs.v1.yaml` is the package manifest and transport contract.
+- `common.v1.yaml` defines conventions shared across domains.
+- `control.v1.yaml` defines robot and policy control messages.
+- `geometry.v1.yaml` defines reusable geometry messages.
+- `interaction.v1.yaml` defines human interaction and teleoperation messages.
+- `perception.v1.yaml` defines perception result messages.
+- `sensor.v1.yaml` defines raw sensor payloads.
+
+Domain schemas evolve independently. Adding a new message to a domain does not
+change the wire contract of existing messages.
 
 ## Transport Contract
 
 - Payloads are single-row Apache Arrow `RecordBatch` values.
 - The schema does not require Arrow metadata. Dora/IPC paths may drop metadata, so required semantics must be represented as real columns.
 - Core messages do not contain ROS-style `Header`, timestamp, or `frame_id`.
-- Timing and frame information should live in Dora event context, topic naming, node configuration, or adapter layers.
+- Timing comes from the Dora event context. Derived outputs should preserve the
+  timestamp of the source event when they describe that source sample.
+- Frame and fixed calibration information should live in Dora metadata, topic
+  naming, node configuration, or adapter layers.
 
 ## Messages
 
@@ -157,6 +177,26 @@ Rules:
 - Every numeric list must have the same length as `name`.
 - Each quaternion must not be all zero.
 
+### TeleopObservation
+
+XR device raw teleoperation observation.
+
+Fields:
+
+- `device: list<utf8>`
+- `x/y/z/qx/qy/qz/qw: list<float64>`
+- `confidence: list<float64>`
+- `buttons_json: utf8`
+- `axes_json: utf8`
+
+Rules:
+
+- `device` must be non-empty and unique.
+- Pose and confidence lists must have the same length as `device`.
+- Each quaternion must not be all zero.
+- `buttons_json` and `axes_json` must contain JSON objects.
+- The current implementation is Python-only.
+
 ### PolicyCommand
 
 Command payload sent from gateway to policy through Dora.
@@ -227,7 +267,9 @@ Rules:
 ## Cross-Language Implementation Notes
 
 - Python, Rust, and C++ structs should use the same field names as the schema.
-- Arrow field order should match `forge_msgs.v1.yaml`.
+- Arrow field order should match the message's domain schema.
 - Implementations should reject duplicate joint names and invalid list lengths.
 - Implementations should not infer missing columns unless a field explicitly defines a compatibility default. Otherwise, a payload either conforms to the schema or fails validation.
 - Helper methods may convert to fixed-order arrays, but fixed order is not part of the wire schema.
+- Run `uv run python scripts/check_forge_msgs_schema.py` after changing schema
+  files.

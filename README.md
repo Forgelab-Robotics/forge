@@ -83,9 +83,10 @@ uv run ruff check .
 
 ## Message Schema
 
-The canonical cross-language contract lives in
-`interfaces/forge_msgs/forge_msgs.v1.yaml`. Python, Rust, and future language
-implementations should conform to that schema. See
+The canonical cross-language contract starts at
+`interfaces/forge_msgs/forge_msgs.v1.yaml`, which references versioned schemas
+for the control, geometry, interaction, perception, and sensor domains. Python,
+Rust, and future language implementations should conform to those schemas. See
 `interfaces/forge_msgs/SCHEMA.md` and `packages/msgs/README.md` for message
 semantics and Arrow encoding details.
 
