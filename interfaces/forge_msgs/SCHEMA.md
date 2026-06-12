@@ -135,6 +135,39 @@ Recommended formats:
 - `png`
 - `webp`
 
+### PointCloud
+
+Organized or unorganized XYZ point cloud with common optional attributes.
+
+Fields:
+
+- `width/height: uint32`
+- `is_dense: bool`
+- `x/y/z: list<float32>`
+- `intensity: list<float32>`
+- `red/green/blue: list<uint8>`
+
+XYZ coordinates use meters. Optional attribute columns are empty or match the
+point count. The coordinate frame comes from Dora metadata or node
+configuration.
+
+### Perception result sets
+
+`perception.v1.yaml` defines:
+
+- `Detection2DSet`: oriented pixel-space boxes and flattened classification
+  hypotheses.
+- `Detection3DSet`: oriented metric boxes and flattened classification
+  hypotheses.
+- `SegmentationMaskSet`: cropped binary instance masks positioned in a source
+  image.
+- `Keypoint2DSet`: image keypoints and optional fixed-width descriptors.
+- `KeypointMatchSet`: pairwise matches between named keypoint inputs.
+
+Empty detections use empty per-detection lists and
+`hypothesis_offset=[0]`. Detection class display names remain model
+configuration rather than per-frame payload data.
+
 ### Pose
 
 Header-less 3D pose payload with position and quaternion orientation.

@@ -96,6 +96,8 @@ Core messages include:
 - `JointCommand` for low-level joint commands
 - `LocomotionCommand` for planar body-frame velocity commands
 - `Image` and `CompressedImage` for camera payloads
+- `PointCloud` for organized and unorganized XYZ data
+- 2D/3D detections, instance masks, keypoints, and feature matches
 - `Pose`, `PolicyCommand`, and policy status/control messages
 
 ## Dora Node Semantics

@@ -2,4 +2,280 @@ version: 1
 package: forge_msgs
 domain: perception
 
-messages: {}
+messages:
+  Detection2DSet:
+    purpose: Set of oriented 2D detections and flattened classification hypotheses.
+    row_count: single
+    fields:
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      track_id:
+        arrow: list<utf8>
+        required: true
+        length: detection_id
+      center_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      rotation:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      hypothesis_offset:
+        arrow: list<uint32>
+        required: true
+        length: detection_id_plus_one
+      class_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      score:
+        arrow: list<float32>
+        required: true
+        length: class_id
+    validation:
+      - All per-detection lists must have the same length as detection_id.
+      - detection_id items must be unique within the message.
+      - center_x, center_y, and rotation must contain only finite values.
+      - size_x and size_y must be finite and non-negative.
+      - hypothesis_offset must start at 0, be monotonically non-decreasing, and end at len(class_id).
+      - An empty detection result uses hypothesis_offset=[0].
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - Bounding boxes use pixel coordinates with origin at the top-left, X right, and Y down.
+      - rotation is counter-clockwise in radians; axis-aligned boxes use 0.
+      - track_id is an empty string when no cross-frame track is available.
+
+  Detection3DSet:
+    purpose: Set of oriented 3D bounding boxes and flattened classification hypotheses.
+    row_count: single
+    fields:
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      track_id:
+        arrow: list<utf8>
+        required: true
+        length: detection_id
+      center_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_z:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      qx:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      qy:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      qz:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      qw:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_z:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      hypothesis_offset:
+        arrow: list<uint32>
+        required: true
+        length: detection_id_plus_one
+      class_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      score:
+        arrow: list<float32>
+        required: true
+        length: class_id
+    validation:
+      - All per-detection lists must have the same length as detection_id.
+      - detection_id items must be unique within the message.
+      - Center coordinates and quaternion components must contain only finite values.
+      - Each quaternion qx, qy, qz, qw must not be all zero.
+      - size_x, size_y, and size_z must be finite and non-negative.
+      - hypothesis_offset must start at 0, be monotonically non-decreasing, and end at len(class_id).
+      - An empty detection result uses hypothesis_offset=[0].
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - Center coordinates and box dimensions use meters.
+      - The coordinate frame is supplied by Dora metadata or node configuration.
+
+  SegmentationMaskSet:
+    purpose: Set of cropped binary instance masks positioned in a source image.
+    row_count: single
+    fields:
+      mask_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        length: mask_id
+      track_id:
+        arrow: list<utf8>
+        required: true
+        length: mask_id
+      x_offset:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      y_offset:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      width:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      height:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      encoding:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - mono8
+      data:
+        arrow: list<large_binary>
+        required: true
+        length: mask_id
+    validation:
+      - All per-mask lists must have the same length as mask_id.
+      - mask_id items must be unique within the message.
+      - data[i] length must equal width[i] * height[i].
+      - Zero pixels are background and non-zero pixels are foreground.
+    notes:
+      - Each mask is cropped to its own ROI; x_offset and y_offset locate the ROI in the source image.
+      - detection_id and track_id are empty strings when no association is available.
+
+  Keypoint2DSet:
+    purpose: Set of image keypoints with an optional fixed-width descriptor matrix.
+    row_count: single
+    fields:
+      keypoint_id:
+        arrow: list<uint32>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      x:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      y:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      size:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      angle:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      response:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      octave:
+        arrow: list<int32>
+        required: true
+        length: keypoint_id
+      descriptor_type:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - none
+          - uint8
+          - float32
+      descriptor_size:
+        arrow: uint32
+        required: true
+      descriptor_data:
+        arrow: large_binary
+        required: true
+    validation:
+      - All per-keypoint lists must have the same length as keypoint_id.
+      - keypoint_id items must be unique within the message.
+      - x, y, angle, and response must contain only finite values.
+      - size must be finite and non-negative.
+      - angle uses degrees following OpenCV KeyPoint; -1 represents an unavailable orientation.
+      - descriptor_type=none requires descriptor_size=0 and empty descriptor_data.
+      - Otherwise descriptor_data length must equal keypoint count * descriptor_size * scalar byte width.
+    notes:
+      - float32 descriptor scalars use little-endian byte order.
+
+  KeypointMatchSet:
+    purpose: Pairwise matches between two named Keypoint2DSet inputs.
+    row_count: single
+    fields:
+      query_source:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      train_source:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      query_id:
+        arrow: list<uint32>
+        required: true
+        empty_allowed: true
+      train_id:
+        arrow: list<uint32>
+        required: true
+        length: query_id
+      distance:
+        arrow: list<float32>
+        required: true
+        length: query_id
+      inlier:
+        arrow: list<bool>
+        required: true
+        length: query_id
+    validation:
+      - query_source and train_source must be non-empty logical input aliases.
+      - train_id, distance, and inlier must have the same length as query_id.
+      - distance values must be finite and non-negative.

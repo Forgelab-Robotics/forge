@@ -48,10 +48,18 @@ conventions:
         channels: 1
         scalar: uint8
         bytes_per_pixel: 1
+      8UC1:
+        channels: 1
+        scalar: uint8
+        bytes_per_pixel: 1
       16UC1:
         channels: 1
         scalar: uint16
         bytes_per_pixel: 2
+      32SC1:
+        channels: 1
+        scalar: int32
+        bytes_per_pixel: 4
       32FC1:
         channels: 1
         scalar: float32

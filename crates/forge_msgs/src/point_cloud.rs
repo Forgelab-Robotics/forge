@@ -1,0 +1,237 @@
+use std::sync::Arc;
+
+use arrow_array::{ArrayRef, BooleanArray, RecordBatch, UInt32Array};
+use arrow_schema::{DataType, Field, Schema};
+
+use crate::column::{
+    f32_list, list_type, read_bool, read_f32_list, read_u8_list, read_u32, u8_list,
+};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PointCloud {
+    pub width: u32,
+    pub height: u32,
+    pub is_dense: bool,
+    pub x: Vec<f32>,
+    pub y: Vec<f32>,
+    pub z: Vec<f32>,
+    pub intensity: Vec<f32>,
+    pub red: Vec<u8>,
+    pub green: Vec<u8>,
+    pub blue: Vec<u8>,
+}
+
+impl PointCloud {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        width: u32,
+        height: u32,
+        is_dense: bool,
+        x: Vec<f32>,
+        y: Vec<f32>,
+        z: Vec<f32>,
+        intensity: Vec<f32>,
+        red: Vec<u8>,
+        green: Vec<u8>,
+        blue: Vec<u8>,
+    ) -> Result<Self, PointCloudError> {
+        let value = Self {
+            width,
+            height,
+            is_dense,
+            x,
+            y,
+            z,
+            intensity,
+            red,
+            green,
+            blue,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn to_record_batch(&self) -> Result<RecordBatch, PointCloudError> {
+        self.validate()?;
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("width", DataType::UInt32, false),
+            Field::new("height", DataType::UInt32, false),
+            Field::new("is_dense", DataType::Boolean, false),
+            Field::new("x", list_type(DataType::Float32), false),
+            Field::new("y", list_type(DataType::Float32), false),
+            Field::new("z", list_type(DataType::Float32), false),
+            Field::new("intensity", list_type(DataType::Float32), false),
+            Field::new("red", list_type(DataType::UInt8), false),
+            Field::new("green", list_type(DataType::UInt8), false),
+            Field::new("blue", list_type(DataType::UInt8), false),
+        ]));
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(UInt32Array::from(vec![self.width])),
+            Arc::new(UInt32Array::from(vec![self.height])),
+            Arc::new(BooleanArray::from(vec![self.is_dense])),
+            Arc::new(f32_list(&self.x)),
+            Arc::new(f32_list(&self.y)),
+            Arc::new(f32_list(&self.z)),
+            Arc::new(f32_list(&self.intensity)),
+            Arc::new(u8_list(&self.red)),
+            Arc::new(u8_list(&self.green)),
+            Arc::new(u8_list(&self.blue)),
+        ];
+        RecordBatch::try_new(schema, columns)
+            .map_err(|error| PointCloudError::Arrow(error.to_string()))
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, PointCloudError> {
+        if batch.num_rows() == 0 {
+            return Err(PointCloudError::Invalid(
+                "RecordBatch must contain one row".to_string(),
+            ));
+        }
+        Self::new(
+            read_u32(batch, "width").map_err(PointCloudError::Invalid)?,
+            read_u32(batch, "height").map_err(PointCloudError::Invalid)?,
+            read_bool(batch, "is_dense").map_err(PointCloudError::Invalid)?,
+            read_f32_list(batch, "x").map_err(PointCloudError::Invalid)?,
+            read_f32_list(batch, "y").map_err(PointCloudError::Invalid)?,
+            read_f32_list(batch, "z").map_err(PointCloudError::Invalid)?,
+            read_f32_list(batch, "intensity").map_err(PointCloudError::Invalid)?,
+            read_u8_list(batch, "red").map_err(PointCloudError::Invalid)?,
+            read_u8_list(batch, "green").map_err(PointCloudError::Invalid)?,
+            read_u8_list(batch, "blue").map_err(PointCloudError::Invalid)?,
+        )
+    }
+
+    fn validate(&self) -> Result<(), PointCloudError> {
+        let count = self.x.len();
+        if self.y.len() != count || self.z.len() != count {
+            return Err(PointCloudError::Invalid(
+                "x, y, and z must have the same length".to_string(),
+            ));
+        }
+        let expected_count = (self.width as usize)
+            .checked_mul(self.height as usize)
+            .ok_or_else(|| {
+                PointCloudError::Invalid("width * height overflows usize".to_string())
+            })?;
+        if expected_count != count {
+            return Err(PointCloudError::Invalid(
+                "width * height must equal the point count".to_string(),
+            ));
+        }
+        validate_optional_len("intensity", self.intensity.len(), count)?;
+        validate_optional_len("red", self.red.len(), count)?;
+        validate_optional_len("green", self.green.len(), count)?;
+        validate_optional_len("blue", self.blue.len(), count)?;
+        let populated_rgb = [
+            !self.red.is_empty(),
+            !self.green.is_empty(),
+            !self.blue.is_empty(),
+        ];
+        if populated_rgb.iter().any(|value| *value) && !populated_rgb.iter().all(|value| *value) {
+            return Err(PointCloudError::Invalid(
+                "red, green, and blue must all be empty or all be populated".to_string(),
+            ));
+        }
+        if self.is_dense
+            && self
+                .x
+                .iter()
+                .chain(&self.y)
+                .chain(&self.z)
+                .any(|value| !value.is_finite())
+        {
+            return Err(PointCloudError::Invalid(
+                "dense point clouds must contain finite XYZ values".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn validate_optional_len(
+    name: &str,
+    actual: usize,
+    expected: usize,
+) -> Result<(), PointCloudError> {
+    if actual != 0 && actual != expected {
+        return Err(PointCloudError::Invalid(format!(
+            "{name} must be empty or have the same length as x"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+pub enum PointCloudError {
+    Arrow(String),
+    Invalid(String),
+}
+
+impl std::fmt::Display for PointCloudError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Arrow(message) => write!(formatter, "arrow error: {message}"),
+            Self::Invalid(message) => write!(formatter, "invalid point cloud: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for PointCloudError {}
+
+#[cfg(test)]
+mod tests {
+    use super::PointCloud;
+
+    #[test]
+    fn point_cloud_roundtrip() {
+        let cloud = PointCloud::new(
+            2,
+            1,
+            true,
+            vec![1.0, 2.0],
+            vec![3.0, 4.0],
+            vec![5.0, 6.0],
+            Vec::new(),
+            vec![255, 0],
+            vec![0, 255],
+            vec![0, 0],
+        )
+        .unwrap();
+        let batch = cloud.to_record_batch().unwrap();
+        assert_eq!(PointCloud::from_record_batch(&batch).unwrap(), cloud);
+    }
+
+    #[test]
+    fn rejects_dense_non_finite_point() {
+        let result = PointCloud::new(
+            1,
+            1,
+            true,
+            vec![f32::NAN],
+            vec![0.0],
+            vec![0.0],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_partial_rgb_columns() {
+        let result = PointCloud::new(
+            1,
+            1,
+            true,
+            vec![0.0],
+            vec![0.0],
+            vec![0.0],
+            Vec::new(),
+            vec![255],
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(result.is_err());
+    }
+}

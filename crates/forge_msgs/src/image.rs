@@ -218,9 +218,9 @@ impl CompressedImage {
 fn bytes_per_pixel(encoding: &str) -> Result<usize, ImageError> {
     match encoding {
         "rgb8" | "bgr8" => Ok(3),
-        "mono8" => Ok(1),
+        "mono8" | "8UC1" => Ok(1),
         "16UC1" => Ok(2),
-        "32FC1" => Ok(4),
+        "32SC1" | "32FC1" => Ok(4),
         _ => Err(ImageError::UnsupportedEncoding(encoding.to_string())),
     }
 }

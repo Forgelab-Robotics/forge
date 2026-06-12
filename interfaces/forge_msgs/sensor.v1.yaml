@@ -22,7 +22,9 @@ messages:
           - rgb8
           - bgr8
           - mono8
+          - 8UC1
           - 16UC1
+          - 32SC1
           - 32FC1
       step:
         arrow: uint32
@@ -54,3 +56,57 @@ messages:
         required: true
     validation:
       - data may be empty only for an empty image payload.
+
+  PointCloud:
+    purpose: Organized or unorganized XYZ point cloud with common optional attributes.
+    row_count: single
+    fields:
+      width:
+        arrow: uint32
+        required: true
+      height:
+        arrow: uint32
+        required: true
+      is_dense:
+        arrow: bool
+        required: true
+      x:
+        arrow: list<float32>
+        required: true
+      y:
+        arrow: list<float32>
+        required: true
+      z:
+        arrow: list<float32>
+        required: true
+      intensity:
+        arrow: list<float32>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      red:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      green:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      blue:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+    validation:
+      - x, y, and z must have the same length.
+      - width * height must equal the point count.
+      - Unorganized point clouds use height=1 and width equal to the point count.
+      - intensity, red, green, and blue must be empty or have the same length as x.
+      - red, green, and blue must all be empty or all be populated.
+      - If is_dense is true, x, y, and z must contain only finite values.
+    notes:
+      - XYZ coordinates use meters.
+      - Invalid points use non-finite XYZ values and require is_dense=false.
+      - The coordinate frame is supplied by Dora metadata or node configuration.

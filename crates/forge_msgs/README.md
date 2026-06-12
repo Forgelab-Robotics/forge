@@ -14,6 +14,10 @@ The crate currently exports:
 - `JointState` and `JointCommand`
 - `LocomotionCommand`
 - `Image` and `CompressedImage`
+- `PointCloud`
+- `Detection2DSet` and `Detection3DSet`
+- `SegmentationMaskSet`
+- `Keypoint2DSet` and `KeypointMatchSet`
 - `Pose` and `PoseSet`
 - `PolicyCommand` and `PolicyCommandStatus`
 

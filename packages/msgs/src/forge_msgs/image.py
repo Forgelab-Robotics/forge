@@ -10,14 +10,24 @@ from pydantic import BaseModel, model_validator
 
 from forge_msgs.arrow import ensure_record_batch
 
-ImageEncoding = Literal["rgb8", "bgr8", "mono8", "16UC1", "32FC1"]
+ImageEncoding = Literal[
+    "rgb8",
+    "bgr8",
+    "mono8",
+    "8UC1",
+    "16UC1",
+    "32SC1",
+    "32FC1",
+]
 CompressedImageFormat = Literal["jpeg", "png", "webp"]
 
 _ENCODING_INFO: dict[str, tuple[np.dtype, int]] = {
     "rgb8": (np.dtype("uint8"), 3),
     "bgr8": (np.dtype("uint8"), 3),
     "mono8": (np.dtype("uint8"), 1),
+    "8UC1": (np.dtype("uint8"), 1),
     "16UC1": (np.dtype("<u2"), 1),
+    "32SC1": (np.dtype("<i4"), 1),
     "32FC1": (np.dtype("<f4"), 1),
 }
 
