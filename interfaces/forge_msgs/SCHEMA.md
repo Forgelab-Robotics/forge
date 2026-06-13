@@ -149,7 +149,9 @@ Fields:
 
 XYZ coordinates use meters. Optional attribute columns are empty or match the
 point count. The coordinate frame comes from Dora metadata or node
-configuration.
+configuration. High-level constructors may infer unorganized clouds from
+`x/y/z` by setting `height=1`, `width=len(x)`, and `is_dense` from finite XYZ
+values.
 
 ### Perception result sets
 

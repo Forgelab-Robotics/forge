@@ -590,6 +590,16 @@ def test_point_cloud_roundtrip_and_dense_validation() -> None:
     )
     assert PointCloud.from_arrow(_to_ipc_bytes(cloud.to_arrow())) == cloud
 
+    unorganized = PointCloud(x=[1.0, 2.0], y=[3.0, 4.0], z=[5.0, 6.0])
+    assert unorganized.width == 2
+    assert unorganized.height == 1
+    assert unorganized.is_dense is True
+
+    sparse = PointCloud(x=[math.nan], y=[0.0], z=[0.0])
+    assert sparse.width == 1
+    assert sparse.height == 1
+    assert sparse.is_dense is False
+
     with pytest.raises(ValueError, match="width \\* height"):
         PointCloud(**(cloud.model_dump() | {"width": 3}))
     with pytest.raises(ValueError, match="finite"):

@@ -108,7 +108,9 @@ future pipeline needs cross-node feature reuse.
 `PointCloud` stores common XYZ point clouds as Arrow lists with optional
 intensity and RGB columns. Organized clouds preserve `width` and `height`;
 unorganized clouds use `height=1`. Coordinates use meters, while the coordinate
-frame is supplied by Dora metadata or node configuration.
+frame is supplied by Dora metadata or node configuration. High-level
+constructors may infer unorganized clouds from `x/y/z` by setting `height=1`,
+`width=len(x)`, and `is_dense` from finite XYZ values.
 
 ## Arrow Format
 

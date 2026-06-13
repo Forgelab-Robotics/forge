@@ -109,4 +109,5 @@ messages:
     notes:
       - XYZ coordinates use meters.
       - Invalid points use non-finite XYZ values and require is_dense=false.
+      - High-level constructors may infer unorganized clouds with height=1, width equal to the point count, and is_dense from finite XYZ values; serialized Arrow payloads still include width, height, and is_dense columns.
       - The coordinate frame is supplied by Dora metadata or node configuration.

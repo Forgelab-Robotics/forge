@@ -22,9 +22,9 @@ def _read_list(batch: pa.RecordBatch, name: str) -> list:
 class PointCloud(BaseModel):
     """Organized or unorganized XYZ point cloud."""
 
-    width: int
-    height: int
-    is_dense: bool
+    width: int | None = None
+    height: int | None = None
+    is_dense: bool | None = None
     x: list[float]
     y: list[float]
     z: list[float]
@@ -35,11 +35,24 @@ class PointCloud(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
-        if not 0 <= self.width <= _UINT32_MAX or not 0 <= self.height <= _UINT32_MAX:
-            raise ValueError("width and height must be in the uint32 range")
         point_count = len(self.x)
         if len(self.y) != point_count or len(self.z) != point_count:
             raise ValueError("x, y, and z must have the same length")
+        if self.height is None:
+            self.height = 1
+        if self.width is None:
+            if self.height == 0:
+                self.width = 0
+            elif point_count % self.height == 0:
+                self.width = point_count // self.height
+            else:
+                raise ValueError("point count must be divisible by height when width is omitted")
+        if self.is_dense is None:
+            self.is_dense = all(
+                math.isfinite(value) for values in (self.x, self.y, self.z) for value in values
+            )
+        if not 0 <= self.width <= _UINT32_MAX or not 0 <= self.height <= _UINT32_MAX:
+            raise ValueError("width and height must be in the uint32 range")
         if self.width * self.height != point_count:
             raise ValueError("width * height must equal the point count")
         for name in ("intensity", "red", "green", "blue"):
@@ -52,7 +65,7 @@ class PointCloud(BaseModel):
         populated_rgb = [bool(self.red), bool(self.green), bool(self.blue)]
         if any(populated_rgb) and not all(populated_rgb):
             raise ValueError("red, green, and blue must all be empty or all be populated")
-        if self.is_dense and any(
+        if bool(self.is_dense) and any(
             not math.isfinite(value) for values in (self.x, self.y, self.z) for value in values
         ):
             raise ValueError("dense point clouds must contain finite XYZ values")
@@ -61,9 +74,9 @@ class PointCloud(BaseModel):
     def to_arrow(self) -> pa.RecordBatch:
         return pa.RecordBatch.from_pydict(
             {
-                "width": pa.array([self.width], type=pa.uint32()),
-                "height": pa.array([self.height], type=pa.uint32()),
-                "is_dense": pa.array([self.is_dense], type=pa.bool_()),
+                "width": pa.array([int(self.width)], type=pa.uint32()),
+                "height": pa.array([int(self.height)], type=pa.uint32()),
+                "is_dense": pa.array([bool(self.is_dense)], type=pa.bool_()),
                 "x": _list_array(self.x, pa.float32()),
                 "y": _list_array(self.y, pa.float32()),
                 "z": _list_array(self.z, pa.float32()),

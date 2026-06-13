@@ -51,6 +51,25 @@ impl PointCloud {
         Ok(value)
     }
 
+    pub fn from_xyz(x: Vec<f32>, y: Vec<f32>, z: Vec<f32>) -> Result<Self, PointCloudError> {
+        let width = u32::try_from(x.len()).map_err(|_| {
+            PointCloudError::Invalid("point count exceeds the uint32 range".to_string())
+        })?;
+        let is_dense = x.iter().chain(&y).chain(&z).all(|value| value.is_finite());
+        Self::new(
+            width,
+            1,
+            is_dense,
+            x,
+            y,
+            z,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
     pub fn to_record_batch(&self) -> Result<RecordBatch, PointCloudError> {
         self.validate()?;
         let schema = Arc::new(Schema::new(vec![
@@ -199,6 +218,17 @@ mod tests {
         .unwrap();
         let batch = cloud.to_record_batch().unwrap();
         assert_eq!(PointCloud::from_record_batch(&batch).unwrap(), cloud);
+
+        let unorganized =
+            PointCloud::from_xyz(vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]).unwrap();
+        assert_eq!(unorganized.width, 2);
+        assert_eq!(unorganized.height, 1);
+        assert!(unorganized.is_dense);
+
+        let sparse = PointCloud::from_xyz(vec![f32::NAN], vec![0.0], vec![0.0]).unwrap();
+        assert_eq!(sparse.width, 1);
+        assert_eq!(sparse.height, 1);
+        assert!(!sparse.is_dense);
     }
 
     #[test]
