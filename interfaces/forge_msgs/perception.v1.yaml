@@ -159,18 +159,22 @@ messages:
       detection_id:
         arrow: list<utf8>
         required: true
+        default: ""
         length: mask_id
       track_id:
         arrow: list<utf8>
         required: true
+        default: ""
         length: mask_id
       x_offset:
         arrow: list<uint32>
         required: true
+        default: 0
         length: mask_id
       y_offset:
         arrow: list<uint32>
         required: true
+        default: 0
         length: mask_id
       width:
         arrow: list<uint32>
@@ -183,6 +187,7 @@ messages:
       encoding:
         arrow: utf8
         required: true
+        default: mono8
         allowed_values:
           - mono8
       data:
@@ -197,6 +202,7 @@ messages:
     notes:
       - Each mask is cropped to its own ROI; x_offset and y_offset locate the ROI in the source image.
       - detection_id and track_id are empty strings when no association is available.
+      - Writers may omit detection_id, track_id, x_offset, and y_offset in high-level constructors and let implementations fill empty associations and zero offsets for each mask; serialized Arrow payloads still include those columns.
 
   Keypoint2DSet:
     purpose: Set of image keypoints with an optional fixed-width descriptor matrix.

@@ -37,6 +37,33 @@ impl SegmentationMaskSet {
         encoding: impl Into<String>,
         data: Vec<Bytes>,
     ) -> Result<Self, PerceptionError> {
+        let count = mask_id.len();
+        let detection_id = if detection_id.is_empty() && count > 0 {
+            vec![String::new(); count]
+        } else {
+            detection_id
+        };
+        let track_id = if track_id.is_empty() && count > 0 {
+            vec![String::new(); count]
+        } else {
+            track_id
+        };
+        let x_offset = if x_offset.is_empty() && count > 0 {
+            vec![0; count]
+        } else {
+            x_offset
+        };
+        let y_offset = if y_offset.is_empty() && count > 0 {
+            vec![0; count]
+        } else {
+            y_offset
+        };
+        let encoding = encoding.into();
+        let encoding = if encoding.is_empty() {
+            "mono8".to_string()
+        } else {
+            encoding
+        };
         let value = Self {
             mask_id,
             detection_id,
@@ -45,7 +72,7 @@ impl SegmentationMaskSet {
             y_offset,
             width,
             height,
-            encoding: encoding.into(),
+            encoding,
             data,
         };
         value.validate()?;
@@ -161,6 +188,24 @@ mod tests {
             SegmentationMaskSet::from_record_batch(&batch).unwrap(),
             masks
         );
+
+        let standalone = SegmentationMaskSet::new(
+            vec!["m0".into()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![2],
+            vec![2],
+            "",
+            vec![Bytes::from_static(&[0, 255, 255, 0])],
+        )
+        .unwrap();
+        assert_eq!(standalone.detection_id, vec![String::new()]);
+        assert_eq!(standalone.track_id, vec![String::new()]);
+        assert_eq!(standalone.x_offset, vec![0]);
+        assert_eq!(standalone.y_offset, vec![0]);
+        assert_eq!(standalone.encoding, "mono8");
     }
 
     #[test]

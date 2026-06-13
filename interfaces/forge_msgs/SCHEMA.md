@@ -165,7 +165,9 @@ configuration.
   automatically while serialized Arrow payloads still include quaternion
   columns.
 - `SegmentationMaskSet`: cropped binary instance masks positioned in a source
-  image.
+  image. Standalone masks can omit detection and track associations, and
+  high-level constructors may fill empty associations and zero offsets while
+  serialized Arrow payloads still include those columns.
 - `Keypoint2DSet`: image keypoints and optional fixed-width descriptors.
 - `KeypointMatchSet`: pairwise matches between named keypoint inputs.
 

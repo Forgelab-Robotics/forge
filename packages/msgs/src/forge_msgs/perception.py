@@ -238,6 +238,16 @@ class SegmentationMaskSet(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
+        if self.mask_id:
+            count = len(self.mask_id)
+            if not self.detection_id:
+                self.detection_id = [""] * count
+            if not self.track_id:
+                self.track_id = [""] * count
+            if not self.x_offset:
+                self.x_offset = [0] * count
+            if not self.y_offset:
+                self.y_offset = [0] * count
         _validate_unique("mask_id", self.mask_id)
         _validate_lengths(
             "mask_id",

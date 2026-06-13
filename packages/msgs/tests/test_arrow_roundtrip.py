@@ -554,6 +554,17 @@ def test_segmentation_mask_roundtrip_and_length_validation() -> None:
     )
     assert SegmentationMaskSet.from_arrow(_to_ipc_bytes(masks.to_arrow())) == masks
 
+    standalone = SegmentationMaskSet(
+        mask_id=["m0"],
+        width=[2],
+        height=[2],
+        data=[bytes([0, 255, 255, 0])],
+    )
+    assert standalone.detection_id == [""]
+    assert standalone.track_id == [""]
+    assert standalone.x_offset == [0]
+    assert standalone.y_offset == [0]
+
     with pytest.raises(ValueError, match=r"data\[0\] length"):
         SegmentationMaskSet(
             mask_id=["m0"],

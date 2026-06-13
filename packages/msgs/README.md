@@ -94,7 +94,8 @@ The perception messages use parallel Arrow list columns in a single-row
   Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`, `qz=0`, `qw=1`),
   and high-level constructors may fill that default automatically.
 - `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
-  image offsets.
+  image offsets. Standalone masks can omit detection and track associations,
+  and high-level constructors may fill empty associations and zero offsets.
 - `Keypoint2DSet` stores OpenCV-style keypoints and an optional fixed-width
   descriptor matrix.
 - `KeypointMatchSet` stores matches between two named keypoint inputs.
