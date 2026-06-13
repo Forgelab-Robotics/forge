@@ -17,7 +17,6 @@ The crate currently exports:
 - `PointCloud`
 - `Detection2DSet` and `Detection3DSet`
 - `SegmentationMaskSet`
-- `Keypoint2DSet` and `KeypointMatchSet`
 - `Pose` and `PoseSet`
 - `PolicyCommand` and `PolicyCommandStatus`
 

@@ -1,9 +1,7 @@
 mod detection;
-mod keypoint;
 mod segmentation;
 
 pub use detection::{Detection2DSet, Detection3DSet};
-pub use keypoint::{Keypoint2DSet, KeypointMatchSet};
 pub use segmentation::SegmentationMaskSet;
 
 #[derive(Debug)]

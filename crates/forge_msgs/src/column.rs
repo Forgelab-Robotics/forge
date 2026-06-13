@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use arrow_array::builder::{
-    BooleanBuilder, Float32Builder, Int32Builder, LargeBinaryBuilder, ListBuilder, StringBuilder,
-    UInt8Builder, UInt32Builder,
+    Float32Builder, LargeBinaryBuilder, ListBuilder, StringBuilder, UInt8Builder, UInt32Builder,
 };
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Float32Array, Int32Array, LargeBinaryArray, ListArray,
-    RecordBatch, StringArray, UInt8Array, UInt32Array,
+    Array, ArrayRef, BooleanArray, Float32Array, LargeBinaryArray, ListArray, RecordBatch,
+    StringArray, UInt8Array, UInt32Array,
 };
 use arrow_schema::{DataType, Field};
 use bytes::Bytes;
@@ -42,26 +41,8 @@ pub(crate) fn u32_list(values: &[u32]) -> ListArray {
     builder.finish()
 }
 
-pub(crate) fn i32_list(values: &[i32]) -> ListArray {
-    let mut builder = ListBuilder::new(Int32Builder::new());
-    for value in values {
-        builder.values().append_value(*value);
-    }
-    builder.append(true);
-    builder.finish()
-}
-
 pub(crate) fn u8_list(values: &[u8]) -> ListArray {
     let mut builder = ListBuilder::new(UInt8Builder::new());
-    for value in values {
-        builder.values().append_value(*value);
-    }
-    builder.append(true);
-    builder.finish()
-}
-
-pub(crate) fn bool_list(values: &[bool]) -> ListArray {
-    let mut builder = ListBuilder::new(BooleanBuilder::new());
     for value in values {
         builder.values().append_value(*value);
     }
@@ -110,32 +91,12 @@ pub(crate) fn read_u32_list(batch: &RecordBatch, name: &str) -> Result<Vec<u32>,
     Ok((0..array.len()).map(|index| array.value(index)).collect())
 }
 
-pub(crate) fn read_i32_list(batch: &RecordBatch, name: &str) -> Result<Vec<i32>, String> {
-    let values = read_list(batch, name)?;
-    let array = values
-        .as_any()
-        .downcast_ref::<Int32Array>()
-        .ok_or_else(|| format!("{name} values must be int32"))?;
-    reject_nulls(array, name)?;
-    Ok((0..array.len()).map(|index| array.value(index)).collect())
-}
-
 pub(crate) fn read_u8_list(batch: &RecordBatch, name: &str) -> Result<Vec<u8>, String> {
     let values = read_list(batch, name)?;
     let array = values
         .as_any()
         .downcast_ref::<UInt8Array>()
         .ok_or_else(|| format!("{name} values must be uint8"))?;
-    reject_nulls(array, name)?;
-    Ok((0..array.len()).map(|index| array.value(index)).collect())
-}
-
-pub(crate) fn read_bool_list(batch: &RecordBatch, name: &str) -> Result<Vec<bool>, String> {
-    let values = read_list(batch, name)?;
-    let array = values
-        .as_any()
-        .downcast_ref::<BooleanArray>()
-        .ok_or_else(|| format!("{name} values must be bool"))?;
     reject_nulls(array, name)?;
     Ok((0..array.len()).map(|index| array.value(index)).collect())
 }
@@ -180,11 +141,6 @@ pub(crate) fn read_u32(batch: &RecordBatch, name: &str) -> Result<u32, String> {
 pub(crate) fn read_bool(batch: &RecordBatch, name: &str) -> Result<bool, String> {
     let array = scalar_column::<BooleanArray>(batch, name)?;
     Ok(array.value(0))
-}
-
-pub(crate) fn read_binary(batch: &RecordBatch, name: &str) -> Result<Bytes, String> {
-    let array = scalar_column::<LargeBinaryArray>(batch, name)?;
-    Ok(Bytes::copy_from_slice(array.value(0)))
 }
 
 fn read_list(batch: &RecordBatch, name: &str) -> Result<ArrayRef, String> {

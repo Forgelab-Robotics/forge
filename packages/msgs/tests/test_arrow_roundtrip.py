@@ -16,8 +16,6 @@ from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.perception import (
     Detection2DSet,
     Detection3DSet,
-    Keypoint2DSet,
-    KeypointMatchSet,
     SegmentationMaskSet,
 )
 from forge_msgs.point_cloud import PointCloud
@@ -576,64 +574,6 @@ def test_segmentation_mask_roundtrip_and_length_validation() -> None:
             height=[2],
             data=[b"\x00"],
         )
-
-
-def test_keypoints_and_matches_roundtrip() -> None:
-    keypoints = Keypoint2DSet(
-        keypoint_id=[0, 1],
-        x=[10.0, 20.0],
-        y=[11.0, 21.0],
-        size=[8.0, 8.0],
-        angle=[-1.0, 0.5],
-        response=[0.9, 0.8],
-        octave=[0, 1],
-        descriptor_type="uint8",
-        descriptor_size=2,
-        descriptor_data=b"\x01\x02\x03\x04",
-    )
-    keypoint_back = Keypoint2DSet.from_arrow(_to_ipc_bytes(keypoints.to_arrow()))
-    assert keypoint_back.keypoint_id == keypoints.keypoint_id
-    assert keypoint_back.octave == keypoints.octave
-    assert keypoint_back.descriptor_type == keypoints.descriptor_type
-    assert keypoint_back.descriptor_size == keypoints.descriptor_size
-    assert keypoint_back.descriptor_data == keypoints.descriptor_data
-    for field in ("x", "y", "size", "angle", "response"):
-        assert getattr(keypoint_back, field) == pytest.approx(getattr(keypoints, field))
-
-    matches = KeypointMatchSet(
-        query_source="previous",
-        train_source="current",
-        query_id=[0],
-        train_id=[1],
-        distance=[0.25],
-        inlier=[True],
-    )
-    match_back = KeypointMatchSet.from_arrow(_to_ipc_bytes(matches.to_arrow()))
-    assert match_back.query_source == matches.query_source
-    assert match_back.train_source == matches.train_source
-    assert match_back.query_id == matches.query_id
-    assert match_back.train_id == matches.train_id
-    assert match_back.inlier == matches.inlier
-    assert match_back.distance == pytest.approx(matches.distance)
-
-
-def test_keypoints_reject_invalid_descriptor_length() -> None:
-    with pytest.raises(ValueError, match="descriptor_data length"):
-        Keypoint2DSet(
-            keypoint_id=[0],
-            x=[1.0],
-            y=[2.0],
-            size=[3.0],
-            angle=[-1.0],
-            response=[0.5],
-            octave=[0],
-            descriptor_type="float32",
-            descriptor_size=2,
-            descriptor_data=b"\x00" * 4,
-        )
-
-    with pytest.raises(ValueError, match="uint32"):
-        Keypoint2DSet(keypoint_id=[2**32], descriptor_type="none")
 
 
 def test_point_cloud_roundtrip_and_dense_validation() -> None:

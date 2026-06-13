@@ -7,8 +7,6 @@ from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.perception import (
     Detection2DSet,
     Detection3DSet,
-    Keypoint2DSet,
-    KeypointMatchSet,
     SegmentationMaskSet,
 )
 from forge_msgs.point_cloud import PointCloud
@@ -24,8 +22,6 @@ __all__ = [
     "JointCommand",
     "JointState",
     "LocomotionCommand",
-    "Keypoint2DSet",
-    "KeypointMatchSet",
     "PointCloud",
     "PolicyCommand",
     "PolicyCommandStatus",

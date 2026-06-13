@@ -74,11 +74,11 @@ Recommended formats are `jpeg`, `png`, and `webp`.
 
 XR device raw teleop observation for embodiment-specific teleop policies.
 
-- `device: list[str]` — tracked device ids such as `left`, `right`, `headset`
-- `x/y/z/qx/qy/qz/qw: list[float]` — pose fields aligned with `device`
-- `confidence: list[float]` — per-device tracking confidence in `[0, 1]`
-- `buttons_json: str` — JSON object of button bool/float values
-- `axes_json: str` — JSON object of trigger/grip/joystick axis values
+- `device: list[str]` ??tracked device ids such as `left`, `right`, `headset`
+- `x/y/z/qx/qy/qz/qw: list[float]` ??pose fields aligned with `device`
+- `confidence: list[float]` ??per-device tracking confidence in `[0, 1]`
+- `buttons_json: str` ??JSON object of button bool/float values
+- `axes_json: str` ??JSON object of trigger/grip/joystick axis values
 
 Timing and frame metadata are intentionally not part of the core schema. Carry them in Dora topic naming, node configuration, or adapter layers.
 
@@ -96,12 +96,12 @@ The perception messages use parallel Arrow list columns in a single-row
 - `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
   image offsets. Standalone masks can omit detection and track associations,
   and high-level constructors may fill empty associations and zero offsets.
-- `Keypoint2DSet` stores OpenCV-style keypoints and an optional fixed-width
-  descriptor matrix.
-- `KeypointMatchSet` stores matches between two named keypoint inputs.
 
 Detection class names and model label maps belong in node configuration.
 `class_id` is the stable identifier carried on the wire.
+Local features such as ORB, SIFT, or SuperPoint descriptors are intentionally
+kept out of the core streaming schema; publish higher-level outputs unless a
+future pipeline needs cross-node feature reuse.
 
 ### `PointCloud`
 

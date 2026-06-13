@@ -168,12 +168,13 @@ configuration.
   image. Standalone masks can omit detection and track associations, and
   high-level constructors may fill empty associations and zero offsets while
   serialized Arrow payloads still include those columns.
-- `Keypoint2DSet`: image keypoints and optional fixed-width descriptors.
-- `KeypointMatchSet`: pairwise matches between named keypoint inputs.
 
 Empty detections use empty per-detection lists and
 `hypothesis_offset=[0]`. Detection class display names remain model
 configuration rather than per-frame payload data.
+OpenCV-style local features such as ORB, SIFT, or SuperPoint descriptors are
+not part of the core streaming schema; keep them inside a node unless a future
+pipeline needs cross-node feature reuse.
 
 ### Pose
 
