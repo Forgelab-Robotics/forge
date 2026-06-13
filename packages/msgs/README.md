@@ -2,7 +2,10 @@
 
 Forge message definitions for Dora dataflow.
 
-The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs.v1.yaml`. Python, Rust, and future C++ implementations should conform to that schema.
+The canonical cross-language contract starts at
+`interfaces/forge_msgs/forge_msgs.v1.yaml`. That manifest references the
+versioned domain schemas that Python, Rust, and future C++ implementations
+should follow.
 
 ## Core Messages
 
@@ -53,7 +56,10 @@ Uncompressed image payload.
 - `step: int`
 - `data: bytes`
 
-Supported encodings are `rgb8`, `bgr8`, `mono8`, `16UC1`, and `32FC1`. Multi-byte pixels are little-endian. Compressed images use `CompressedImage`.
+Supported encodings are `rgb8`, `bgr8`, `mono8`, `8UC1`, `16UC1`, `32SC1`,
+and `32FC1`. Multi-byte pixels are little-endian. `8UC1` is available for
+generic one-channel byte data such as label maps, while `32SC1` supports signed
+32-bit label images. Compressed images use `CompressedImage`.
 
 ### `CompressedImage`
 
@@ -68,13 +74,43 @@ Recommended formats are `jpeg`, `png`, and `webp`.
 
 XR device raw teleop observation for embodiment-specific teleop policies.
 
-- `device: list[str]` — tracked device ids such as `left`, `right`, `headset`
-- `x/y/z/qx/qy/qz/qw: list[float]` — pose fields aligned with `device`
-- `confidence: list[float]` — per-device tracking confidence in `[0, 1]`
-- `buttons_json: str` — JSON object of button bool/float values
-- `axes_json: str` — JSON object of trigger/grip/joystick axis values
+- `device: list[str]` ??tracked device ids such as `left`, `right`, `headset`
+- `x/y/z/qx/qy/qz/qw: list[float]` ??pose fields aligned with `device`
+- `confidence: list[float]` ??per-device tracking confidence in `[0, 1]`
+- `buttons_json: str` ??JSON object of button bool/float values
+- `axes_json: str` ??JSON object of trigger/grip/joystick axis values
 
 Timing and frame metadata are intentionally not part of the core schema. Carry them in Dora topic naming, node configuration, or adapter layers.
+
+### Perception result sets
+
+The perception messages use parallel Arrow list columns in a single-row
+`RecordBatch`:
+
+- `Detection2DSet` stores oriented pixel-space boxes and flattened class
+  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level constructors
+  may fill that default automatically.
+- `Detection3DSet` stores oriented metric boxes and flattened class hypotheses.
+  Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`, `qz=0`, `qw=1`),
+  and high-level constructors may fill that default automatically.
+- `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
+  image offsets. Standalone masks can omit detection and track associations,
+  and high-level constructors may fill empty associations and zero offsets.
+
+Detection class names and model label maps belong in node configuration.
+`class_id` is the stable identifier carried on the wire.
+Local features such as ORB, SIFT, or SuperPoint descriptors are intentionally
+kept out of the core streaming schema; publish higher-level outputs unless a
+future pipeline needs cross-node feature reuse.
+
+### `PointCloud`
+
+`PointCloud` stores common XYZ point clouds as Arrow lists with optional
+intensity and RGB columns. Organized clouds preserve `width` and `height`;
+unorganized clouds use `height=1`. Coordinates use meters, while the coordinate
+frame is supplied by Dora metadata or node configuration. High-level
+constructors may infer unorganized clouds from `x/y/z` by setting `height=1`,
+`width=len(x)`, and `is_dense` from finite XYZ values.
 
 ## Arrow Format
 

@@ -1,0 +1,206 @@
+version: 1
+package: forge_msgs
+domain: perception
+
+messages:
+  Detection2DSet:
+    purpose: Set of oriented 2D detections and flattened classification hypotheses.
+    row_count: single
+    fields:
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      track_id:
+        arrow: list<utf8>
+        required: true
+        length: detection_id
+      center_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      rotation:
+        arrow: list<float32>
+        required: true
+        default: 0.0
+        length: detection_id
+      hypothesis_offset:
+        arrow: list<uint32>
+        required: true
+        length: detection_id_plus_one
+      class_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      score:
+        arrow: list<float32>
+        required: true
+        length: class_id
+    validation:
+      - All per-detection lists must have the same length as detection_id.
+      - detection_id items must be unique within the message.
+      - center_x, center_y, and rotation must contain only finite values.
+      - size_x and size_y must be finite and non-negative.
+      - hypothesis_offset must start at 0, be monotonically non-decreasing, and end at len(class_id).
+      - An empty detection result uses hypothesis_offset=[0].
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - Bounding boxes use pixel coordinates with origin at the top-left, X right, and Y down.
+      - rotation is counter-clockwise in radians; axis-aligned boxes use 0.
+      - Writers may omit rotation in high-level constructors and let implementations fill 0.0 for each detection; serialized Arrow payloads still include the rotation column.
+      - track_id is an empty string when no cross-frame track is available.
+
+  Detection3DSet:
+    purpose: Set of oriented 3D bounding boxes and flattened classification hypotheses.
+    row_count: single
+    fields:
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      track_id:
+        arrow: list<utf8>
+        required: true
+        length: detection_id
+      center_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      center_z:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      qx:
+        arrow: list<float32>
+        required: true
+        default: 0.0
+        length: detection_id
+      qy:
+        arrow: list<float32>
+        required: true
+        default: 0.0
+        length: detection_id
+      qz:
+        arrow: list<float32>
+        required: true
+        default: 0.0
+        length: detection_id
+      qw:
+        arrow: list<float32>
+        required: true
+        default: 1.0
+        length: detection_id
+      size_x:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_y:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      size_z:
+        arrow: list<float32>
+        required: true
+        length: detection_id
+      hypothesis_offset:
+        arrow: list<uint32>
+        required: true
+        length: detection_id_plus_one
+      class_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      score:
+        arrow: list<float32>
+        required: true
+        length: class_id
+    validation:
+      - All per-detection lists must have the same length as detection_id.
+      - detection_id items must be unique within the message.
+      - Center coordinates and quaternion components must contain only finite values.
+      - Each quaternion qx, qy, qz, qw must not be all zero.
+      - size_x, size_y, and size_z must be finite and non-negative.
+      - hypothesis_offset must start at 0, be monotonically non-decreasing, and end at len(class_id).
+      - An empty detection result uses hypothesis_offset=[0].
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - Center coordinates and box dimensions use meters.
+      - Identity orientation uses qx=0, qy=0, qz=0, qw=1.
+      - Writers may omit quaternion fields in high-level constructors and let implementations fill identity orientation for each detection; serialized Arrow payloads still include qx, qy, qz, and qw columns.
+      - The coordinate frame is supplied by Dora metadata or node configuration.
+
+  SegmentationMaskSet:
+    purpose: Set of cropped binary instance masks positioned in a source image.
+    row_count: single
+    fields:
+      mask_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: mask_id
+      track_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: mask_id
+      x_offset:
+        arrow: list<uint32>
+        required: true
+        default: 0
+        length: mask_id
+      y_offset:
+        arrow: list<uint32>
+        required: true
+        default: 0
+        length: mask_id
+      width:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      height:
+        arrow: list<uint32>
+        required: true
+        length: mask_id
+      encoding:
+        arrow: utf8
+        required: true
+        default: mono8
+        allowed_values:
+          - mono8
+      data:
+        arrow: list<large_binary>
+        required: true
+        length: mask_id
+    validation:
+      - All per-mask lists must have the same length as mask_id.
+      - mask_id items must be unique within the message.
+      - data[i] length must equal width[i] * height[i].
+      - Zero pixels are background and non-zero pixels are foreground.
+    notes:
+      - Each mask is cropped to its own ROI; x_offset and y_offset locate the ROI in the source image.
+      - detection_id and track_id are empty strings when no association is available.
+      - Writers may omit detection_id, track_id, x_offset, and y_offset in high-level constructors and let implementations fill empty associations and zero offsets for each mask; serialized Arrow payloads still include those columns.
+

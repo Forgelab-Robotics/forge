@@ -1,0 +1,113 @@
+version: 1
+package: forge_msgs
+domain: sensor
+
+messages:
+  Image:
+    purpose: Uncompressed image payload.
+    row_count: single
+    fields:
+      height:
+        arrow: uint32
+        required: true
+        minimum: 0
+      width:
+        arrow: uint32
+        required: true
+        minimum: 0
+      encoding:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - rgb8
+          - bgr8
+          - mono8
+          - 8UC1
+          - 16UC1
+          - 32SC1
+          - 32FC1
+      step:
+        arrow: uint32
+        required: true
+        description: Full row length in bytes. May be larger than width * bytes_per_pixel because of row padding.
+      data:
+        arrow: large_binary
+        required: true
+        length: step_times_height
+    validation:
+      - data length must equal step * height.
+      - step must be at least width * bytes_per_pixel for known encodings.
+      - Multi-byte pixel encodings use little-endian byte order.
+      - Compressed jpeg, png, or webp payloads must use CompressedImage instead.
+
+  CompressedImage:
+    purpose: Compressed image bitstream payload.
+    row_count: single
+    fields:
+      format:
+        arrow: utf8
+        required: true
+        recommended_values:
+          - jpeg
+          - png
+          - webp
+      data:
+        arrow: large_binary
+        required: true
+    validation:
+      - data may be empty only for an empty image payload.
+
+  PointCloud:
+    purpose: Organized or unorganized XYZ point cloud with common optional attributes.
+    row_count: single
+    fields:
+      width:
+        arrow: uint32
+        required: true
+      height:
+        arrow: uint32
+        required: true
+      is_dense:
+        arrow: bool
+        required: true
+      x:
+        arrow: list<float32>
+        required: true
+      y:
+        arrow: list<float32>
+        required: true
+      z:
+        arrow: list<float32>
+        required: true
+      intensity:
+        arrow: list<float32>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      red:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      green:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+      blue:
+        arrow: list<uint8>
+        required: true
+        empty_allowed: true
+        length: x_or_empty
+    validation:
+      - x, y, and z must have the same length.
+      - width * height must equal the point count.
+      - Unorganized point clouds use height=1 and width equal to the point count.
+      - intensity, red, green, and blue must be empty or have the same length as x.
+      - red, green, and blue must all be empty or all be populated.
+      - If is_dense is true, x, y, and z must contain only finite values.
+    notes:
+      - XYZ coordinates use meters.
+      - Invalid points use non-finite XYZ values and require is_dense=false.
+      - High-level constructors may infer unorganized clouds with height=1, width equal to the point count, and is_dense from finite XYZ values; serialized Arrow payloads still include width, height, and is_dense columns.
+      - The coordinate frame is supplied by Dora metadata or node configuration.

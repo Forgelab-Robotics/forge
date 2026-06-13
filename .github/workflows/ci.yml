@@ -32,6 +32,9 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check .
 
+      - name: Validate forge_msgs schemas
+        run: uv run python scripts/check_forge_msgs_schema.py
+
       - name: Run Python tests
         run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
 
