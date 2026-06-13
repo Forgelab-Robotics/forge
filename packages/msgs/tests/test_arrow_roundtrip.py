@@ -452,6 +452,19 @@ def test_detection_2d_roundtrip_and_empty_result() -> None:
     assert back.score == pytest.approx(detections.score)
     assert Detection2DSet.from_arrow(Detection2DSet().to_arrow()) == Detection2DSet()
 
+    axis_aligned = Detection2DSet(
+        detection_id=["d0"],
+        track_id=[""],
+        center_x=[10.5],
+        center_y=[11.0],
+        size_x=[4.0],
+        size_y=[5.0],
+        hypothesis_offset=[0, 1],
+        class_id=["person"],
+        score=[0.9],
+    )
+    assert axis_aligned.rotation == [0.0]
+
 
 def test_detection_2d_rejects_invalid_hypothesis_offsets() -> None:
     with pytest.raises(ValueError, match="end at"):

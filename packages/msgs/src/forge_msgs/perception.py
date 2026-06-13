@@ -86,6 +86,8 @@ class Detection2DSet(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
+        if self.detection_id and not self.rotation:
+            self.rotation = [0.0] * len(self.detection_id)
         _validate_unique("detection_id", self.detection_id)
         _validate_lengths(
             "detection_id",

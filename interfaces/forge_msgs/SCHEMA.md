@@ -156,7 +156,9 @@ configuration.
 `perception.v1.yaml` defines:
 
 - `Detection2DSet`: oriented pixel-space boxes and flattened classification
-  hypotheses.
+  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level
+  constructors may fill that default automatically while serialized Arrow
+  payloads still include the `rotation` column.
 - `Detection3DSet`: oriented metric boxes and flattened classification
   hypotheses.
 - `SegmentationMaskSet`: cropped binary instance masks positioned in a source

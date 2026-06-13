@@ -59,6 +59,11 @@ impl Detection2DSet {
         class_id: Vec<String>,
         score: Vec<f32>,
     ) -> Result<Self, PerceptionError> {
+        let rotation = if rotation.is_empty() && !detection_id.is_empty() {
+            vec![0.0; detection_id.len()]
+        } else {
+            rotation
+        };
         let value = Self {
             detection_id,
             track_id,
@@ -341,6 +346,21 @@ mod tests {
         let empty = Detection2DSet::empty();
         let batch = empty.to_record_batch().unwrap();
         assert_eq!(Detection2DSet::from_record_batch(&batch).unwrap(), empty);
+
+        let axis_aligned = Detection2DSet::new(
+            vec!["d0".into()],
+            vec![String::new()],
+            vec![10.5],
+            vec![11.0],
+            vec![4.0],
+            vec![5.0],
+            Vec::new(),
+            vec![0, 1],
+            vec!["person".into()],
+            vec![0.9],
+        )
+        .unwrap();
+        assert_eq!(axis_aligned.rotation, vec![0.0]);
     }
 
     #[test]

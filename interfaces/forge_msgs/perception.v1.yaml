@@ -35,6 +35,7 @@ messages:
       rotation:
         arrow: list<float32>
         required: true
+        default: 0.0
         length: detection_id
       hypothesis_offset:
         arrow: list<uint32>
@@ -59,6 +60,7 @@ messages:
     notes:
       - Bounding boxes use pixel coordinates with origin at the top-left, X right, and Y down.
       - rotation is counter-clockwise in radians; axis-aligned boxes use 0.
+      - Writers may omit rotation in high-level constructors and let implementations fill 0.0 for each detection; serialized Arrow payloads still include the rotation column.
       - track_id is an empty string when no cross-frame track is available.
 
   Detection3DSet:

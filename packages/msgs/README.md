@@ -88,7 +88,8 @@ The perception messages use parallel Arrow list columns in a single-row
 `RecordBatch`:
 
 - `Detection2DSet` stores oriented pixel-space boxes and flattened class
-  hypotheses.
+  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level constructors
+  may fill that default automatically.
 - `Detection3DSet` stores oriented metric boxes and flattened class hypotheses.
 - `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
   image offsets.
