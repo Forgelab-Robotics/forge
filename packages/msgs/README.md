@@ -91,6 +91,8 @@ The perception messages use parallel Arrow list columns in a single-row
   hypotheses. Axis-aligned boxes use `rotation=0`, and high-level constructors
   may fill that default automatically.
 - `Detection3DSet` stores oriented metric boxes and flattened class hypotheses.
+  Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`, `qz=0`, `qw=1`),
+  and high-level constructors may fill that default automatically.
 - `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
   image offsets.
 - `Keypoint2DSet` stores OpenCV-style keypoints and an optional fixed-width

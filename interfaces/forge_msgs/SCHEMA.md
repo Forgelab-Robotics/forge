@@ -160,7 +160,10 @@ configuration.
   constructors may fill that default automatically while serialized Arrow
   payloads still include the `rotation` column.
 - `Detection3DSet`: oriented metric boxes and flattened classification
-  hypotheses.
+  hypotheses. Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`,
+  `qz=0`, `qw=1`), and high-level constructors may fill that default
+  automatically while serialized Arrow payloads still include quaternion
+  columns.
 - `SegmentationMaskSet`: cropped binary instance masks positioned in a source
   image.
 - `Keypoint2DSet`: image keypoints and optional fixed-width descriptors.

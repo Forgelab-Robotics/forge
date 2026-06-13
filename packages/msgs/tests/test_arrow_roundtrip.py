@@ -519,6 +519,24 @@ def test_detection_3d_roundtrip_and_quaternion_validation() -> None:
     ):
         assert getattr(back, field) == pytest.approx(getattr(detection, field))
 
+    axis_aligned = Detection3DSet(
+        detection_id=["d0"],
+        track_id=[""],
+        center_x=[1.0],
+        center_y=[2.0],
+        center_z=[3.0],
+        size_x=[0.5],
+        size_y=[0.6],
+        size_z=[0.7],
+        hypothesis_offset=[0, 1],
+        class_id=["box"],
+        score=[0.95],
+    )
+    assert axis_aligned.qx == [0.0]
+    assert axis_aligned.qy == [0.0]
+    assert axis_aligned.qz == [0.0]
+    assert axis_aligned.qw == [1.0]
+
     with pytest.raises(ValueError, match="quaternion"):
         Detection3DSet(**(detection.model_dump() | {"qw": [0.0]}))
 

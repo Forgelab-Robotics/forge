@@ -159,6 +159,12 @@ class Detection3DSet(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
+        if self.detection_id and not self.qx and not self.qy and not self.qz and not self.qw:
+            count = len(self.detection_id)
+            self.qx = [0.0] * count
+            self.qy = [0.0] * count
+            self.qz = [0.0] * count
+            self.qw = [1.0] * count
         _validate_unique("detection_id", self.detection_id)
         _validate_lengths(
             "detection_id",

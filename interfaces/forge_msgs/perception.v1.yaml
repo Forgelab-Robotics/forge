@@ -91,18 +91,22 @@ messages:
       qx:
         arrow: list<float32>
         required: true
+        default: 0.0
         length: detection_id
       qy:
         arrow: list<float32>
         required: true
+        default: 0.0
         length: detection_id
       qz:
         arrow: list<float32>
         required: true
+        default: 0.0
         length: detection_id
       qw:
         arrow: list<float32>
         required: true
+        default: 1.0
         length: detection_id
       size_x:
         arrow: list<float32>
@@ -139,6 +143,8 @@ messages:
       - score values must be finite and in the inclusive range 0 to 1.
     notes:
       - Center coordinates and box dimensions use meters.
+      - Identity orientation uses qx=0, qy=0, qz=0, qw=1.
+      - Writers may omit quaternion fields in high-level constructors and let implementations fill identity orientation for each detection; serialized Arrow payloads still include qx, qy, qz, and qw columns.
       - The coordinate frame is supplied by Dora metadata or node configuration.
 
   SegmentationMaskSet:

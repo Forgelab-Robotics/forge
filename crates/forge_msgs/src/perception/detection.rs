@@ -178,6 +178,18 @@ impl Detection3DSet {
         class_id: Vec<String>,
         score: Vec<f32>,
     ) -> Result<Self, PerceptionError> {
+        let count = detection_id.len();
+        let (qx, qy, qz, qw) =
+            if count > 0 && qx.is_empty() && qy.is_empty() && qz.is_empty() && qw.is_empty() {
+                (
+                    vec![0.0; count],
+                    vec![0.0; count],
+                    vec![0.0; count],
+                    vec![1.0; count],
+                )
+            } else {
+                (qx, qy, qz, qw)
+            };
         let value = Self {
             detection_id,
             track_id,
@@ -388,6 +400,29 @@ mod tests {
             Detection3DSet::from_record_batch(&batch).unwrap(),
             detection
         );
+
+        let axis_aligned = Detection3DSet::new(
+            vec!["d0".into()],
+            vec![String::new()],
+            vec![1.0],
+            vec![2.0],
+            vec![3.0],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![0.5],
+            vec![0.6],
+            vec![0.7],
+            vec![0, 1],
+            vec!["box".into()],
+            vec![0.95],
+        )
+        .unwrap();
+        assert_eq!(axis_aligned.qx, vec![0.0]);
+        assert_eq!(axis_aligned.qy, vec![0.0]);
+        assert_eq!(axis_aligned.qz, vec![0.0]);
+        assert_eq!(axis_aligned.qw, vec![1.0]);
     }
 
     #[test]
