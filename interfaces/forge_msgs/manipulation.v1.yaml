@@ -1,0 +1,249 @@
+version: 1
+package: forge_msgs
+domain: manipulation
+
+messages:
+  ManipulationTargetResult:
+    purpose: Target localization result consumed by manipulation planners.
+    row_count: single
+    fields:
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      success:
+        arrow: bool
+        required: true
+      target_name:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      prompt:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      frame_id:
+        arrow: utf8
+        required: true
+        default: camera
+      target_point_cam:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 3_or_empty
+      target_contact_radius_m:
+        arrow: float64
+        required: false
+        unit: meter
+      bbox_xyxy:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 4_or_empty
+      score:
+        arrow: float64
+        required: false
+      yaw_hint_cam_rad:
+        arrow: float64
+        required: false
+        unit: radian
+      error:
+        arrow: utf8
+        required: false
+      schema_version:
+        arrow: utf8
+        required: true
+        default: manipulation_target_result.v1
+    validation:
+      - target_point_cam must be empty or contain exactly x, y, z in camera frame meters.
+      - bbox_xyxy must be empty or contain xmin, ymin, xmax, ymax in source image pixels.
+      - score, when present, must be finite and in the inclusive range 0 to 1.
+    notes:
+      - Generic detections and masks remain in the perception domain; this message carries the manipulation-specific target result.
+      - For pick, target_point_cam is typically the grasp point. For place, it is the drop target or placement reference point.
+      - Coordinate frame metadata is carried by frame_id and node configuration.
+
+  ManipulationPlanStep:
+    purpose: One executable step inside a manipulation plan.
+    row_count: single
+    fields:
+      kind:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - joint
+          - pose
+          - gripper
+          - wait
+          - call
+      payload_json:
+        arrow: utf8
+        required: true
+        default: "{}"
+        json_type: object
+      duration_s:
+        arrow: float64
+        required: true
+        default: 1.0
+        unit: second
+      name:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      require_duration:
+        arrow: bool
+        required: true
+        default: false
+    validation:
+      - kind must be one of joint, pose, gripper, wait, or call.
+      - payload_json must parse as a JSON object.
+      - duration_s must be finite and non-negative.
+
+  ManipulationPlan:
+    purpose: Pick or place plan produced by a manipulation planner from a target result.
+    row_count: single
+    fields:
+      request_id:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      success:
+        arrow: bool
+        required: true
+      target_name:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      operation:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - pick
+          - place
+      target_position_base:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 3_or_empty
+      yaw_base_rad:
+        arrow: float64
+        required: false
+        unit: radian
+      target_distance_m:
+        arrow: float64
+        required: false
+        unit: meter
+      planner_type:
+        arrow: utf8
+        required: true
+        default: heuristic_manipulation
+      error:
+        arrow: utf8
+        required: false
+      schema_version:
+        arrow: utf8
+        required: true
+        default: manipulation_plan.v1
+      step_kind:
+        arrow: list<utf8>
+        required: true
+        length: steps
+      step_payload_json:
+        arrow: list<utf8>
+        required: true
+        length: steps
+      step_duration_s:
+        arrow: list<float64>
+        required: true
+        length: steps
+      step_name:
+        arrow: list<utf8>
+        required: true
+        length: steps
+      step_require_duration:
+        arrow: list<bool>
+        required: true
+        length: steps
+    validation:
+      - operation must be pick or place.
+      - target_position_base must be empty or contain exactly x, y, z in base frame meters.
+      - All step_* lists must have the same length.
+      - Each step_payload_json entry must parse as a JSON object.
+      - step_duration_s values must be finite and non-negative.
+
+  ManipulationPlannerConfig:
+    purpose: Planner tuning parameters for grasp and place manipulation.
+    row_count: single
+    fields:
+      approach_angle_rad:
+        arrow: float64
+        required: true
+        default: 0.785398
+        unit: radian
+      tcp_tool_len_m:
+        arrow: float64
+        required: true
+        default: 0.075
+        unit: meter
+      grasp_penetration_m:
+        arrow: float64
+        required: true
+        default: 0.035
+        unit: meter
+      grasp_extra_retract_m:
+        arrow: float64
+        required: true
+        default: 0.05
+        unit: meter
+      grasp_lateral_offset_m:
+        arrow: float64
+        required: true
+        default: 0.025
+        unit: meter
+      pre_grasp_offset_m:
+        arrow: float64
+        required: true
+        default: 0.10
+        unit: meter
+      max_target_radius_m:
+        arrow: float64
+        required: true
+        default: 0.66
+        unit: meter
+      gripper_close_mm:
+        arrow: float64
+        required: true
+        default: 0.0
+        unit: millimeter
+      gripper_open_mm:
+        arrow: float64
+        required: true
+        default: 85.0
+        unit: millimeter
+      auto_home:
+        arrow: bool
+        required: true
+        default: true
+      place_max_radius_m:
+        arrow: float64
+        required: true
+        default: 0.46
+        unit: meter
+      place_height_offset_m:
+        arrow: float64
+        required: true
+        default: 0.15
+        unit: meter
+      place_min_flange_z_m:
+        arrow: float64
+        required: true
+        default: 0.30
+        unit: meter
+      place_pitch_rad:
+        arrow: float64
+        required: true
+        default: 2.35619
+        unit: radian
+    validation:
+      - All numeric values must be finite.
+      - Distance and gripper values must be non-negative.

@@ -14,5 +14,6 @@ schema_files:
   control: control.v1.yaml
   geometry: geometry.v1.yaml
   interaction: interaction.v1.yaml
+  manipulation: manipulation.v1.yaml
   perception: perception.v1.yaml
   sensor: sensor.v1.yaml

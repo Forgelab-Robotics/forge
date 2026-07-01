@@ -4,6 +4,12 @@ from forge_msgs.arrow import ensure_record_batch
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.locomotion import LocomotionCommand
+from forge_msgs.manipulation import (
+    ManipulationPlan,
+    ManipulationPlannerConfig,
+    ManipulationPlanStep,
+    ManipulationTargetResult,
+)
 from forge_msgs.perception import (
     Detection2DSet,
     Detection3DSet,
@@ -22,6 +28,10 @@ __all__ = [
     "JointCommand",
     "JointState",
     "LocomotionCommand",
+    "ManipulationPlan",
+    "ManipulationPlannerConfig",
+    "ManipulationPlanStep",
+    "ManipulationTargetResult",
     "PointCloud",
     "PolicyCommand",
     "PolicyCommandStatus",
