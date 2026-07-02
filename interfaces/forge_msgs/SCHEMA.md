@@ -273,6 +273,7 @@ Recommended commands:
 - `reset`
 - `start_recording`
 - `stop_recording`
+- `discard_recording`
 - `load_playback`
 - `start_playback`
 - `pause_playback`
