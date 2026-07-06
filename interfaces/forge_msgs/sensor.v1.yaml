@@ -3,6 +3,40 @@ package: forge_msgs
 domain: sensor
 
 messages:
+  AudioChunk:
+    purpose: Uncompressed audio buffer payload for streaming microphone or audio sources.
+    row_count: single
+    fields:
+      sample_rate:
+        arrow: uint32
+        required: true
+        unit: hertz
+      channels:
+        arrow: uint32
+        required: true
+      sample_format:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - f32le
+          - s16le
+      frame_count:
+        arrow: uint32
+        required: true
+        description: Number of audio frames per channel in this chunk.
+      data:
+        arrow: large_binary
+        required: true
+    validation:
+      - sample_rate must be greater than 0.
+      - channels must be greater than 0.
+      - data length must equal frame_count * channels * bytes_per_sample for known sample_format values.
+      - Multi-channel audio is interleaved by frame, e.g. frame0_ch0, frame0_ch1, frame1_ch0.
+      - Multi-byte sample formats use little-endian byte order.
+    notes:
+      - f32le is little-endian float32 PCM. Producers should use normalized sample values in [-1.0, 1.0].
+      - s16le is little-endian signed int16 PCM.
+
   Image:
     purpose: Uncompressed image payload.
     row_count: single

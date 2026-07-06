@@ -1,3 +1,4 @@
+pub mod audio;
 mod column;
 pub mod control;
 pub mod image;
@@ -7,6 +8,7 @@ pub mod perception;
 pub mod point_cloud;
 pub mod pose;
 
+pub use crate::audio::AudioChunk;
 pub use crate::control::{PolicyCommand, PolicyCommandStatus, PolicyCommandStatusValue};
 pub use crate::image::{CompressedImage, Image};
 pub use crate::joint::{JointCommand, JointState};

@@ -9,6 +9,7 @@ import pytest
 from PIL import Image as PILImage
 
 from forge_msgs.arrow import ensure_record_batch
+from forge_msgs.audio import AudioChunk
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
@@ -63,6 +64,47 @@ def test_ensure_record_batch_struct_array() -> None:
 def test_ensure_record_batch_invalid_type() -> None:
     with pytest.raises(TypeError, match="from_arrow expects"):
         ensure_record_batch([1, 2, 3])  # type: ignore[arg-type]
+
+
+def test_audio_chunk_f32le_roundtrip() -> None:
+    audio = np.array([0.0, 0.25, -0.5, 1.0], dtype=np.float32)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=16_000)
+
+    assert chunk.sample_format == "f32le"
+    assert chunk.channels == 1
+    assert chunk.frame_count == 4
+    np.testing.assert_array_equal(AudioChunk.from_arrow(_to_ipc_bytes(chunk.to_arrow())).to_numpy(), audio)
+
+
+def test_audio_chunk_s16le_roundtrip() -> None:
+    audio = np.array([0, 1024, -2048], dtype=np.int16)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=48_000, sample_format="s16le")
+
+    assert chunk.sample_format == "s16le"
+    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+
+
+def test_audio_chunk_multichannel_interleaved_roundtrip() -> None:
+    audio = np.array([[0.0, 0.1], [0.2, 0.3], [0.4, 0.5]], dtype=np.float32)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=16_000)
+
+    assert chunk.channels == 2
+    assert chunk.frame_count == 3
+    assert np.frombuffer(chunk.data, dtype="<f4").tolist() == pytest.approx(
+        [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    )
+    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+
+
+def test_audio_chunk_validation() -> None:
+    with pytest.raises(ValueError, match="sample_rate"):
+        AudioChunk(sample_rate=0, channels=1, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+
+    with pytest.raises(ValueError, match="channels"):
+        AudioChunk(sample_rate=16_000, channels=0, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+
+    with pytest.raises(ValueError, match="data length"):
+        AudioChunk(sample_rate=16_000, channels=2, sample_format="s16le", frame_count=2, data=b"\x00" * 2)
 
 
 def test_joint_state_roundtrip_record_batch_table_and_bytes() -> None:

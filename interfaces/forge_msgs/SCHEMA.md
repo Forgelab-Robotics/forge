@@ -92,6 +92,30 @@ Rules:
 - Stop is represented by `vx=0`, `vy=0`, and `wz=0`.
 - This message intentionally does not include `mode`, `duration`, `gait`, `body_height`, `frame_id`, timestamp, or full 6D `Twist` fields.
 
+### AudioChunk
+
+Uncompressed audio buffer payload for streaming microphone or audio sources.
+
+Fields:
+
+- `sample_rate: uint32`
+- `channels: uint32`
+- `sample_format: utf8`
+- `frame_count: uint32`
+- `data: large_binary`
+
+Rules:
+
+- `sample_rate` and `channels` must be greater than zero.
+- `sample_format` must be one of `f32le` or `s16le`.
+- `frame_count` is the number of audio frames per channel, not the total sample count.
+- `data` is interleaved PCM bytes. Multi-channel data is ordered by frame, e.g. `frame0_ch0`, `frame0_ch1`, `frame1_ch0`.
+- `data` length must equal `frame_count * channels * bytes_per_sample`.
+- Multi-byte sample formats are little-endian.
+- `f32le` is little-endian float32 PCM. Producers should use normalized sample values in `[-1.0, 1.0]`.
+- `s16le` is little-endian signed int16 PCM.
+- Timing comes from the Dora event context. Source id, microphone placement, and calibration should live in Dora metadata, topic naming, node configuration, or adapter layers.
+
 ### Image
 
 Uncompressed image payload.
