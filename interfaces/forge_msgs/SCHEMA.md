@@ -2,11 +2,11 @@
 
 This directory is the language-neutral contract for `forge_msgs`.
 
-Python (`packages/msgs`), Rust (`crates/forge_msgs`), and future C++
-implementations should treat `forge_msgs.v1.yaml` and its referenced domain
-schemas as the source of truth. The implementations may be handwritten at
-first, but their Arrow schemas and validation rules should conform to these
-interfaces.
+Python (`packages/msgs`), Rust (`crates/forge_msgs`), and C++
+(`cpp/forge_msgs`) implementations should treat `forge_msgs.v1.yaml` and its
+referenced domain schemas as the source of truth. The implementations are
+handwritten, but their Arrow schemas and validation rules should conform to
+these interfaces.
 
 ## Schema Layout
 
@@ -30,6 +30,15 @@ change the wire contract of existing messages.
   timestamp of the source event when they describe that source sample.
 - Frame and fixed calibration information should live in Dora metadata, topic
   naming, node configuration, or adapter layers.
+
+## Implementation Coverage
+
+- Python implements the full v1 schema, including `TeleopObservation`.
+- Rust implements the shared message set used across domains, excluding the
+  Python-only `TeleopObservation`.
+- C++ implements the same shared message set as Rust in `cpp/forge_msgs`, with
+  `ToRecordBatch` / `FromRecordBatch` APIs and Arrow IPC stream helpers for
+  Python/C++ compatibility tests.
 
 ## Messages
 

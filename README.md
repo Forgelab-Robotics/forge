@@ -9,6 +9,7 @@ This repository intentionally focuses on the framework layer:
 - `interfaces/forge_msgs/` contains the canonical message schema.
 - `packages/msgs` provides Python message models and Arrow serialization.
 - `crates/forge_msgs` provides the Rust message implementation.
+- `cpp/forge_msgs` provides the C++ message implementation.
 - `packages/robot` provides robot driver protocols, safety clipping helpers, and
   a standard Dora robot node loop.
 - `packages/policy` provides policy adapter protocols and a standard Dora policy
@@ -35,6 +36,7 @@ forge/
 ├── packages/robot/             # Python robot driver protocols and Dora runner
 ├── crates/forge_common/        # Rust shared utilities
 ├── crates/forge_msgs/          # Rust message types and Arrow conversion
+├── cpp/forge_msgs/             # C++ message types and Arrow conversion
 ├── pyproject.toml              # Python uv workspace
 └── Cargo.toml                  # Rust cargo workspace
 ```
@@ -43,6 +45,7 @@ forge/
 
 - Python 3.12 or newer for the workspace
 - Rust toolchain with edition 2024 support
+- CMake 3.20 or newer and Apache Arrow C++ for `cpp/forge_msgs`
 - [`uv`](https://docs.astral.sh/uv/) for Python dependency management
 - Dora runtime when running real nodes (`dora-rs==0.4.1` is used by the Python
   node packages)
@@ -61,6 +64,13 @@ Build the Rust workspace:
 cargo build --workspace
 ```
 
+Build the C++ `forge_msgs` library:
+
+```bash
+cmake -S cpp/forge_msgs -B cpp/forge_msgs/build
+cmake --build cpp/forge_msgs/build
+```
+
 ## Testing
 
 Run the Python tests:
@@ -75,6 +85,12 @@ Run the Rust tests:
 cargo test --workspace
 ```
 
+Run the C++ tests:
+
+```bash
+ctest --test-dir cpp/forge_msgs/build
+```
+
 Run Ruff checks:
 
 ```bash
@@ -86,7 +102,7 @@ uv run ruff check .
 The canonical cross-language contract starts at
 `interfaces/forge_msgs/forge_msgs.v1.yaml`, which references versioned schemas
 for the control, geometry, interaction, perception, and sensor domains. Python,
-Rust, and future language implementations should conform to those schemas. See
+Rust, and C++ implementations should conform to those schemas. See
 `interfaces/forge_msgs/SCHEMA.md` and `packages/msgs/README.md` for message
 semantics and Arrow encoding details.
 

@@ -51,3 +51,39 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --workspace
+
+  cpp:
+    name: C++
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up C++ dependencies
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: forge-cpp
+          create-args: >-
+            python=3.12
+            cmake
+            ninja
+            cxx-compiler
+            libarrow
+            pyarrow
+            numpy
+            pillow
+            pydantic
+          cache-environment: true
+
+      - name: Configure C++ forge_msgs
+        shell: bash -el {0}
+        run: cmake -S cpp/forge_msgs -B cpp/forge_msgs/build -G Ninja
+
+      - name: Build C++ forge_msgs
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_msgs/build
+
+      - name: Run C++ tests
+        shell: bash -el {0}
+        run: ctest --test-dir cpp/forge_msgs/build --output-on-failure
