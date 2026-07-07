@@ -82,6 +82,14 @@ XR device raw teleop observation for embodiment-specific teleop policies.
 
 Timing and frame metadata are intentionally not part of the core schema. Carry them in Dora topic naming, node configuration, or adapter layers.
 
+### `Text`
+
+Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and other text streams.
+
+- `text: str`
+
+Producers should omit empty outputs when there is no meaningful text.
+
 ### Perception result sets
 
 The perception messages use parallel Arrow list columns in a single-row

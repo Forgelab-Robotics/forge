@@ -22,6 +22,7 @@ from forge_msgs.perception import (
 from forge_msgs.point_cloud import PointCloud
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.teleop import TeleopObservation
+from forge_msgs.text import Text
 
 
 def _to_ipc_bytes(batch: pa.RecordBatch) -> bytes:
@@ -105,6 +106,32 @@ def test_audio_chunk_validation() -> None:
 
     with pytest.raises(ValueError, match="data length"):
         AudioChunk(sample_rate=16_000, channels=2, sample_format="s16le", frame_count=2, data=b"\x00" * 2)
+
+
+def test_text_roundtrip_record_batch_bytes_and_legacy_array() -> None:
+    text = Text(text="前进")
+    batch = text.to_arrow()
+
+    assert batch.schema.names == ["text"]
+    assert Text.from_arrow(batch) == text
+    assert Text.from_arrow(_to_ipc_bytes(batch)) == text
+    assert Text.from_arrow(pa.array(["前进"])) == text
+    assert Text.from_arrow(pa.chunked_array([["前进"]])) == text
+
+
+def test_text_allows_empty_string() -> None:
+    text = Text(text="")
+
+    assert Text.from_arrow(text.to_arrow()) == text
+
+
+def test_text_rejects_null_values() -> None:
+    with pytest.raises(ValueError, match="non-null"):
+        Text.from_arrow(pa.array([None], type=pa.string()))
+
+    batch = pa.RecordBatch.from_pydict({"text": pa.array([None], type=pa.string())})
+    with pytest.raises(ValueError, match="non-null"):
+        Text.from_arrow(batch)
 
 
 def test_joint_state_roundtrip_record_batch_table_and_bytes() -> None:

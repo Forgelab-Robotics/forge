@@ -3,6 +3,19 @@ package: forge_msgs
 domain: interaction
 
 messages:
+  Text:
+    purpose: Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and other text streams.
+    row_count: single
+    fields:
+      text:
+        arrow: utf8
+        required: true
+    validation:
+      - text must be a valid UTF-8 string.
+    notes:
+      - Producers should omit empty outputs when there is no meaningful text.
+      - Timing comes from the Dora event context; do not add timestamp columns.
+
   TeleopObservation:
     purpose: XR device raw teleop observation for embodiment-specific teleop policies.
     row_count: single

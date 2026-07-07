@@ -14,6 +14,7 @@ from forge_msgs.point_cloud import PointCloud
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.teleop import TeleopObservation
+from forge_msgs.text import Text
 
 __all__ = [
     "AudioChunk",
@@ -31,5 +32,6 @@ __all__ = [
     "PoseSet",
     "SegmentationMaskSet",
     "TeleopObservation",
+    "Text",
     "ensure_record_batch",
 ]

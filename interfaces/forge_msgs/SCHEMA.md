@@ -264,6 +264,20 @@ Rules:
 - `buttons_json` and `axes_json` must contain JSON objects.
 - The current implementation is Python-only.
 
+### Text
+
+Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and
+other text streams.
+
+Fields:
+
+- `text: utf8`
+
+Rules:
+
+- `text` must be a valid UTF-8 string.
+- Producers should omit empty outputs when there is no meaningful text.
+
 ### PolicyCommand
 
 Command payload sent from gateway to policy through Dora.

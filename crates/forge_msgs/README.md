@@ -19,6 +19,7 @@ The crate currently exports:
 - `SegmentationMaskSet`
 - `Pose` and `PoseSet`
 - `PolicyCommand` and `PolicyCommandStatus`
+- `Text`
 
 Each message type is designed for single-row Arrow `RecordBatch` interchange so
 Rust, Python, and Dora nodes can exchange the same payloads.

@@ -7,6 +7,7 @@ pub mod locomotion;
 pub mod perception;
 pub mod point_cloud;
 pub mod pose;
+pub mod text;
 
 pub use crate::audio::AudioChunk;
 pub use crate::control::{PolicyCommand, PolicyCommandStatus, PolicyCommandStatusValue};
@@ -16,3 +17,4 @@ pub use crate::locomotion::LocomotionCommand;
 pub use crate::perception::{Detection2DSet, Detection3DSet, SegmentationMaskSet};
 pub use crate::point_cloud::PointCloud;
 pub use crate::pose::{Pose, PoseSet};
+pub use crate::text::Text;
