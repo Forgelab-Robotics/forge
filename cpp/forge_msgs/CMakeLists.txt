@@ -9,6 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Python3 COMPONENTS Interpreter)
 find_package(Arrow CONFIG QUIET)
 
+option(FORGE_MSGS_CPP_BUILD_TESTS "Build C++ forge_msgs tests" ${PROJECT_IS_TOP_LEVEL})
+
 add_library(forge_msgs_cpp
   src/arrow.cpp
   src/audio.cpp
@@ -59,22 +61,42 @@ else()
   )
 endif()
 
-enable_testing()
+if(FORGE_MSGS_CPP_BUILD_TESTS)
+  enable_testing()
 
-add_executable(forge_msgs_cpp_tests tests/forge_msgs_tests.cpp)
-target_link_libraries(forge_msgs_cpp_tests PRIVATE forge_msgs_cpp)
-add_test(NAME forge_msgs_cpp_tests COMMAND forge_msgs_cpp_tests)
+  add_executable(forge_msgs_cpp_tests tests/forge_msgs_tests.cpp)
+  target_link_libraries(forge_msgs_cpp_tests PRIVATE forge_msgs_cpp)
+  add_test(NAME forge_msgs_cpp_tests COMMAND forge_msgs_cpp_tests)
 
-add_executable(forge_msgs_ipc_fixture tests/ipc_fixture.cpp)
-target_link_libraries(forge_msgs_ipc_fixture PRIVATE forge_msgs_cpp)
+  add_executable(forge_msgs_ipc_fixture tests/ipc_fixture.cpp)
+  target_link_libraries(forge_msgs_ipc_fixture PRIVATE forge_msgs_cpp)
 
-if(Python3_Interpreter_FOUND)
+  if(Python3_Interpreter_FOUND)
+    add_test(
+      NAME forge_msgs_python_cpp_interop
+      COMMAND Python3::Interpreter
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_cpp_interop.py
+        --driver $<TARGET_FILE:forge_msgs_ipc_fixture>
+        --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
+    )
+    set_tests_properties(forge_msgs_python_cpp_interop PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
+
+  set(FORGE_MSGS_CPP_CONSUMER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/fetch_content_consumer)
   add_test(
-    NAME forge_msgs_python_cpp_interop
-    COMMAND Python3::Interpreter
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_cpp_interop.py
-      --driver $<TARGET_FILE:forge_msgs_ipc_fixture>
-      --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
+    NAME forge_msgs_fetch_content_consumer_configure
+    COMMAND ${CMAKE_COMMAND}
+      -S ${CMAKE_CURRENT_SOURCE_DIR}/tests/fetch_content_consumer
+      -B ${FORGE_MSGS_CPP_CONSUMER_BUILD_DIR}
+      -G ${CMAKE_GENERATOR}
+      -DFORGE_FETCH_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../..
   )
-  set_tests_properties(forge_msgs_python_cpp_interop PROPERTIES SKIP_RETURN_CODE 77)
+  add_test(
+    NAME forge_msgs_fetch_content_consumer_build
+    COMMAND ${CMAKE_COMMAND} --build ${FORGE_MSGS_CPP_CONSUMER_BUILD_DIR}
+  )
+  set_tests_properties(
+    forge_msgs_fetch_content_consumer_build
+    PROPERTIES DEPENDS forge_msgs_fetch_content_consumer_configure
+  )
 endif()

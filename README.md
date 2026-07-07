@@ -71,6 +71,26 @@ cmake -S cpp/forge_msgs -B cpp/forge_msgs/build
 cmake --build cpp/forge_msgs/build
 ```
 
+Use C++ `forge_msgs` from a Git URL in another CMake project:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  forge
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
+  GIT_TAG dev
+  SOURCE_SUBDIR cpp/forge_msgs
+)
+FetchContent_MakeAvailable(forge)
+
+target_link_libraries(my_app PRIVATE forge_msgs::forge_msgs)
+```
+
+The C++ library requires Apache Arrow C++. If `ArrowConfig.cmake` is not
+available, the CMake project can also use the Arrow headers and libraries
+provided by an installed `pyarrow` package.
+
 ## Testing
 
 Run the Python tests:
