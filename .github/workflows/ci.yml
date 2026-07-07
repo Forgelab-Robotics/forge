@@ -87,3 +87,15 @@ jobs:
       - name: Run C++ tests
         shell: bash -el {0}
         run: ctest --test-dir cpp/forge_msgs/build --output-on-failure
+
+      - name: Configure C++ forge_common
+        shell: bash -el {0}
+        run: cmake -S cpp/forge_common -B cpp/forge_common/build -G Ninja
+
+      - name: Build C++ forge_common
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_common/build
+
+      - name: Run C++ forge_common tests
+        shell: bash -el {0}
+        run: ctest --test-dir cpp/forge_common/build --output-on-failure

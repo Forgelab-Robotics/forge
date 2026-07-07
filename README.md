@@ -36,6 +36,7 @@ forge/
 ├── packages/robot/             # Python robot driver protocols and Dora runner
 ├── crates/forge_common/        # Rust shared utilities
 ├── crates/forge_msgs/          # Rust message types and Arrow conversion
+├── cpp/forge_common/           # C++ shared utilities
 ├── cpp/forge_msgs/             # C++ message types and Arrow conversion
 ├── pyproject.toml              # Python uv workspace
 └── Cargo.toml                  # Rust cargo workspace
@@ -45,7 +46,8 @@ forge/
 
 - Python 3.12 or newer for the workspace
 - Rust toolchain with edition 2024 support
-- CMake 3.20 or newer and Apache Arrow C++ for `cpp/forge_msgs`
+- CMake 3.20 or newer for C++ packages
+- Apache Arrow C++ for `cpp/forge_msgs`
 - [`uv`](https://docs.astral.sh/uv/) for Python dependency management
 - Dora runtime when running real nodes (`dora-rs==0.4.1` is used by the Python
   node packages)
@@ -71,6 +73,13 @@ cmake -S cpp/forge_msgs -B cpp/forge_msgs/build
 cmake --build cpp/forge_msgs/build
 ```
 
+Build the C++ `forge_common` library:
+
+```bash
+cmake -S cpp/forge_common -B cpp/forge_common/build
+cmake --build cpp/forge_common/build
+```
+
 Use C++ `forge_msgs` from a Git URL in another CMake project:
 
 ```cmake
@@ -91,6 +100,26 @@ The C++ library requires Apache Arrow C++. If `ArrowConfig.cmake` is not
 available, the CMake project can also use the Arrow headers and libraries
 provided by an installed `pyarrow` package.
 
+Use C++ `forge_common` from a Git URL in another CMake project:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  forge_common
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
+  GIT_TAG dev
+  SOURCE_SUBDIR cpp/forge_common
+)
+FetchContent_MakeAvailable(forge_common)
+
+target_link_libraries(my_app PRIVATE forge_common::forge_common)
+```
+
+`cpp/forge_common` uses only the C++ standard library. Its logging helpers read
+the same `FORGE_LOG_LEVEL`, `FORGE_LOG_FILE`, `FORGE_LOG_CONSOLE`, and
+`FORGE_LOG_STREAM` environment variables as the Python package.
+
 ## Testing
 
 Run the Python tests:
@@ -109,6 +138,7 @@ Run the C++ tests:
 
 ```bash
 ctest --test-dir cpp/forge_msgs/build
+ctest --test-dir cpp/forge_common/build
 ```
 
 Run Ruff checks:
