@@ -24,6 +24,7 @@ Before opening a pull request, run:
 
 ```bash
 uv run ruff check .
+uv run python scripts/check_forge_msgs_schema.py
 uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
 cargo test --workspace
 ```
@@ -42,13 +43,19 @@ cargo update
 
 ## Message Schema Changes
 
-`interfaces/forge_msgs/forge_msgs.v1.yaml` is the canonical schema for Forge
-messages. When changing message fields or semantics:
+`interfaces/forge_msgs/forge_msgs.v1.yaml` is the manifest for the canonical
+Forge message schemas. Message definitions live in the versioned domain files
+referenced by that manifest. When changing message fields or semantics:
 
-1. Update the schema and `interfaces/forge_msgs/SCHEMA.md`.
+1. Update the appropriate domain schema and `interfaces/forge_msgs/SCHEMA.md`.
 2. Update both Python and Rust implementations when applicable.
 3. Add or update round-trip tests.
-4. Document compatibility implications in the pull request.
+4. Run `uv run python scripts/check_forge_msgs_schema.py`.
+5. Document compatibility implications in the pull request.
+
+If a message is intentionally unavailable in one language, declare its current
+`implementations` in the domain schema rather than implying cross-language
+support.
 
 ## Pull Request Guidelines
 

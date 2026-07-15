@@ -32,6 +32,9 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check .
 
+      - name: Validate forge_msgs schemas
+        run: uv run python scripts/check_forge_msgs_schema.py
+
       - name: Run Python tests
         run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
 
@@ -48,3 +51,77 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --workspace
+
+  cpp:
+    name: C++
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust for Dora C++ API
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up C++ dependencies
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: forge-cpp
+          create-args: >-
+            python=3.12
+            cmake
+            ninja
+            cxx-compiler
+            libarrow
+            pyarrow
+            numpy
+            pillow
+            pydantic
+          cache-environment: true
+
+      - name: Configure C++ forge_msgs
+        shell: bash -el {0}
+        run: cmake -S cpp/forge_msgs -B cpp/forge_msgs/build -G Ninja
+
+      - name: Build C++ forge_msgs
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_msgs/build
+
+      - name: Run C++ tests
+        shell: bash -el {0}
+        run: ctest --test-dir cpp/forge_msgs/build --output-on-failure
+
+      - name: Configure C++ forge_common
+        shell: bash -el {0}
+        run: cmake -S cpp/forge_common -B cpp/forge_common/build -G Ninja
+
+      - name: Build C++ forge_common
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_common/build
+
+      - name: Run C++ forge_common tests
+        shell: bash -el {0}
+        run: ctest --test-dir cpp/forge_common/build --output-on-failure
+
+      - name: Configure C++ forge_robot
+        shell: bash -el {0}
+        run: cmake -S cpp/forge_robot -B cpp/forge_robot/build -G Ninja
+
+      - name: Build C++ forge_robot
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_robot/build
+
+      - name: Run C++ forge_robot tests
+        shell: bash -el {0}
+        run: ctest --test-dir cpp/forge_robot/build --output-on-failure
+
+      - name: Configure C++ forge_robot Dora v0.4.1 runner
+        shell: bash -el {0}
+        run: >-
+          cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora -G Ninja
+          -DFORGE_ROBOT_CPP_WITH_DORA=ON
+          -DFORGE_ROBOT_CPP_BUILD_TESTS=ON
+
+      - name: Compile C++ forge_robot Dora v0.4.1 runner
+        shell: bash -el {0}
+        run: cmake --build cpp/forge_robot/build-dora --target forge_robot_dora_runner_compile

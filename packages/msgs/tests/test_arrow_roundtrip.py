@@ -9,11 +9,20 @@ import pytest
 from PIL import Image as PILImage
 
 from forge_msgs.arrow import ensure_record_batch
+from forge_msgs.audio import AudioChunk
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
+from forge_msgs.perception import (
+    Detection2DSet,
+    Detection3DSet,
+    SegmentationMaskSet,
+)
+from forge_msgs.point_cloud import PointCloud
 from forge_msgs.pose import Pose, PoseSet
+from forge_msgs.teleop import TeleopObservation
+from forge_msgs.text import Text
 
 
 def _to_ipc_bytes(batch: pa.RecordBatch) -> bytes:
@@ -56,6 +65,73 @@ def test_ensure_record_batch_struct_array() -> None:
 def test_ensure_record_batch_invalid_type() -> None:
     with pytest.raises(TypeError, match="from_arrow expects"):
         ensure_record_batch([1, 2, 3])  # type: ignore[arg-type]
+
+
+def test_audio_chunk_f32le_roundtrip() -> None:
+    audio = np.array([0.0, 0.25, -0.5, 1.0], dtype=np.float32)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=16_000)
+
+    assert chunk.sample_format == "f32le"
+    assert chunk.channels == 1
+    assert chunk.frame_count == 4
+    np.testing.assert_array_equal(AudioChunk.from_arrow(_to_ipc_bytes(chunk.to_arrow())).to_numpy(), audio)
+
+
+def test_audio_chunk_s16le_roundtrip() -> None:
+    audio = np.array([0, 1024, -2048], dtype=np.int16)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=48_000, sample_format="s16le")
+
+    assert chunk.sample_format == "s16le"
+    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+
+
+def test_audio_chunk_multichannel_interleaved_roundtrip() -> None:
+    audio = np.array([[0.0, 0.1], [0.2, 0.3], [0.4, 0.5]], dtype=np.float32)
+    chunk = AudioChunk.from_numpy(audio, sample_rate=16_000)
+
+    assert chunk.channels == 2
+    assert chunk.frame_count == 3
+    assert np.frombuffer(chunk.data, dtype="<f4").tolist() == pytest.approx(
+        [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    )
+    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+
+
+def test_audio_chunk_validation() -> None:
+    with pytest.raises(ValueError, match="sample_rate"):
+        AudioChunk(sample_rate=0, channels=1, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+
+    with pytest.raises(ValueError, match="channels"):
+        AudioChunk(sample_rate=16_000, channels=0, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+
+    with pytest.raises(ValueError, match="data length"):
+        AudioChunk(sample_rate=16_000, channels=2, sample_format="s16le", frame_count=2, data=b"\x00" * 2)
+
+
+def test_text_roundtrip_record_batch_bytes_and_legacy_array() -> None:
+    text = Text(text="前进")
+    batch = text.to_arrow()
+
+    assert batch.schema.names == ["text"]
+    assert Text.from_arrow(batch) == text
+    assert Text.from_arrow(_to_ipc_bytes(batch)) == text
+    assert Text.from_arrow(pa.array(["前进"])) == text
+    assert Text.from_arrow(pa.chunked_array([["前进"]])) == text
+
+
+def test_text_allows_empty_string() -> None:
+    text = Text(text="")
+
+    assert Text.from_arrow(text.to_arrow()) == text
+
+
+def test_text_rejects_null_values() -> None:
+    with pytest.raises(ValueError, match="non-null"):
+        Text.from_arrow(pa.array([None], type=pa.string()))
+
+    batch = pa.RecordBatch.from_pydict({"text": pa.array([None], type=pa.string())})
+    with pytest.raises(ValueError, match="non-null"):
+        Text.from_arrow(batch)
 
 
 def test_joint_state_roundtrip_record_batch_table_and_bytes() -> None:
@@ -177,6 +253,10 @@ def test_image_mono_and_depth_roundtrip() -> None:
     depth_image = Image.from_numpy(depth, encoding="16UC1")
     assert depth_image.step == 4
     np.testing.assert_array_equal(Image.from_arrow(depth_image.to_arrow()).to_numpy(), depth)
+
+    labels = np.array([[1, 2], [3, 4]], dtype=np.int32)
+    label_image = Image.from_numpy(labels, encoding="32SC1")
+    np.testing.assert_array_equal(Image.from_arrow(label_image.to_arrow()).to_numpy(), labels)
 
 
 def test_image_rejects_invalid_data_length() -> None:
@@ -336,6 +416,118 @@ def test_pose_set_roundtrip_and_helpers() -> None:
     assert back.to_poses()["a"] == poses["a"]
 
 
+def test_teleop_observation_roundtrip_record_batch_table_and_bytes() -> None:
+    observation = TeleopObservation.from_device_poses(
+        {
+            "headset": (0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0),
+            "left": (0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+            "right": (-0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+        },
+        confidence={"headset": 0.95, "left": 0.8, "right": 0.85},
+        buttons={"left_X": True, "right_A": False},
+        axes={"left_trigger": 0.3, "right_axis": [0.1, -0.2]},
+    )
+    batch = observation.to_arrow()
+    assert TeleopObservation.from_arrow(batch) == observation
+    assert TeleopObservation.from_arrow(pa.Table.from_batches([batch])) == observation
+    assert TeleopObservation.from_arrow(_to_ipc_bytes(batch)) == observation
+    assert observation.buttons() == {"left_X": True, "right_A": False}
+    assert observation.axes()["left_trigger"] == 0.3
+
+
+def test_teleop_observation_validation() -> None:
+    with pytest.raises(ValueError, match="device"):
+        TeleopObservation(
+            device=[],
+            x=[],
+            y=[],
+            z=[],
+            qx=[],
+            qy=[],
+            qz=[],
+            qw=[],
+            confidence=[],
+        )
+
+    with pytest.raises(ValueError, match="JSON"):
+        TeleopObservation(
+            device=["left"],
+            x=[0.0],
+            y=[0.0],
+            z=[0.0],
+            qx=[0.0],
+            qy=[0.0],
+            qz=[0.0],
+            qw=[1.0],
+            confidence=[1.0],
+            buttons_json="not-json",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("x", math.nan),
+        ("z", math.inf),
+        ("qw", -math.inf),
+        ("confidence", math.nan),
+    ],
+)
+def test_teleop_observation_rejects_non_finite_values(
+    field: str, value: float
+) -> None:
+    values = {
+        "device": ["left"],
+        "x": [0.0],
+        "y": [0.0],
+        "z": [0.0],
+        "qx": [0.0],
+        "qy": [0.0],
+        "qz": [0.0],
+        "qw": [1.0],
+        "confidence": [1.0],
+    }
+    values[field] = [value]
+
+    with pytest.raises(ValueError, match="finite"):
+        TeleopObservation(**values)
+
+
+@pytest.mark.parametrize("confidence", [-0.01, 1.01])
+def test_teleop_observation_rejects_out_of_range_confidence(
+    confidence: float,
+) -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        TeleopObservation.from_device_poses(
+            {"left": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)},
+            confidence={"left": confidence},
+        )
+
+
+def test_teleop_observation_runtime_compatible_semantics() -> None:
+    observation = TeleopObservation.from_device_poses(
+        {
+            "right": (0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+            "left": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            "headset": (0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0),
+        },
+        confidence={"left": 0.0, "right": 1.0, "headset": 0.8},
+        buttons={"A": True, "left_trigger": 0.25},
+        axes={
+            "left_axis": [0.1, -0.2],
+            "raw_teleop_mode": 1.0,
+            "chassis_forward": -0.2,
+        },
+    )
+
+    left_index = observation.device.index("left")
+    assert observation.confidence[left_index] == 0.0
+    assert observation.qw[left_index] == 1.0
+    assert observation.buttons() == {"A": True, "left_trigger": 0.25}
+    assert observation.axes()["left_axis"] == [0.1, -0.2]
+    assert TeleopObservation.from_arrow(observation.to_arrow()) == observation
+
+
 def test_pose_set_validation() -> None:
     with pytest.raises(ValueError, match="name"):
         PoseSet(name=[], x=[], y=[], z=[], qx=[], qy=[], qz=[], qw=[])
@@ -362,4 +554,203 @@ def test_pose_set_validation() -> None:
             qy=[0.0, 0.0],
             qz=[0.0, 0.0],
             qw=[1.0, 1.0],
+        )
+
+
+def test_detection_2d_roundtrip_and_empty_result() -> None:
+    detections = Detection2DSet(
+        detection_id=["d0", "d1"],
+        track_id=["track-7", ""],
+        center_x=[10.5, 20.0],
+        center_y=[11.0, 21.0],
+        size_x=[4.0, 8.0],
+        size_y=[5.0, 9.0],
+        rotation=[0.0, 0.25],
+        hypothesis_offset=[0, 2, 3],
+        class_id=["person", "worker", "cup"],
+        score=[0.9, 0.1, 0.8],
+    )
+    back = Detection2DSet.from_arrow(_to_ipc_bytes(detections.to_arrow()))
+    assert back.detection_id == detections.detection_id
+    assert back.track_id == detections.track_id
+    assert back.hypothesis_offset == detections.hypothesis_offset
+    assert back.class_id == detections.class_id
+    assert back.center_x == pytest.approx(detections.center_x)
+    assert back.center_y == pytest.approx(detections.center_y)
+    assert back.size_x == pytest.approx(detections.size_x)
+    assert back.size_y == pytest.approx(detections.size_y)
+    assert back.rotation == pytest.approx(detections.rotation)
+    assert back.score == pytest.approx(detections.score)
+    assert Detection2DSet.from_arrow(Detection2DSet().to_arrow()) == Detection2DSet()
+
+    axis_aligned = Detection2DSet(
+        detection_id=["d0"],
+        track_id=[""],
+        center_x=[10.5],
+        center_y=[11.0],
+        size_x=[4.0],
+        size_y=[5.0],
+        hypothesis_offset=[0, 1],
+        class_id=["person"],
+        score=[0.9],
+    )
+    assert axis_aligned.rotation == [0.0]
+
+
+def test_detection_2d_rejects_invalid_hypothesis_offsets() -> None:
+    with pytest.raises(ValueError, match="end at"):
+        Detection2DSet(
+            detection_id=["d0"],
+            track_id=[""],
+            center_x=[0.0],
+            center_y=[0.0],
+            size_x=[1.0],
+            size_y=[1.0],
+            rotation=[0.0],
+            hypothesis_offset=[0, 0],
+            class_id=["person"],
+            score=[0.9],
+        )
+
+
+def test_detection_3d_roundtrip_and_quaternion_validation() -> None:
+    detection = Detection3DSet(
+        detection_id=["d0"],
+        track_id=[""],
+        center_x=[1.0],
+        center_y=[2.0],
+        center_z=[3.0],
+        qx=[0.0],
+        qy=[0.0],
+        qz=[0.0],
+        qw=[1.0],
+        size_x=[0.5],
+        size_y=[0.6],
+        size_z=[0.7],
+        hypothesis_offset=[0, 1],
+        class_id=["box"],
+        score=[0.95],
+    )
+    back = Detection3DSet.from_arrow(_to_ipc_bytes(detection.to_arrow()))
+    assert back.detection_id == detection.detection_id
+    assert back.class_id == detection.class_id
+    assert back.hypothesis_offset == detection.hypothesis_offset
+    for field in (
+        "center_x",
+        "center_y",
+        "center_z",
+        "qx",
+        "qy",
+        "qz",
+        "qw",
+        "size_x",
+        "size_y",
+        "size_z",
+        "score",
+    ):
+        assert getattr(back, field) == pytest.approx(getattr(detection, field))
+
+    axis_aligned = Detection3DSet(
+        detection_id=["d0"],
+        track_id=[""],
+        center_x=[1.0],
+        center_y=[2.0],
+        center_z=[3.0],
+        size_x=[0.5],
+        size_y=[0.6],
+        size_z=[0.7],
+        hypothesis_offset=[0, 1],
+        class_id=["box"],
+        score=[0.95],
+    )
+    assert axis_aligned.qx == [0.0]
+    assert axis_aligned.qy == [0.0]
+    assert axis_aligned.qz == [0.0]
+    assert axis_aligned.qw == [1.0]
+
+    with pytest.raises(ValueError, match="quaternion"):
+        Detection3DSet(**(detection.model_dump() | {"qw": [0.0]}))
+
+
+def test_segmentation_mask_roundtrip_and_length_validation() -> None:
+    masks = SegmentationMaskSet(
+        mask_id=["m0"],
+        detection_id=["d0"],
+        track_id=[""],
+        x_offset=[4],
+        y_offset=[5],
+        width=[2],
+        height=[2],
+        data=[bytes([0, 255, 255, 0])],
+    )
+    assert SegmentationMaskSet.from_arrow(_to_ipc_bytes(masks.to_arrow())) == masks
+
+    standalone = SegmentationMaskSet(
+        mask_id=["m0"],
+        width=[2],
+        height=[2],
+        data=[bytes([0, 255, 255, 0])],
+    )
+    assert standalone.detection_id == [""]
+    assert standalone.track_id == [""]
+    assert standalone.x_offset == [0]
+    assert standalone.y_offset == [0]
+
+    with pytest.raises(ValueError, match=r"data\[0\] length"):
+        SegmentationMaskSet(
+            mask_id=["m0"],
+            detection_id=[""],
+            track_id=[""],
+            x_offset=[0],
+            y_offset=[0],
+            width=[2],
+            height=[2],
+            data=[b"\x00"],
+        )
+
+
+def test_point_cloud_roundtrip_and_dense_validation() -> None:
+    cloud = PointCloud(
+        width=2,
+        height=1,
+        is_dense=True,
+        x=[1.0, 2.0],
+        y=[3.0, 4.0],
+        z=[5.0, 6.0],
+        red=[255, 0],
+        green=[0, 255],
+        blue=[0, 0],
+    )
+    assert PointCloud.from_arrow(_to_ipc_bytes(cloud.to_arrow())) == cloud
+
+    unorganized = PointCloud(x=[1.0, 2.0], y=[3.0, 4.0], z=[5.0, 6.0])
+    assert unorganized.width == 2
+    assert unorganized.height == 1
+    assert unorganized.is_dense is True
+
+    sparse = PointCloud(x=[math.nan], y=[0.0], z=[0.0])
+    assert sparse.width == 1
+    assert sparse.height == 1
+    assert sparse.is_dense is False
+
+    with pytest.raises(ValueError, match="width \\* height"):
+        PointCloud(**(cloud.model_dump() | {"width": 3}))
+    with pytest.raises(ValueError, match="finite"):
+        PointCloud(
+            width=1,
+            height=1,
+            is_dense=True,
+            x=[math.nan],
+            y=[0.0],
+            z=[0.0],
+        )
+    with pytest.raises(ValueError, match="all be empty or all be populated"):
+        PointCloud(
+            width=1,
+            height=1,
+            is_dense=True,
+            x=[0.0],
+            y=[0.0],
+            z=[0.0],
+            red=[255],
         )

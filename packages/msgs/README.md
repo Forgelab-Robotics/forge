@@ -2,7 +2,10 @@
 
 Forge message definitions for Dora dataflow.
 
-The canonical cross-language contract lives in `interfaces/forge_msgs/forge_msgs.v1.yaml`. Python, Rust, and future C++ implementations should conform to that schema.
+The canonical cross-language contract starts at
+`interfaces/forge_msgs/forge_msgs.v1.yaml`. That manifest references the
+versioned domain schemas that Python, Rust, and future C++ implementations
+should follow.
 
 ## Core Messages
 
@@ -53,7 +56,10 @@ Uncompressed image payload.
 - `step: int`
 - `data: bytes`
 
-Supported encodings are `rgb8`, `bgr8`, `mono8`, `16UC1`, and `32FC1`. Multi-byte pixels are little-endian. Compressed images use `CompressedImage`.
+Supported encodings are `rgb8`, `bgr8`, `mono8`, `8UC1`, `16UC1`, `32SC1`,
+and `32FC1`. Multi-byte pixels are little-endian. `8UC1` is available for
+generic one-channel byte data such as label maps, while `32SC1` supports signed
+32-bit label images. Compressed images use `CompressedImage`.
 
 ### `CompressedImage`
 
@@ -63,6 +69,69 @@ Compressed image bitstream payload.
 - `data: bytes`
 
 Recommended formats are `jpeg`, `png`, and `webp`.
+
+### `TeleopObservation`
+
+XR device raw teleop observation for embodiment-specific teleop policies.
+
+- `device: list[str]`: XR source ids; recommended ids are `left`, `right`, and
+  `headset`. Match entries by id rather than list order.
+- `x/y/z: list[float]`: positions in meters in the producer-configured XR
+  tracking frame.
+- `qx/qy/qz/qw: list[float]`: quaternion components in `xyzw` order.
+- `confidence: list[float]`: finite producer-defined confidence values in
+  `[0, 1]`; zero means that the aligned pose must not be used for control.
+- `buttons_json: str`: JSON object of digital boolean and analog finite-number
+  values keyed by button id.
+- `axes_json: str`: JSON object of finite numbers or numeric arrays keyed by
+  axis or documented derived-control id.
+
+Recommended button ids include `A`, `B`, `X`, `Y`, the `left_`/`right_`
+trigger and grip ids, and the joystick-click ids. `left_axis` and `right_axis`
+are `[x, y]` joystick pairs. An unavailable pose may use zero position and an
+identity quaternion with confidence `0`.
+
+The payload does not carry the tracking-frame origin, handedness, axis
+directions, or timestamp. Document the frame convention in producer
+configuration and carry timing in Dora event context or an adapter layer.
+
+### `Text`
+
+Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and other text streams.
+
+- `text: str`
+
+Producers should omit empty outputs when there is no meaningful text.
+
+### Perception result sets
+
+The perception messages use parallel Arrow list columns in a single-row
+`RecordBatch`:
+
+- `Detection2DSet` stores oriented pixel-space boxes and flattened class
+  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level constructors
+  may fill that default automatically.
+- `Detection3DSet` stores oriented metric boxes and flattened class hypotheses.
+  Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`, `qz=0`, `qw=1`),
+  and high-level constructors may fill that default automatically.
+- `SegmentationMaskSet` stores cropped `mono8` instance masks and their source
+  image offsets. Standalone masks can omit detection and track associations,
+  and high-level constructors may fill empty associations and zero offsets.
+
+Detection class names and model label maps belong in node configuration.
+`class_id` is the stable identifier carried on the wire.
+Local features such as ORB, SIFT, or SuperPoint descriptors are intentionally
+kept out of the core streaming schema; publish higher-level outputs unless a
+future pipeline needs cross-node feature reuse.
+
+### `PointCloud`
+
+`PointCloud` stores common XYZ point clouds as Arrow lists with optional
+intensity and RGB columns. Organized clouds preserve `width` and `height`;
+unorganized clouds use `height=1`. Coordinates use meters, while the coordinate
+frame is supplied by Dora metadata or node configuration. High-level
+constructors may infer unorganized clouds from `x/y/z` by setting `height=1`,
+`width=len(x)`, and `is_dense` from finite XYZ values.
 
 ## Arrow Format
 
