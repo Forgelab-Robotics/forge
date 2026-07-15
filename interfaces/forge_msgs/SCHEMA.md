@@ -259,18 +259,38 @@ XR device raw teleoperation observation.
 
 Fields:
 
-- `device: list<utf8>`
-- `x/y/z/qx/qy/qz/qw: list<float64>`
-- `confidence: list<float64>`
-- `buttons_json: utf8`
-- `axes_json: utf8`
+- `device: list<utf8>`: XR source ids; recommended ids are `left`, `right`,
+  and `headset`.
+- `x/y/z: list<float64>`: positions in meters.
+- `qx/qy/qz/qw: list<float64>`: quaternion components in `xyzw` order.
+- `confidence: list<float64>`: producer-defined per-device confidence in
+  `[0, 1]`; it need not come directly from the XR SDK.
+- `buttons_json: utf8`: JSON object whose digital values are booleans and
+  analog trigger/grip values are finite numbers.
+- `axes_json: utf8`: JSON object whose values are finite numbers or numeric
+  arrays such as `[x, y]` joystick pairs.
 
 Rules:
 
 - `device` must be non-empty and unique.
+- Consumers must match entries by device id and must not rely on list order.
 - Pose and confidence lists must have the same length as `device`.
+- Every pose and confidence value must be finite.
+- Confidence values must be in the inclusive range `[0, 1]`.
 - Each quaternion must not be all zero.
 - `buttons_json` and `axes_json` must contain JSON objects.
+- A producer may represent an unavailable pose with zero position, identity
+  quaternion, and confidence `0`; consumers must not use a zero-confidence pose
+  for control.
+- Poses are expressed in the producer-configured XR tracking frame. The
+  tracking-frame origin, handedness, and axis directions must be documented in
+  producer configuration because they are not carried in this payload.
+- Recommended button ids are `A`, `B`, `X`, `Y`, `left_trigger`,
+  `right_trigger`, `left_grip`, `right_grip`, `left_joystick_click`, and
+  `right_joystick_click`. Recommended axis ids are `left_axis` and `right_axis`;
+  documented producer-specific derived-control ids are allowed.
+- Timing comes from the Dora event context or an adapter layer; v1 has no
+  timestamp field.
 - The current implementation is Python-only.
 
 ### Text

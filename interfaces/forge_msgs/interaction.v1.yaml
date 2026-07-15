@@ -27,52 +27,80 @@ messages:
         required: true
         unique_items: true
         empty_allowed: false
-        description: Tracked XR device ids such as left, right, headset.
+        description: XR source ids. Recommended ids are left, right, and headset; consumers must match by id and must not rely on list order.
       x:
         arrow: list<float64>
         required: true
         length: device
+        unit: meter
+        frame: producer_configured_xr_tracking_frame
       y:
         arrow: list<float64>
         required: true
         length: device
+        unit: meter
+        frame: producer_configured_xr_tracking_frame
       z:
         arrow: list<float64>
         required: true
         length: device
+        unit: meter
+        frame: producer_configured_xr_tracking_frame
       qx:
         arrow: list<float64>
         required: true
         length: device
+        quaternion_order: xyzw
+        frame: producer_configured_xr_tracking_frame
       qy:
         arrow: list<float64>
         required: true
         length: device
+        quaternion_order: xyzw
+        frame: producer_configured_xr_tracking_frame
       qz:
         arrow: list<float64>
         required: true
         length: device
+        quaternion_order: xyzw
+        frame: producer_configured_xr_tracking_frame
       qw:
         arrow: list<float64>
         required: true
         length: device
+        quaternion_order: xyzw
+        frame: producer_configured_xr_tracking_frame
       confidence:
         arrow: list<float64>
         required: true
         length: device
+        minimum: 0.0
+        maximum: 1.0
+        description: Per-device producer confidence. Zero means the aligned pose must not be used for control; values may be estimated rather than supplied by the XR SDK.
       buttons_json:
         arrow: utf8
         required: true
         default: "{}"
-        description: JSON object of button bool/float values keyed by button id.
+        json_type: object
+        description: JSON object keyed by button id. Digital buttons use bool values; analog trigger and grip buttons use finite numeric values.
       axes_json:
         arrow: utf8
         required: true
         default: "{}"
-        description: JSON object of trigger/grip/joystick axis values.
+        json_type: object
+        description: JSON object keyed by axis or derived-control id. Values are finite numbers or finite numeric arrays such as [x, y] joystick pairs.
     validation:
       - device must contain at least one item.
       - device items must be unique.
       - x, y, z, qx, qy, qz, qw, and confidence must have the same length as device.
+      - All pose and confidence values must be finite.
+      - Each confidence value must be in the inclusive range [0, 1].
       - Each quaternion qx, qy, qz, qw must not be all zero.
       - buttons_json and axes_json must be JSON objects.
+    notes:
+      - Position is measured in meters and orientation uses quaternion component order qx, qy, qz, qw.
+      - The tracking-frame origin, handedness, and axis directions are producer configuration; producers must document them outside this payload.
+      - Producers may represent an unavailable pose with zero position, identity quaternion, and confidence 0. Consumers must ignore poses whose confidence is 0.
+      - Recommended buttons_json ids include A, B, X, Y, left_trigger, right_trigger, left_grip, right_grip, left_joystick_click, and right_joystick_click.
+      - Recommended axes_json ids include left_axis and right_axis as [x, y]. Producer-specific derived-control ids are allowed and must be documented by that producer.
+      - Timing comes from the Dora event context or an adapter layer; this v1 payload has no timestamp field.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Self
 
 import pyarrow as pa
@@ -36,10 +37,15 @@ def _read_float_list(batch: pa.RecordBatch, field: str) -> list[float]:
 class TeleopObservation(BaseModel):
     """XR device raw teleop observation payload.
 
-    ``device`` names tracked XR sources (e.g. ``left``, ``right``, ``headset``).
-    Pose fields follow the same layout as ``PoseSet``. Button and axis payloads
-    are JSON objects for extensibility; timing/frame metadata is not part of the
-    core schema and should live in Dora topic naming or node configuration.
+    ``device`` names XR sources (recommended: ``left``, ``right``, ``headset``);
+    consumers must match poses by id rather than list position. Positions are in
+    meters and quaternions use ``qx, qy, qz, qw`` order in the producer's
+    configured XR tracking frame. ``confidence`` is a producer-defined value in
+    ``[0, 1]``; a pose with zero confidence must not be used for control.
+
+    Button and axis payloads are JSON objects for extensibility. Timing and the
+    tracking-frame convention are not carried in the payload and should live in
+    Dora event context, node configuration, or an adapter layer.
     """
 
     device: list[str]
@@ -65,6 +71,10 @@ class TeleopObservation(BaseModel):
             values = getattr(self, field)
             if len(values) != length:
                 raise ValueError(f"{field} must have the same length as device")
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError(f"{field} values must be finite")
+        if not all(0.0 <= value <= 1.0 for value in self.confidence):
+            raise ValueError("confidence values must be in the inclusive range [0, 1]")
         for qx, qy, qz, qw in zip(self.qx, self.qy, self.qz, self.qw, strict=True):
             if qx == 0.0 and qy == 0.0 and qz == 0.0 and qw == 0.0:
                 raise ValueError("quaternion must not be all zero")
@@ -81,7 +91,12 @@ class TeleopObservation(BaseModel):
         buttons: dict[str, bool | float] | None = None,
         axes: dict[str, float | list[float]] | None = None,
     ) -> "TeleopObservation":
-        """Build observation from device -> (x,y,z,qx,qy,qz,qw) mappings."""
+        """Build from device -> (x,y,z,qx,qy,qz,qw) mappings.
+
+        Device ids are sorted only to make serialization deterministic; readers
+        must still resolve entries by id. Missing confidence values default to
+        1.0.
+        """
         names = sorted(poses)
         conf = confidence or {}
         return cls(

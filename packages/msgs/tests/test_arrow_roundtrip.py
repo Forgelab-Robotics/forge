@@ -464,6 +464,70 @@ def test_teleop_observation_validation() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("x", math.nan),
+        ("z", math.inf),
+        ("qw", -math.inf),
+        ("confidence", math.nan),
+    ],
+)
+def test_teleop_observation_rejects_non_finite_values(
+    field: str, value: float
+) -> None:
+    values = {
+        "device": ["left"],
+        "x": [0.0],
+        "y": [0.0],
+        "z": [0.0],
+        "qx": [0.0],
+        "qy": [0.0],
+        "qz": [0.0],
+        "qw": [1.0],
+        "confidence": [1.0],
+    }
+    values[field] = [value]
+
+    with pytest.raises(ValueError, match="finite"):
+        TeleopObservation(**values)
+
+
+@pytest.mark.parametrize("confidence", [-0.01, 1.01])
+def test_teleop_observation_rejects_out_of_range_confidence(
+    confidence: float,
+) -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        TeleopObservation.from_device_poses(
+            {"left": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)},
+            confidence={"left": confidence},
+        )
+
+
+def test_teleop_observation_runtime_compatible_semantics() -> None:
+    observation = TeleopObservation.from_device_poses(
+        {
+            "right": (0.2, 1.2, 0.1, 0.0, 0.0, 0.0, 1.0),
+            "left": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            "headset": (0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0),
+        },
+        confidence={"left": 0.0, "right": 1.0, "headset": 0.8},
+        buttons={"A": True, "left_trigger": 0.25},
+        axes={
+            "left_axis": [0.1, -0.2],
+            "raw_teleop_mode": 1.0,
+            "chassis_forward": -0.2,
+        },
+    )
+
+    left_index = observation.device.index("left")
+    assert observation.confidence[left_index] == 0.0
+    assert observation.qw[left_index] == 1.0
+    assert observation.buttons() == {"A": True, "left_trigger": 0.25}
+    assert observation.axes()["left_axis"] == [0.1, -0.2]
+    assert TeleopObservation.from_arrow(observation.to_arrow()) == observation
+
+
 def test_pose_set_validation() -> None:
     with pytest.raises(ValueError, match="name"):
         PoseSet(name=[], x=[], y=[], z=[], qx=[], qy=[], qz=[], qw=[])

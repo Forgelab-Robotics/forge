@@ -74,13 +74,26 @@ Recommended formats are `jpeg`, `png`, and `webp`.
 
 XR device raw teleop observation for embodiment-specific teleop policies.
 
-- `device: list[str]` ??tracked device ids such as `left`, `right`, `headset`
-- `x/y/z/qx/qy/qz/qw: list[float]` ??pose fields aligned with `device`
-- `confidence: list[float]` ??per-device tracking confidence in `[0, 1]`
-- `buttons_json: str` ??JSON object of button bool/float values
-- `axes_json: str` ??JSON object of trigger/grip/joystick axis values
+- `device: list[str]`: XR source ids; recommended ids are `left`, `right`, and
+  `headset`. Match entries by id rather than list order.
+- `x/y/z: list[float]`: positions in meters in the producer-configured XR
+  tracking frame.
+- `qx/qy/qz/qw: list[float]`: quaternion components in `xyzw` order.
+- `confidence: list[float]`: finite producer-defined confidence values in
+  `[0, 1]`; zero means that the aligned pose must not be used for control.
+- `buttons_json: str`: JSON object of digital boolean and analog finite-number
+  values keyed by button id.
+- `axes_json: str`: JSON object of finite numbers or numeric arrays keyed by
+  axis or documented derived-control id.
 
-Timing and frame metadata are intentionally not part of the core schema. Carry them in Dora topic naming, node configuration, or adapter layers.
+Recommended button ids include `A`, `B`, `X`, `Y`, the `left_`/`right_`
+trigger and grip ids, and the joystick-click ids. `left_axis` and `right_axis`
+are `[x, y]` joystick pairs. An unavailable pose may use zero position and an
+identity quaternion with confidence `0`.
+
+The payload does not carry the tracking-frame origin, handedness, axis
+directions, or timestamp. Document the frame convention in producer
+configuration and carry timing in Dora event context or an adapter layer.
 
 ### `Text`
 
