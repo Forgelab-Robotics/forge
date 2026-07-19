@@ -179,6 +179,49 @@ struct PoseSet {
   static arrow::Result<PoseSet> FromRecordBatch(const arrow::RecordBatch& batch);
 };
 
+struct Classification {
+  std::vector<std::string> class_id;
+  std::vector<float> score;
+
+  arrow::Status NormalizeDefaults();
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<Classification> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct Keypoint2DSet {
+  std::vector<std::string> instance_id;
+  std::vector<std::string> detection_id;
+  std::vector<std::string> track_id;
+  std::vector<std::uint32_t> keypoint_offset;
+  std::vector<std::string> keypoint_id;
+  std::vector<float> x;
+  std::vector<float> y;
+  std::vector<float> score;
+
+  arrow::Status NormalizeDefaults();
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<Keypoint2DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct Keypoint3DSet {
+  std::vector<std::string> instance_id;
+  std::vector<std::string> detection_id;
+  std::vector<std::string> track_id;
+  std::vector<std::uint32_t> keypoint_offset;
+  std::vector<std::string> keypoint_id;
+  std::vector<float> x;
+  std::vector<float> y;
+  std::vector<float> z;
+  std::vector<float> score;
+
+  arrow::Status NormalizeDefaults();
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<Keypoint3DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
 struct Detection2DSet {
   std::vector<std::string> detection_id;
   std::vector<std::string> track_id;
@@ -231,6 +274,7 @@ struct SegmentationMaskSet {
   std::vector<std::uint32_t> height;
   std::string encoding = "mono8";
   std::vector<Bytes> data;
+  std::vector<float> score;
 
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;

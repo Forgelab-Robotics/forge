@@ -14,7 +14,10 @@ pub use crate::control::{PolicyCommand, PolicyCommandStatus, PolicyCommandStatus
 pub use crate::image::{CompressedImage, Image};
 pub use crate::joint::{JointCommand, JointState};
 pub use crate::locomotion::LocomotionCommand;
-pub use crate::perception::{Detection2DSet, Detection3DSet, SegmentationMaskSet};
+pub use crate::perception::{
+    Classification, Detection2DSet, Detection3DSet, Keypoint2DSet, Keypoint3DSet,
+    SegmentationMaskSet,
+};
 pub use crate::point_cloud::PointCloud;
 pub use crate::pose::{Pose, PoseSet};
 pub use crate::text::Text;

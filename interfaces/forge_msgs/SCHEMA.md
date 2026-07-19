@@ -188,28 +188,74 @@ values.
 
 ### Perception result sets
 
-`perception.v1.yaml` defines:
+`perception.v1.yaml` defines model-independent perception payloads:
 
+- `Classification`: class hypotheses with fields `class_id: list<utf8>` and
+  `score: list<float32>`. The lists may both be empty; otherwise they must have
+  equal length, class ids must be unique, and scores must be finite values in
+  `[0, 1]`. Scores are independent confidences and need not sum to `1`.
+  Producers should emit hypotheses in descending score order. Display names and
+  model-specific label semantics remain producer or model configuration.
 - `Detection2DSet`: oriented pixel-space boxes and flattened classification
-  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level
-  constructors may fill that default automatically while serialized Arrow
-  payloads still include the `rotation` column.
+  hypotheses. Axis-aligned boxes use `rotation=0`, and high-level constructors
+  may fill that default automatically while serialized Arrow payloads still
+  include the `rotation` column.
 - `Detection3DSet`: oriented metric boxes and flattened classification
   hypotheses. Axis-aligned boxes use identity orientation (`qx=0`, `qy=0`,
-  `qz=0`, `qw=1`), and high-level constructors may fill that default
-  automatically while serialized Arrow payloads still include quaternion
-  columns.
+  `qz=0`, `qw=1`), and high-level constructors may fill that default while
+  serialized Arrow payloads still include quaternion columns.
+- `Keypoint2DSet`: flattened 2D keypoints grouped by instance. Arrow field order
+  is `instance_id`, `detection_id`, `track_id`, `keypoint_offset`,
+  `keypoint_id`, `x`, `y`, `score`.
+- `Keypoint3DSet`: flattened 3D keypoints grouped by instance. Arrow field order
+  is `instance_id`, `detection_id`, `track_id`, `keypoint_offset`,
+  `keypoint_id`, `x`, `y`, `z`, `score`.
 - `SegmentationMaskSet`: cropped binary instance masks positioned in a source
-  image. Standalone masks can omit detection and track associations, and
-  high-level constructors may fill empty associations and zero offsets while
-  serialized Arrow payloads still include those columns.
+  image. Arrow field order places `score: list<float32>` immediately after
+  `data`; it is either empty or has one finite `[0, 1]` value per `mask_id`.
+  `score` is a producer-defined mask ranking or confidence value and is
+  comparable only within the same producer, model, model version, and inference
+  configuration. It is not guaranteed to be a calibrated probability or true
+  IoU. SAM adapters may map predicted IoU to `score` by default; YOLO adapters
+  may map the associated detection confidence or leave `score` empty. Standalone
+  masks can omit detection and track associations, and high-level constructors
+  may fill empty associations and zero offsets while serialized Arrow payloads
+  still include those columns.
+
+For both keypoint messages, `instance_id` values are unique. `detection_id` and
+`track_id` have one entry per instance and default to the empty string when no
+association is available. `keypoint_offset` has length `len(instance_id) + 1`,
+starts at `0`, is monotonically non-decreasing, and ends at the flattened
+keypoint count; an empty result uses `[0]`. `keypoint_id`, all coordinate lists,
+and `score` have the same flattened length. Keypoint ids are unique within each
+instance, coordinates are finite, and scores are finite values in `[0, 1]`.
+A score of `0` marks an unavailable keypoint, which consumers must not use for
+control.
+
+`Keypoint2DSet` coordinates are pixels in the source image; producers using
+resized, cropped, padded, or otherwise preprocessed model inputs must inverse-map
+results to source-image coordinates. `Keypoint3DSet` coordinates use meters,
+and their coordinate frame follows the transport convention: Dora metadata,
+topic naming, node configuration, or an adapter layer supplies frame context.
+Keypoint ids and skeleton topology remain producer configuration. These
+messages represent keypoint observations, are model-independent, and are not
+geometric `Pose` messages.
+
+Label maps, topology, producer-specific score semantics, and frame context stay
+in producer/model/node configuration or the existing transport conventions;
+they are not repeated in per-frame payloads or separate low-frequency info
+messages. No timestamp, `Header`, or frame field is added to these perception
+messages.
+
+For schema evolution, `SegmentationMaskSet` writers emit the `score` column.
+Readers may accept an older payload with no score column as `score=[]`.
 
 Empty detections use empty per-detection lists and
 `hypothesis_offset=[0]`. Detection class display names remain model
-configuration rather than per-frame payload data.
-OpenCV-style local features such as ORB, SIFT, or SuperPoint descriptors are
-not part of the core streaming schema; keep them inside a node unless a future
-pipeline needs cross-node feature reuse.
+configuration rather than per-frame payload data. OpenCV-style local features
+such as ORB, SIFT, or SuperPoint descriptors are not part of the core streaming
+schema; keep them inside a node unless a future pipeline needs cross-node
+feature reuse.
 
 ### Pose
 

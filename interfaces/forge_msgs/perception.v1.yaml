@@ -3,6 +3,30 @@ package: forge_msgs
 domain: perception
 
 messages:
+  Classification:
+    purpose: Model-independent set of class hypotheses.
+    row_count: single
+    fields:
+      class_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      score:
+        arrow: list<float32>
+        required: true
+        empty_allowed: true
+        length: class_id
+    validation:
+      - class_id and score must have the same length.
+      - class_id items must be unique within the message.
+      - score values must be finite and in the inclusive range 0 to 1.
+      - Empty class_id and score lists are allowed.
+      - Scores are independent confidences and are not required to sum to 1.
+    notes:
+      - Producers should order hypotheses by descending score.
+      - Class display names and model-specific label semantics belong in producer or model configuration, not this per-sample payload.
+
   Detection2DSet:
     purpose: Set of oriented 2D detections and flattened classification hypotheses.
     row_count: single
@@ -147,6 +171,120 @@ messages:
       - Writers may omit quaternion fields in high-level constructors and let implementations fill identity orientation for each detection; serialized Arrow payloads still include qx, qy, qz, and qw columns.
       - The coordinate frame is supplied by Dora metadata or node configuration.
 
+  Keypoint2DSet:
+    purpose: Model-independent sets of flattened 2D keypoints grouped by instance.
+    row_count: single
+    fields:
+      instance_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: instance_id
+      track_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: instance_id
+      keypoint_offset:
+        arrow: list<uint32>
+        required: true
+        length: instance_id_plus_one
+      keypoint_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      x:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      y:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      score:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+    validation:
+      - instance_id items must be unique within the message.
+      - detection_id and track_id must have the same length as instance_id.
+      - keypoint_offset must have length len(instance_id) + 1, start at 0, be monotonically non-decreasing, and end at len(keypoint_id).
+      - An empty result uses keypoint_offset=[0].
+      - keypoint_id, x, y, and score must have the same length.
+      - keypoint_id items must be unique within each instance range defined by keypoint_offset.
+      - x and y values must be finite.
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - detection_id and track_id are empty strings when no association is available.
+      - Writers may omit detection_id and track_id in high-level constructors and let implementations fill empty associations for each instance; serialized Arrow payloads still include those columns.
+      - x and y are pixel coordinates in the source image. Producers that infer on a preprocessed image must map keypoints back to source-image coordinates.
+      - A score of 0 marks an unavailable keypoint; consumers must not use it for control.
+      - keypoint_id semantics and skeleton topology are producer configuration; this message is model-independent and is not a geometric Pose.
+
+  Keypoint3DSet:
+    purpose: Model-independent sets of flattened 3D keypoints grouped by instance.
+    row_count: single
+    fields:
+      instance_id:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      detection_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: instance_id
+      track_id:
+        arrow: list<utf8>
+        required: true
+        default: ""
+        length: instance_id
+      keypoint_offset:
+        arrow: list<uint32>
+        required: true
+        length: instance_id_plus_one
+      keypoint_id:
+        arrow: list<utf8>
+        required: true
+        empty_allowed: true
+      x:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      y:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      z:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+      score:
+        arrow: list<float32>
+        required: true
+        length: keypoint_id
+    validation:
+      - instance_id items must be unique within the message.
+      - detection_id and track_id must have the same length as instance_id.
+      - keypoint_offset must have length len(instance_id) + 1, start at 0, be monotonically non-decreasing, and end at len(keypoint_id).
+      - An empty result uses keypoint_offset=[0].
+      - keypoint_id, x, y, z, and score must have the same length.
+      - keypoint_id items must be unique within each instance range defined by keypoint_offset.
+      - x, y, and z values must be finite.
+      - score values must be finite and in the inclusive range 0 to 1.
+    notes:
+      - detection_id and track_id are empty strings when no association is available.
+      - Writers may omit detection_id and track_id in high-level constructors and let implementations fill empty associations for each instance; serialized Arrow payloads still include those columns.
+      - x, y, and z use meters. The coordinate frame follows the existing transport convention and is supplied by Dora metadata, topic naming, node configuration, or an adapter layer.
+      - A score of 0 marks an unavailable keypoint; consumers must not use it for control.
+      - keypoint_id semantics and skeleton topology are producer configuration; this message is model-independent and is not a geometric Pose.
+
   SegmentationMaskSet:
     purpose: Set of cropped binary instance masks positioned in a source image.
     row_count: single
@@ -194,13 +332,24 @@ messages:
         arrow: list<large_binary>
         required: true
         length: mask_id
+      score:
+        arrow: list<float32>
+        required: true
+        empty_allowed: true
+        length: mask_id_or_empty
+        compatibility: Writers must emit score. Readers may treat a missing score column in older payloads as an empty list.
     validation:
-      - All per-mask lists must have the same length as mask_id.
+      - All per-mask lists except score must have the same length as mask_id.
       - mask_id items must be unique within the message.
+      - score must either be empty or have the same length as mask_id.
+      - Non-empty score values must be finite and in the inclusive range 0 to 1.
       - data[i] length must equal width[i] * height[i].
       - Zero pixels are background and non-zero pixels are foreground.
     notes:
       - Each mask is cropped to its own ROI; x_offset and y_offset locate the ROI in the source image.
       - detection_id and track_id are empty strings when no association is available.
       - Writers may omit detection_id, track_id, x_offset, and y_offset in high-level constructors and let implementations fill empty associations and zero offsets for each mask; serialized Arrow payloads still include those columns.
+      - score is a producer-defined mask ranking or confidence value. It is comparable only within the same producer, model, model version, and inference configuration, and is not guaranteed to be a calibrated probability or true IoU.
+      - SAM adapters may map predicted IoU to score by default. YOLO adapters may map the associated detection confidence to score or leave score empty.
+      - Label maps, topology, score semantics, and frame context remain producer or node configuration rather than per-frame payload fields.
 

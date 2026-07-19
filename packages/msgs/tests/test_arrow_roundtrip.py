@@ -15,8 +15,11 @@ from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.perception import (
+    Classification,
     Detection2DSet,
     Detection3DSet,
+    Keypoint2DSet,
+    Keypoint3DSet,
     SegmentationMaskSet,
 )
 from forge_msgs.point_cloud import PointCloud
@@ -74,7 +77,9 @@ def test_audio_chunk_f32le_roundtrip() -> None:
     assert chunk.sample_format == "f32le"
     assert chunk.channels == 1
     assert chunk.frame_count == 4
-    np.testing.assert_array_equal(AudioChunk.from_arrow(_to_ipc_bytes(chunk.to_arrow())).to_numpy(), audio)
+    np.testing.assert_array_equal(
+        AudioChunk.from_arrow(_to_ipc_bytes(chunk.to_arrow())).to_numpy(), audio
+    )
 
 
 def test_audio_chunk_s16le_roundtrip() -> None:
@@ -82,7 +87,9 @@ def test_audio_chunk_s16le_roundtrip() -> None:
     chunk = AudioChunk.from_numpy(audio, sample_rate=48_000, sample_format="s16le")
 
     assert chunk.sample_format == "s16le"
-    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+    np.testing.assert_array_equal(
+        AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio
+    )
 
 
 def test_audio_chunk_multichannel_interleaved_roundtrip() -> None:
@@ -94,18 +101,38 @@ def test_audio_chunk_multichannel_interleaved_roundtrip() -> None:
     assert np.frombuffer(chunk.data, dtype="<f4").tolist() == pytest.approx(
         [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
     )
-    np.testing.assert_array_equal(AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio)
+    np.testing.assert_array_equal(
+        AudioChunk.from_arrow(chunk.to_arrow()).to_numpy(), audio
+    )
 
 
 def test_audio_chunk_validation() -> None:
     with pytest.raises(ValueError, match="sample_rate"):
-        AudioChunk(sample_rate=0, channels=1, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+        AudioChunk(
+            sample_rate=0,
+            channels=1,
+            sample_format="f32le",
+            frame_count=1,
+            data=b"\x00" * 4,
+        )
 
     with pytest.raises(ValueError, match="channels"):
-        AudioChunk(sample_rate=16_000, channels=0, sample_format="f32le", frame_count=1, data=b"\x00" * 4)
+        AudioChunk(
+            sample_rate=16_000,
+            channels=0,
+            sample_format="f32le",
+            frame_count=1,
+            data=b"\x00" * 4,
+        )
 
     with pytest.raises(ValueError, match="data length"):
-        AudioChunk(sample_rate=16_000, channels=2, sample_format="s16le", frame_count=2, data=b"\x00" * 2)
+        AudioChunk(
+            sample_rate=16_000,
+            channels=2,
+            sample_format="s16le",
+            frame_count=2,
+            data=b"\x00" * 2,
+        )
 
 
 def test_text_roundtrip_record_batch_bytes_and_legacy_array() -> None:
@@ -189,7 +216,9 @@ def test_joint_command_roundtrip_and_unitree_fields() -> None:
     assert batch["mode"][0].as_py() == "hybrid"
     back = JointCommand.from_arrow(_to_ipc_bytes(batch))
     assert back == command
-    np.testing.assert_array_equal(back.to_np(["j2", "j1"], "kp"), np.array([30.0, 20.0]))
+    np.testing.assert_array_equal(
+        back.to_np(["j2", "j1"], "kp"), np.array([30.0, 20.0])
+    )
 
 
 def test_joint_command_reads_legacy_arrow_without_mode() -> None:
@@ -247,16 +276,22 @@ def test_image_rgb_roundtrip() -> None:
 def test_image_mono_and_depth_roundtrip() -> None:
     mono = np.array([[0, 1], [2, 3]], dtype=np.uint8)
     mono_image = Image.from_numpy(mono, encoding="mono8")
-    np.testing.assert_array_equal(Image.from_arrow(mono_image.to_arrow()).to_numpy(), mono)
+    np.testing.assert_array_equal(
+        Image.from_arrow(mono_image.to_arrow()).to_numpy(), mono
+    )
 
     depth = np.array([[100, 200], [300, 400]], dtype=np.uint16)
     depth_image = Image.from_numpy(depth, encoding="16UC1")
     assert depth_image.step == 4
-    np.testing.assert_array_equal(Image.from_arrow(depth_image.to_arrow()).to_numpy(), depth)
+    np.testing.assert_array_equal(
+        Image.from_arrow(depth_image.to_arrow()).to_numpy(), depth
+    )
 
     labels = np.array([[1, 2], [3, 4]], dtype=np.int32)
     label_image = Image.from_numpy(labels, encoding="32SC1")
-    np.testing.assert_array_equal(Image.from_arrow(label_image.to_arrow()).to_numpy(), labels)
+    np.testing.assert_array_equal(
+        Image.from_arrow(label_image.to_arrow()).to_numpy(), labels
+    )
 
 
 def test_image_rejects_invalid_data_length() -> None:
@@ -473,9 +508,7 @@ def test_teleop_observation_validation() -> None:
         ("confidence", math.nan),
     ],
 )
-def test_teleop_observation_rejects_non_finite_values(
-    field: str, value: float
-) -> None:
+def test_teleop_observation_rejects_non_finite_values(field: str, value: float) -> None:
     values = {
         "device": ["left"],
         "x": [0.0],
@@ -672,6 +705,154 @@ def test_detection_3d_roundtrip_and_quaternion_validation() -> None:
         Detection3DSet(**(detection.model_dump() | {"qw": [0.0]}))
 
 
+def test_classification_roundtrip_empty_and_validation() -> None:
+    classification = Classification(class_id=["cat", "dog"], score=[0.9, 0.1])
+    batch = classification.to_arrow()
+    assert batch.schema.names == ["class_id", "score"]
+    back = Classification.from_arrow(_to_ipc_bytes(batch))
+    assert back.class_id == classification.class_id
+    assert back.score == pytest.approx(classification.score)
+    assert Classification.from_arrow(Classification().to_arrow()) == Classification()
+
+    with pytest.raises(ValueError, match="unique"):
+        Classification(class_id=["cat", "cat"], score=[0.9, 0.1])
+    with pytest.raises(ValueError, match="same length"):
+        Classification(class_id=["cat"], score=[])
+    for score in (math.nan, math.inf, -0.1, 1.1):
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            Classification(class_id=["cat"], score=[score])
+
+
+def test_keypoint_2d_roundtrip_defaults_empty_and_field_order() -> None:
+    keypoints = Keypoint2DSet(
+        instance_id=["i0", "i1"],
+        keypoint_offset=[0, 2, 3],
+        keypoint_id=["left", "right", "left"],
+        x=[1.0, 2.0, 3.0],
+        y=[4.0, 5.0, 6.0],
+        score=[0.9, 0.8, 0.7],
+    )
+    assert keypoints.detection_id == ["", ""]
+    assert keypoints.track_id == ["", ""]
+    batch = keypoints.to_arrow()
+    assert batch.schema.names == [
+        "instance_id",
+        "detection_id",
+        "track_id",
+        "keypoint_offset",
+        "keypoint_id",
+        "x",
+        "y",
+        "score",
+    ]
+    back = Keypoint2DSet.from_arrow(_to_ipc_bytes(batch))
+    assert back.instance_id == keypoints.instance_id
+    assert back.detection_id == keypoints.detection_id
+    assert back.track_id == keypoints.track_id
+    assert back.keypoint_offset == keypoints.keypoint_offset
+    assert back.keypoint_id == keypoints.keypoint_id
+    for field in ("x", "y", "score"):
+        assert getattr(back, field) == pytest.approx(getattr(keypoints, field))
+    assert Keypoint2DSet.from_arrow(Keypoint2DSet().to_arrow()) == Keypoint2DSet()
+
+
+def test_keypoint_3d_roundtrip_defaults_empty_and_field_order() -> None:
+    keypoints = Keypoint3DSet(
+        instance_id=["i0"],
+        detection_id=[],
+        track_id=[],
+        keypoint_offset=[0, 2],
+        keypoint_id=["base", "tip"],
+        x=[1.0, 2.0],
+        y=[3.0, 4.0],
+        z=[5.0, 6.0],
+        score=[1.0, 0.5],
+    )
+    assert keypoints.detection_id == [""]
+    assert keypoints.track_id == [""]
+    batch = keypoints.to_arrow()
+    assert batch.schema.names == [
+        "instance_id",
+        "detection_id",
+        "track_id",
+        "keypoint_offset",
+        "keypoint_id",
+        "x",
+        "y",
+        "z",
+        "score",
+    ]
+    back = Keypoint3DSet.from_arrow(_to_ipc_bytes(batch))
+    assert back.keypoint_offset == keypoints.keypoint_offset
+    assert back.keypoint_id == keypoints.keypoint_id
+    for field in ("x", "y", "z", "score"):
+        assert getattr(back, field) == pytest.approx(getattr(keypoints, field))
+    assert Keypoint3DSet.from_arrow(Keypoint3DSet().to_arrow()) == Keypoint3DSet()
+
+
+def test_keypoints_reject_invalid_offsets_lengths_and_duplicates() -> None:
+    valid = {
+        "instance_id": ["i0", "i1"],
+        "detection_id": ["", ""],
+        "track_id": ["", ""],
+        "keypoint_offset": [0, 1, 2],
+        "keypoint_id": ["nose", "nose"],
+        "x": [1.0, 2.0],
+        "y": [3.0, 4.0],
+        "score": [0.9, 0.8],
+    }
+    Keypoint2DSet(**valid)
+
+    invalid_offsets = (
+        ([0, 2], "length"),
+        ([1, 1, 2], "start at"),
+        ([0, 2, 1], "monotonically"),
+        ([0, 1, 1], "end at"),
+        ([0, 1, -1], "uint32"),
+    )
+    for offset, message in invalid_offsets:
+        with pytest.raises(ValueError, match=message):
+            Keypoint2DSet(**(valid | {"keypoint_offset": offset}))
+
+    with pytest.raises(ValueError, match="same length"):
+        Keypoint2DSet(**(valid | {"detection_id": [""]}))
+    with pytest.raises(ValueError, match="same length"):
+        Keypoint2DSet(**(valid | {"x": [1.0]}))
+    with pytest.raises(ValueError, match="within each instance"):
+        Keypoint2DSet(
+            **(
+                valid
+                | {
+                    "keypoint_offset": [0, 2, 2],
+                    "keypoint_id": ["nose", "nose"],
+                }
+            )
+        )
+
+
+def test_keypoints_reject_nonfinite_coordinates_and_invalid_scores() -> None:
+    keypoint_2d = {
+        "instance_id": ["i0"],
+        "keypoint_offset": [0, 1],
+        "keypoint_id": ["nose"],
+        "x": [1.0],
+        "y": [2.0],
+        "score": [0.9],
+    }
+    for field in ("x", "y"):
+        with pytest.raises(ValueError, match="finite"):
+            Keypoint2DSet(**(keypoint_2d | {field: [math.nan]}))
+    for score in (math.inf, -0.1, 1.1):
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            Keypoint2DSet(**(keypoint_2d | {"score": [score]}))
+
+    keypoint_3d = keypoint_2d | {"z": [3.0]}
+    with pytest.raises(ValueError, match="finite"):
+        Keypoint3DSet(**(keypoint_3d | {"z": [math.inf]}))
+    with pytest.raises(ValueError, match="same length"):
+        Keypoint3DSet(**(keypoint_3d | {"z": []}))
+
+
 def test_segmentation_mask_roundtrip_and_length_validation() -> None:
     masks = SegmentationMaskSet(
         mask_id=["m0"],
@@ -681,9 +862,25 @@ def test_segmentation_mask_roundtrip_and_length_validation() -> None:
         y_offset=[5],
         width=[2],
         height=[2],
+        score=[0.75],
         data=[bytes([0, 255, 255, 0])],
     )
-    assert SegmentationMaskSet.from_arrow(_to_ipc_bytes(masks.to_arrow())) == masks
+    batch = masks.to_arrow()
+    assert batch.schema.names == [
+        "mask_id",
+        "detection_id",
+        "track_id",
+        "x_offset",
+        "y_offset",
+        "width",
+        "height",
+        "encoding",
+        "data",
+        "score",
+    ]
+    back = SegmentationMaskSet.from_arrow(_to_ipc_bytes(batch))
+    assert back.model_dump(exclude={"score"}) == masks.model_dump(exclude={"score"})
+    assert back.score == pytest.approx(masks.score)
 
     standalone = SegmentationMaskSet(
         mask_id=["m0"],
@@ -695,6 +892,28 @@ def test_segmentation_mask_roundtrip_and_length_validation() -> None:
     assert standalone.track_id == [""]
     assert standalone.x_offset == [0]
     assert standalone.y_offset == [0]
+    assert standalone.score == []
+    empty_batch = SegmentationMaskSet().to_arrow()
+    assert "score" in empty_batch.schema.names
+    assert SegmentationMaskSet.from_arrow(empty_batch) == SegmentationMaskSet()
+
+    with pytest.raises(ValueError, match="empty or have the same length"):
+        SegmentationMaskSet(
+            mask_id=["m0"],
+            width=[1],
+            height=[1],
+            score=[0.5, 0.6],
+            data=[b"\x00"],
+        )
+    for score in (math.nan, math.inf, -0.1, 1.1):
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            SegmentationMaskSet(
+                mask_id=["m0"],
+                width=[1],
+                height=[1],
+                score=[score],
+                data=[b"\x00"],
+            )
 
     with pytest.raises(ValueError, match=r"data\[0\] length"):
         SegmentationMaskSet(
@@ -707,6 +926,79 @@ def test_segmentation_mask_roundtrip_and_length_validation() -> None:
             height=[2],
             data=[b"\x00"],
         )
+
+
+def _perception_messages() -> list[object]:
+    return [
+        Classification(),
+        Detection2DSet(),
+        Detection3DSet(),
+        Keypoint2DSet(),
+        Keypoint3DSet(),
+        SegmentationMaskSet(),
+    ]
+
+
+@pytest.mark.parametrize("message", _perception_messages())
+def test_perception_readers_require_exactly_one_row(message: object) -> None:
+    batch = message.to_arrow()
+    two_rows = pa.RecordBatch.from_arrays(
+        [pa.concat_arrays([column, column]) for column in batch.columns],
+        schema=batch.schema,
+    )
+    with pytest.raises(ValueError, match="exactly one row"):
+        type(message).from_arrow(two_rows)
+
+
+@pytest.mark.parametrize("message", _perception_messages())
+def test_perception_writers_use_nonnullable_canonical_schema(message: object) -> None:
+    schema = message.to_arrow().schema
+    assert all(not field.nullable for field in schema)
+
+
+def test_perception_reader_rejects_top_level_and_list_item_nulls() -> None:
+    batch = Classification(class_id=["cat"], score=[0.9]).to_arrow()
+    top_level_null = pa.RecordBatch.from_arrays(
+        [pa.array([None], type=batch.schema.field("class_id").type), batch["score"]],
+        names=batch.schema.names,
+    )
+    with pytest.raises(ValueError, match="class_id must not be null"):
+        Classification.from_arrow(top_level_null)
+
+    null_item = pa.RecordBatch.from_arrays(
+        [
+            pa.array(
+                [["cat", None]],
+                type=pa.list_(pa.field("item", pa.string(), nullable=True)),
+            ),
+            pa.array([[0.9, 0.8]], type=pa.list_(pa.float32())),
+        ],
+        names=batch.schema.names,
+    )
+    with pytest.raises(ValueError, match="list items must not be null"):
+        Classification.from_arrow(null_item)
+
+
+def test_perception_reader_rejects_wrong_physical_type() -> None:
+    batch = pa.RecordBatch.from_arrays(
+        [pa.array([["cat"]], type=pa.list_(pa.string())), pa.array([[0.9]])],
+        names=["class_id", "score"],
+    )
+    with pytest.raises(TypeError, match="score must have type"):
+        Classification.from_arrow(batch)
+
+
+def test_segmentation_reader_accepts_legacy_payload_without_score() -> None:
+    masks = SegmentationMaskSet(
+        mask_id=["m0"], width=[1], height=[1], data=[b"\x00"], score=[0.75]
+    )
+    canonical = masks.to_arrow()
+    required_names = [name for name in canonical.schema.names if name != "score"]
+    without_score = canonical.select(required_names)
+
+    assert SegmentationMaskSet.from_arrow(without_score).score == []
+    assert canonical.schema.names[-1] == "score"
+
 
 
 def test_point_cloud_roundtrip_and_dense_validation() -> None:

@@ -8,8 +8,8 @@ use crate::column::{
 };
 
 use super::{
-    PerceptionError, validate_finite, validate_hypotheses, validate_len, validate_non_negative,
-    validate_unique,
+    PerceptionError, require_single_row as require_row, validate_finite, validate_hypotheses,
+    validate_len, validate_non_negative, validate_unique,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -319,15 +319,6 @@ impl Detection3DSet {
         validate_non_negative("size_z", &self.size_z)?;
         validate_hypotheses(count, &self.hypothesis_offset, &self.class_id, &self.score)
     }
-}
-
-fn require_row(batch: &RecordBatch) -> Result<(), PerceptionError> {
-    if batch.num_rows() == 0 {
-        return Err(PerceptionError::Invalid(
-            "RecordBatch must contain one row".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

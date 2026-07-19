@@ -5,11 +5,13 @@ use arrow_schema::{DataType, Field, Schema};
 use bytes::Bytes;
 
 use crate::column::{
-    binary_list, list_type, read_binary_list, read_string, read_string_list, read_u32_list,
-    string_list, u32_list,
+    binary_list, f32_list, list_type, read_binary_list, read_f32_list, read_string,
+    read_string_list, read_u32_list, string_list, u32_list,
 };
 
-use super::{PerceptionError, validate_len, validate_unique};
+use super::{
+    PerceptionError, require_single_row, validate_len, validate_unique, validate_unit_scores,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SegmentationMaskSet {
@@ -22,6 +24,7 @@ pub struct SegmentationMaskSet {
     pub height: Vec<u32>,
     pub encoding: String,
     pub data: Vec<Bytes>,
+    pub score: Vec<f32>,
 }
 
 impl SegmentationMaskSet {
@@ -36,6 +39,33 @@ impl SegmentationMaskSet {
         height: Vec<u32>,
         encoding: impl Into<String>,
         data: Vec<Bytes>,
+    ) -> Result<Self, PerceptionError> {
+        Self::new_with_score(
+            mask_id,
+            detection_id,
+            track_id,
+            x_offset,
+            y_offset,
+            width,
+            height,
+            encoding,
+            data,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_score(
+        mask_id: Vec<String>,
+        detection_id: Vec<String>,
+        track_id: Vec<String>,
+        x_offset: Vec<u32>,
+        y_offset: Vec<u32>,
+        width: Vec<u32>,
+        height: Vec<u32>,
+        encoding: impl Into<String>,
+        data: Vec<Bytes>,
+        score: Vec<f32>,
     ) -> Result<Self, PerceptionError> {
         let count = mask_id.len();
         let detection_id = if detection_id.is_empty() && count > 0 {
@@ -74,6 +104,7 @@ impl SegmentationMaskSet {
             height,
             encoding,
             data,
+            score,
         };
         value.validate()?;
         Ok(value)
@@ -91,6 +122,7 @@ impl SegmentationMaskSet {
             Field::new("height", list_type(DataType::UInt32), false),
             Field::new("encoding", DataType::Utf8, false),
             Field::new("data", list_type(DataType::LargeBinary), false),
+            Field::new("score", list_type(DataType::Float32), false),
         ]));
         let columns: Vec<ArrayRef> = vec![
             Arc::new(string_list(&self.mask_id)),
@@ -102,18 +134,20 @@ impl SegmentationMaskSet {
             Arc::new(u32_list(&self.height)),
             Arc::new(StringArray::from(vec![self.encoding.as_str()])),
             Arc::new(binary_list(&self.data)),
+            Arc::new(f32_list(&self.score)),
         ];
         RecordBatch::try_new(schema, columns)
             .map_err(|error| PerceptionError::Arrow(error.to_string()))
     }
 
     pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, PerceptionError> {
-        if batch.num_rows() == 0 {
-            return Err(PerceptionError::Invalid(
-                "RecordBatch must contain one row".to_string(),
-            ));
-        }
-        Self::new(
+        require_single_row(batch)?;
+        let score = if batch.schema().index_of("score").is_ok() {
+            read_f32_list(batch, "score").map_err(PerceptionError::Invalid)?
+        } else {
+            Vec::new()
+        };
+        Self::new_with_score(
             read_string_list(batch, "mask_id").map_err(PerceptionError::Invalid)?,
             read_string_list(batch, "detection_id").map_err(PerceptionError::Invalid)?,
             read_string_list(batch, "track_id").map_err(PerceptionError::Invalid)?,
@@ -123,6 +157,7 @@ impl SegmentationMaskSet {
             read_u32_list(batch, "height").map_err(PerceptionError::Invalid)?,
             read_string(batch, "encoding").map_err(PerceptionError::Invalid)?,
             read_binary_list(batch, "data").map_err(PerceptionError::Invalid)?,
+            score,
         )
     }
 
@@ -145,6 +180,10 @@ impl SegmentationMaskSet {
         ] {
             validate_len(name, actual, count)?;
         }
+        if !self.score.is_empty() {
+            validate_len("score", self.score.len(), count)?;
+            validate_unit_scores("score", &self.score)?;
+        }
         for index in 0..count {
             let expected = (self.width[index] as usize)
                 .checked_mul(self.height[index] as usize)
@@ -165,13 +204,16 @@ impl SegmentationMaskSet {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow_array::RecordBatch;
+    use arrow_schema::Schema;
     use bytes::Bytes;
 
     use super::SegmentationMaskSet;
 
-    #[test]
-    fn segmentation_mask_roundtrip() {
-        let masks = SegmentationMaskSet::new(
+    fn masks_with_score() -> SegmentationMaskSet {
+        SegmentationMaskSet::new_with_score(
             vec!["m0".into()],
             vec!["d0".into()],
             vec![String::new()],
@@ -181,9 +223,36 @@ mod tests {
             vec![2],
             "mono8",
             vec![Bytes::from_static(&[0, 255, 255, 0])],
+            vec![0.95],
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    fn without_score(batch: &RecordBatch) -> RecordBatch {
+        let score_index = batch.schema().index_of("score").unwrap();
+        let fields = batch
+            .schema()
+            .fields()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != score_index)
+            .map(|(_, field)| field.as_ref().clone())
+            .collect::<Vec<_>>();
+        let columns = batch
+            .columns()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != score_index)
+            .map(|(_, column)| Arc::clone(column))
+            .collect();
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
+
+    #[test]
+    fn segmentation_mask_roundtrip() {
+        let masks = masks_with_score();
         let batch = masks.to_record_batch().unwrap();
+        assert_eq!(batch.schema().field(9).name(), "score");
         assert_eq!(
             SegmentationMaskSet::from_record_batch(&batch).unwrap(),
             masks
@@ -206,6 +275,16 @@ mod tests {
         assert_eq!(standalone.x_offset, vec![0]);
         assert_eq!(standalone.y_offset, vec![0]);
         assert_eq!(standalone.encoding, "mono8");
+        assert!(standalone.score.is_empty());
+    }
+
+    #[test]
+    fn reads_masks_without_a_score_column() {
+        let batch = without_score(&masks_with_score().to_record_batch().unwrap());
+
+        let masks = SegmentationMaskSet::from_record_batch(&batch).unwrap();
+
+        assert!(masks.score.is_empty());
     }
 
     #[test]
@@ -220,6 +299,37 @@ mod tests {
             vec![2],
             "mono8",
             vec![Bytes::from_static(&[0])],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_score() {
+        let result = SegmentationMaskSet::new_with_score(
+            vec!["m0".into()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![1],
+            vec![1],
+            "mono8",
+            vec![Bytes::from_static(&[255])],
+            vec![f32::NAN],
+        );
+        assert!(result.is_err());
+
+        let result = SegmentationMaskSet::new_with_score(
+            vec!["m0".into()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![1],
+            vec![1],
+            "mono8",
+            vec![Bytes::from_static(&[255])],
+            vec![0.5, 0.6],
         );
         assert!(result.is_err());
     }
