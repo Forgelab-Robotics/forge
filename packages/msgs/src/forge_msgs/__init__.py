@@ -6,8 +6,11 @@ from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.perception import (
+    Classification,
     Detection2DSet,
     Detection3DSet,
+    Keypoint2DSet,
+    Keypoint3DSet,
     SegmentationMaskSet,
 )
 from forge_msgs.point_cloud import PointCloud
@@ -19,11 +22,14 @@ from forge_msgs.text import Text
 __all__ = [
     "AudioChunk",
     "CompressedImage",
+    "Classification",
     "Detection2DSet",
     "Detection3DSet",
     "Image",
     "JointCommand",
     "JointState",
+    "Keypoint2DSet",
+    "Keypoint3DSet",
     "LocomotionCommand",
     "PointCloud",
     "PolicyCommand",

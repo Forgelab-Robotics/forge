@@ -21,6 +21,11 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> ReadIpcStream(const std::stri
   if (!batch) {
     return arrow::Status::Invalid("IPC stream did not contain a RecordBatch");
   }
+  std::shared_ptr<arrow::RecordBatch> extra_batch;
+  ARROW_RETURN_NOT_OK(reader->ReadNext(&extra_batch));
+  if (extra_batch) {
+    return arrow::Status::Invalid("IPC stream must contain exactly one RecordBatch");
+  }
   return batch;
 }
 
