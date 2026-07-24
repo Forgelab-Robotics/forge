@@ -1,0 +1,18 @@
+[project]
+name = "forge-kinematics"
+version = "0.1.0"
+description = "Optional PyBullet URDF forward/inverse kinematics solvers for Forge capabilities."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+    { name = "X-ERA" }
+]
+dependencies = [
+    "numpy",
+    "pybullet",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
