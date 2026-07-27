@@ -5,6 +5,12 @@ from forge_msgs.audio import AudioChunk
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.locomotion import LocomotionCommand
+from forge_msgs.manipulation import (
+    ManipulationPlan,
+    ManipulationPlannerConfig,
+    ManipulationPlanStep,
+    ManipulationTargetResult,
+)
 from forge_msgs.perception import (
     Classification,
     Detection2DSet,
@@ -31,6 +37,10 @@ __all__ = [
     "Keypoint2DSet",
     "Keypoint3DSet",
     "LocomotionCommand",
+    "ManipulationPlan",
+    "ManipulationPlannerConfig",
+    "ManipulationPlanStep",
+    "ManipulationTargetResult",
     "PointCloud",
     "PolicyCommand",
     "PolicyCommandStatus",
