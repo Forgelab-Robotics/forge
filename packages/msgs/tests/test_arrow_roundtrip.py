@@ -14,12 +14,6 @@ from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
-from forge_msgs.manipulation import (
-    ManipulationPlan,
-    ManipulationPlannerConfig,
-    ManipulationPlanStep,
-    ManipulationTargetResult,
-)
 from forge_msgs.perception import (
     Classification,
     Detection2DSet,
@@ -455,88 +449,6 @@ def test_pose_set_roundtrip_and_helpers() -> None:
     back = PoseSet.from_arrow(_to_ipc_bytes(pose_set.to_arrow()))
     assert back == pose_set
     assert back.to_poses()["a"] == poses["a"]
-
-
-def test_manipulation_target_result_roundtrip_and_validation() -> None:
-    result = ManipulationTargetResult(
-        request_id="wf-001:perceive",
-        success=True,
-        target_name="apple",
-        prompt="red apple",
-        target_point_cam=[0.12, -0.05, 0.68],
-        target_contact_radius_m=0.042,
-        bbox_xyxy=[100.0, 80.0, 260.0, 300.0],
-        score=0.91,
-        yaw_hint_cam_rad=None,
-    )
-    assert ManipulationTargetResult.from_arrow(result.to_arrow()) == result
-    assert ManipulationTargetResult.from_arrow(pa.Table.from_batches([result.to_arrow()])) == result
-    assert ManipulationTargetResult.from_arrow(_to_ipc_bytes(result.to_arrow())) == result
-
-    with pytest.raises(ValueError, match="target_point_cam"):
-        ManipulationTargetResult(success=True, target_point_cam=[0.1, 0.2])
-    with pytest.raises(ValueError, match=r"\[0, 1\]"):
-        ManipulationTargetResult(success=True, score=1.5)
-
-
-def test_manipulation_plan_step_roundtrip_and_validation() -> None:
-    step = ManipulationPlanStep(
-        kind="pose",
-        name="pre_grasp",
-        duration_s=2.5,
-        payload={"x": 0.4, "y": 0.1, "z": 0.25, "yaw": 0.5},
-    )
-    assert ManipulationPlanStep.from_arrow(step.to_arrow()) == step
-    assert ManipulationPlanStep.from_arrow(_to_ipc_bytes(step.to_arrow())) == step
-
-    with pytest.raises(ValueError, match="duration_s"):
-        ManipulationPlanStep(kind="wait", duration_s=-1.0)
-    with pytest.raises(ValueError, match="JSON serializable"):
-        ManipulationPlanStep(kind="call", payload={"bad": object()})
-
-
-def test_manipulation_plan_roundtrip_and_validation() -> None:
-    plan = ManipulationPlan(
-        request_id="wf-001:plan",
-        success=True,
-        target_name="apple",
-        operation="pick",
-        target_position_base=[0.4, 0.1, 0.25],
-        yaw_base_rad=0.5,
-        target_distance_m=0.42,
-        steps=[
-            ManipulationPlanStep(
-                kind="pose",
-                name="pre_grasp",
-                duration_s=2.5,
-                payload={"x": 0.4, "y": 0.1, "z": 0.25},
-            ),
-            ManipulationPlanStep(kind="gripper", name="close", payload={"position_mm": 0.0}),
-        ],
-    )
-    assert ManipulationPlan.from_arrow(plan.to_arrow()) == plan
-    assert ManipulationPlan.from_arrow(pa.Table.from_batches([plan.to_arrow()])) == plan
-    assert ManipulationPlan.from_arrow(_to_ipc_bytes(plan.to_arrow())) == plan
-    assert plan.model_dump()["steps"][0]["payload"]["x"] == 0.4
-
-    with pytest.raises(ValueError, match="target_position_base"):
-        ManipulationPlan(success=True, target_position_base=[0.1, 0.2])
-    with pytest.raises(ValueError, match="target_distance_m"):
-        ManipulationPlan(success=True, target_distance_m=-0.1)
-
-
-def test_manipulation_planner_config_roundtrip_and_validation() -> None:
-    config = ManipulationPlannerConfig(
-        tcp_tool_len_m=0.075,
-        gripper_open_mm=85.0,
-        auto_home=False,
-        place_pitch_rad=2.35619,
-    )
-    assert ManipulationPlannerConfig.from_arrow(config.to_arrow()) == config
-    assert ManipulationPlannerConfig.from_arrow(_to_ipc_bytes(config.to_arrow())) == config
-
-    with pytest.raises(ValueError, match="tcp_tool_len_m"):
-        ManipulationPlannerConfig(tcp_tool_len_m=-0.1)
 
 
 def test_teleop_observation_roundtrip_record_batch_table_and_bytes() -> None:

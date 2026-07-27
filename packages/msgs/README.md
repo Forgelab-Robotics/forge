@@ -124,25 +124,6 @@ Local features such as ORB, SIFT, or SuperPoint descriptors are intentionally
 kept out of the core streaming schema; publish higher-level outputs unless a
 future pipeline needs cross-node feature reuse.
 
-### Manipulation
-
-The manipulation domain carries target and plan payloads that are more specific
-than generic perception detections:
-
-- `ManipulationTargetResult` stores the selected target, camera-frame target
-  point, optional contact radius, optional source-image bounding box, and score.
-  For pick, the target point is typically the grasp point. For place, it is the
-  drop target or placement reference point.
-- `ManipulationPlan` stores a pick/place plan and flattens its step sequence
-  into parallel Arrow list columns.
-- `ManipulationPlanStep` stores a single executable step. The dynamic step
-  payload is encoded as a JSON object string in Arrow and exposed as a Python
-  dictionary in the high-level model.
-- `ManipulationPlannerConfig` stores common pick/place planner tuning values.
-
-Generic detections and masks remain in the perception domain. Use
-`ManipulationTargetResult` for the result consumed by manipulation planners.
-
 ### `PointCloud`
 
 `PointCloud` stores common XYZ point clouds as Arrow lists with optional

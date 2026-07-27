@@ -28,7 +28,6 @@ members = [
     "packages/common",
     "packages/policy",
     "packages/robot",
-    "packages/kinematics",
 ]
 
 [tool.uv.sources]
@@ -36,7 +35,6 @@ forge-common = { workspace = true }
 forge-msgs = { workspace = true }
 forge-policy = { workspace = true }
 forge-robot = { workspace = true }
-forge-kinematics = { workspace = true }
 
 [tool.ruff.lint.per-file-ignores]
 "packages/*/tests/*.py" = ["E402"]

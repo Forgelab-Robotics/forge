@@ -18,11 +18,6 @@ This repository intentionally focuses on the framework layer:
   node loop.
 - `packages/common` and `crates/forge_common` provide shared utilities,
   currently including logging and tracing helpers.
-- `packages/kinematics` (`forge-kinematics`) provides optional PyBullet URDF
-  FK/IK solvers. It is a **library**, not a Dora capability, and is **not** a
-  default dependency of the top-level `forge` package (so PyBullet is not
-  pulled in for every install). Motion execution / proprio convergence stay in
-  capability packages such as `pybullet_ik_motion`.
 
 Robot-specific drivers and hardware SDK integrations should live in downstream
 packages, for example a separate `forge_robots` repository.
@@ -41,7 +36,6 @@ forge/
 ├── packages/msgs/              # Python message models and Arrow conversion
 ├── packages/policy/            # Python policy node protocols and Dora runner
 ├── packages/robot/             # Python robot driver protocols and Dora runner
-├── packages/kinematics/        # Optional PyBullet URDF FK/IK library
 ├── crates/forge_common/        # Rust shared utilities
 ├── crates/forge_msgs/          # Rust message types and Arrow conversion
 ├── cpp/forge_common/           # C++ shared utilities
@@ -204,7 +198,7 @@ cmake -S . -B build \
 Run the Python tests:
 
 ```bash
-uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
+uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
 ```
 
 Run the Rust tests:
