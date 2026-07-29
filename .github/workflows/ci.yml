@@ -27,7 +27,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python dependencies
-        run: uv sync --dev
+        run: uv sync --locked --all-packages --dev
 
       - name: Run Ruff
         run: uv run ruff check .
@@ -36,7 +36,13 @@ jobs:
         run: uv run python scripts/check_forge_msgs_schema.py
 
       - name: Run Python tests
-        run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
+        run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
+
+      - name: Build forge-kinematics distributions
+        run: uv build --package forge-kinematics
+
+      - name: Check forge-kinematics distributions
+        run: uv run python packages/kinematics/scripts/check_distribution.py
 
   rust:
     name: Rust

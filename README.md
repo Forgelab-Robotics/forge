@@ -18,6 +18,8 @@ This repository intentionally focuses on the framework layer:
   node loop.
 - `packages/common` and `crates/forge_common` provide shared utilities,
   currently including logging and tracing helpers.
+- `packages/kinematics` provides optional Pinocchio-based URDF forward
+  kinematics, geometric Jacobians, and deterministic damped-least-squares IK.
 
 Robot-specific drivers and hardware SDK integrations should live in downstream
 packages, for example a separate `forge_robots` repository.
@@ -33,6 +35,7 @@ semantics may change before a stable release.
 forge/
 ├── interfaces/forge_msgs/      # Canonical cross-language message schema
 ├── packages/common/            # Python shared utilities
+├── packages/kinematics/        # Python Pinocchio FK/Jacobian/IK library
 ├── packages/msgs/              # Python message models and Arrow conversion
 ├── packages/policy/            # Python policy node protocols and Dora runner
 ├── packages/robot/             # Python robot driver protocols and Dora runner
@@ -59,10 +62,17 @@ forge/
 
 ## Installation
 
-Clone the repository and install the Python workspace:
+Clone the repository and install the default Python workspace:
 
 ```bash
 uv sync --dev
+```
+
+Install every workspace package, including the optional Pinocchio kinematics
+library, when developing or running the complete Python test suite:
+
+```bash
+uv sync --all-packages --dev
 ```
 
 Build the Rust workspace:
@@ -198,7 +208,7 @@ cmake -S . -B build \
 Run the Python tests:
 
 ```bash
-uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests
+uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
 ```
 
 Run the Rust tests:
