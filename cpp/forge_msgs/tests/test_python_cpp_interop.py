@@ -44,6 +44,13 @@ def _assert_schema(batch, fields: list[tuple[str, object]]) -> None:
     assert batch.num_rows == 1
 
 
+def _assert_exact_schema(batch, schema) -> None:
+    assert batch.schema == schema
+    assert batch.num_rows == 1
+    assert "goal_id" not in batch.schema.names
+    assert "goal_status" not in batch.schema.names
+
+
 def _assert_close(actual: list[float], expected: list[float]) -> None:
     assert len(actual) == len(expected)
     assert all(math.isclose(left, right, rel_tol=1e-6) for left, right in zip(actual, expected))
@@ -327,6 +334,187 @@ def main() -> int:
             [driver, "read-segmentation", py_segmentation_empty_score], text=True
         ).strip()
         assert out == "mask-8 1 empty"
+
+        f64_list = pa.list_(pa.float64())
+        point_type = pa.struct(
+            [
+                pa.field("positions", f64_list, nullable=False),
+                pa.field("velocities", f64_list, nullable=False),
+                pa.field("accelerations", f64_list, nullable=False),
+                pa.field("effort", f64_list, nullable=False),
+                pa.field("time_from_start_ns", pa.int64(), nullable=False),
+            ]
+        )
+        trajectory_type = pa.struct(
+            [
+                pa.field("joint_names", string_list, nullable=False),
+                pa.field("points", pa.list_(point_type), nullable=False),
+            ]
+        )
+        tolerance_type = pa.struct(
+            [
+                pa.field("joint_name", pa.string(), nullable=False),
+                pa.field("position", pa.float64(), nullable=True),
+                pa.field("velocity", pa.float64(), nullable=True),
+                pa.field("acceleration", pa.float64(), nullable=True),
+            ]
+        )
+        pose_type = pa.struct(
+            [
+                pa.field("x", pa.float64(), nullable=False),
+                pa.field("y", pa.float64(), nullable=False),
+                pa.field("z", pa.float64(), nullable=False),
+                pa.field("qx", pa.float64(), nullable=False),
+                pa.field("qy", pa.float64(), nullable=False),
+                pa.field("qz", pa.float64(), nullable=False),
+                pa.field("qw", pa.float64(), nullable=False),
+            ]
+        )
+
+        follow_schema = pa.schema(
+            [
+                pa.field("trajectory", trajectory_type, nullable=False),
+                pa.field("path_tolerance", pa.list_(tolerance_type), nullable=False),
+                pa.field("goal_tolerance", pa.list_(tolerance_type), nullable=False),
+                pa.field("goal_time_tolerance_ns", pa.int64(), nullable=True),
+            ]
+        )
+        cpp_follow = tmp_path / "cpp_follow.arrow"
+        subprocess.run([driver, "write-follow-joint-trajectory-goal", cpp_follow], check=True)
+        batch = _from_ipc_file(cpp_follow)
+        _assert_exact_schema(batch, follow_schema)
+        trajectory = batch["trajectory"][0].as_py()
+        assert trajectory["joint_names"] == ["joint_1", "joint_2"]
+        assert len(trajectory["points"]) == 2
+        assert batch["path_tolerance"][0].as_py()[0]["position"] == 0.05
+        assert batch["goal_time_tolerance_ns"][0].as_py() == 2000000
+
+        py_follow = tmp_path / "py_follow.arrow"
+        python_trajectory = {
+            "joint_names": ["joint_1", "joint_2"],
+            "points": [
+                {
+                    "positions": [0.0, 0.5],
+                    "velocities": [],
+                    "accelerations": [],
+                    "effort": [],
+                    "time_from_start_ns": 0,
+                },
+                {
+                    "positions": [1.0, 1.5],
+                    "velocities": [0.1, 0.2],
+                    "accelerations": [],
+                    "effort": [],
+                    "time_from_start_ns": 1000000,
+                },
+            ],
+        }
+        _to_ipc_file(
+            pa.RecordBatch.from_arrays(
+                [
+                    pa.array([python_trajectory], type=trajectory_type),
+                    pa.array(
+                        [[{"joint_name": "joint_2", "position": None,
+                           "velocity": 0.1, "acceleration": None}]],
+                        type=pa.list_(tolerance_type),
+                    ),
+                    pa.array([[]], type=pa.list_(tolerance_type)),
+                    pa.array([None], type=pa.int64()),
+                ],
+                schema=follow_schema,
+            ),
+            py_follow,
+        )
+        out = subprocess.check_output(
+            [driver, "read-follow-joint-trajectory-goal", py_follow], text=True
+        ).strip()
+        assert out == "2 2 1 null"
+
+        move_joints_schema = pa.schema(
+            [
+                pa.field("group_name", pa.string(), nullable=False),
+                pa.field("joint_names", string_list, nullable=False),
+                pa.field("positions", f64_list, nullable=False),
+                pa.field("velocity_scale", pa.float64(), nullable=False),
+                pa.field("acceleration_scale", pa.float64(), nullable=False),
+                pa.field("requested_duration_ns", pa.int64(), nullable=True),
+            ]
+        )
+        cpp_move_joints = tmp_path / "cpp_move_joints.arrow"
+        subprocess.run([driver, "write-move-joints-goal", cpp_move_joints], check=True)
+        batch = _from_ipc_file(cpp_move_joints)
+        _assert_exact_schema(batch, move_joints_schema)
+        assert batch["group_name"][0].as_py() == "arm"
+        assert batch["positions"][0].as_py() == [1.0, 1.5]
+        assert batch["requested_duration_ns"][0].as_py() is None
+
+        py_move_joints = tmp_path / "py_move_joints.arrow"
+        _to_ipc_file(
+            pa.RecordBatch.from_arrays(
+                [
+                    pa.array(["manipulator"], type=pa.string()),
+                    _list_array(["a", "b"], pa.string()),
+                    _list_array([0.25, -0.5], pa.float64()),
+                    pa.array([0.8], type=pa.float64()),
+                    pa.array([0.7], type=pa.float64()),
+                    pa.array([1500000], type=pa.int64()),
+                ],
+                schema=move_joints_schema,
+            ),
+            py_move_joints,
+        )
+        out = subprocess.check_output(
+            [driver, "read-move-joints-goal", py_move_joints], text=True
+        ).strip()
+        assert out == "manipulator 2 0.25 1500000"
+
+        move_pose_schema = pa.schema(
+            [
+                pa.field("group_name", pa.string(), nullable=False),
+                pa.field("reference_frame", pa.string(), nullable=False),
+                pa.field("target_frame", pa.string(), nullable=False),
+                pa.field("target_pose", pose_type, nullable=False),
+                pa.field("velocity_scale", pa.float64(), nullable=False),
+                pa.field("acceleration_scale", pa.float64(), nullable=False),
+                pa.field("requested_duration_ns", pa.int64(), nullable=True),
+                pa.field("position_tolerance_m", pa.float64(), nullable=True),
+                pa.field("orientation_tolerance_rad", pa.float64(), nullable=True),
+            ]
+        )
+        cpp_move_pose = tmp_path / "cpp_move_pose.arrow"
+        subprocess.run([driver, "write-move-pose-goal", cpp_move_pose], check=True)
+        batch = _from_ipc_file(cpp_move_pose)
+        _assert_exact_schema(batch, move_pose_schema)
+        assert batch["target_pose"][0].as_py()["x"] == 0.4
+        assert batch["requested_duration_ns"][0].as_py() is None
+        assert batch["orientation_tolerance_rad"][0].as_py() is None
+
+        py_move_pose = tmp_path / "py_move_pose.arrow"
+        _to_ipc_file(
+            pa.RecordBatch.from_arrays(
+                [
+                    pa.array(["manipulator"], type=pa.string()),
+                    pa.array(["base"], type=pa.string()),
+                    pa.array(["tcp"], type=pa.string()),
+                    pa.array(
+                        [{"x": 0.6, "y": 0.1, "z": 0.2, "qx": 0.0, "qy": 0.0,
+                          "qz": 0.0, "qw": 1.0}],
+                        type=pose_type,
+                    ),
+                    pa.array([0.8], type=pa.float64()),
+                    pa.array([0.7], type=pa.float64()),
+                    pa.array([None], type=pa.int64()),
+                    pa.array([0.02], type=pa.float64()),
+                    pa.array([None], type=pa.float64()),
+                ],
+                schema=move_pose_schema,
+            ),
+            py_move_pose,
+        )
+        out = subprocess.check_output(
+            [driver, "read-move-pose-goal", py_move_pose], text=True
+        ).strip()
+        assert out == "manipulator base tcp 0.6 null 0.02"
 
     return 0
 

@@ -13,6 +13,7 @@ these interfaces.
 - `forge_msgs.v1.yaml` is the package manifest and transport contract.
 - `common.v1.yaml` defines conventions shared across domains.
 - `control.v1.yaml` defines robot and policy control messages.
+- `motion.v1.yaml` defines joint trajectory and group motion action payloads.
 - `geometry.v1.yaml` defines reusable geometry messages.
 - `interaction.v1.yaml` defines human interaction and teleoperation messages.
 - `perception.v1.yaml` defines perception result messages.
@@ -24,7 +25,8 @@ change the wire contract of existing messages.
 ## Transport Contract
 
 - Payloads are single-row Apache Arrow `RecordBatch` values.
-- The schema does not require Arrow metadata. Dora/IPC paths may drop metadata, so required semantics must be represented as real columns.
+- The schema does not require Arrow schema metadata. Dora/IPC paths may drop it, so domain payload semantics must be represented as real columns.
+- Motion action identity and lifecycle are the explicit exception: they use Dora's well-known event metadata keys `goal_id` and `goal_status`. Action recordings must preserve the Dora event metadata alongside the Arrow payload.
 - Core messages do not contain ROS-style `Header`, timestamp, or `frame_id`.
 - Timing comes from the Dora event context. Derived outputs should preserve the
   timestamp of the source event when they describe that source sample.
@@ -41,6 +43,10 @@ change the wire contract of existing messages.
   Python/C++ compatibility tests.
 
 ## Messages
+
+### Motion action payloads
+
+`motion.v1.yaml` defines reusable `JointTrajectoryPoint`, `JointTrajectory`, and `JointTolerance` values plus the Goal/Feedback/Result payloads for the `FollowJointTrajectory`, `MoveJoints`, and `MovePose` Dora actions. Durations are non-negative signed 64-bit integer nanoseconds and are relative to action or trajectory start, not wall-clock timestamps. Optional scalar values use Arrow nulls rather than numeric sentinels. Action payloads do not duplicate Dora's `goal_id` or `goal_status` metadata.
 
 ### JointState
 

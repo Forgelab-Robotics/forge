@@ -133,6 +133,26 @@ frame is supplied by Dora metadata or node configuration. High-level
 constructors may infer unorganized clouds from `x/y/z` by setting `height=1`,
 `width=len(x)`, and `is_dense` from finite XYZ values.
 
+## Motion Messages
+
+The motion API provides single-row Arrow payloads for joint trajectories and
+configured-group motion actions:
+
+- `JointTrajectoryPoint`, `JointTrajectory`, and `JointTolerance`
+- `FollowJointTrajectoryGoal`, `FollowJointTrajectoryFeedback`, and
+  `FollowJointTrajectoryResult`
+- `MoveJointsGoal`, `MoveJointsFeedback`, and `MoveJointsResult`
+- `MovePoseGoal`, `MovePoseFeedback`, and `MovePoseResult`
+
+Trajectory points and tolerances are encoded as nested Arrow structs, including
+`list<struct>` trajectory and tolerance fields. `MovePose*` messages reuse
+`Pose` as a nested struct. Optional scalar and pose fields are represented by
+Arrow nulls rather than sentinel values.
+
+`goal_id` and `goal_status` are Dora action metadata and are intentionally not
+included in payload columns. Domain result codes are separate from Dora's
+lowercase terminal `goal_status` values.
+
 ## Arrow Format
 
 All core messages encode to a single-row `pyarrow.RecordBatch`.

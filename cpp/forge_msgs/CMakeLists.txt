@@ -17,9 +17,11 @@ add_library(forge_msgs_cpp
   src/control.cpp
   src/geometry.cpp
   src/forge_msgs.cpp
+  src/motion.cpp
   src/perception.cpp
   src/sensor.cpp
   src/text.cpp
+  src/trajectory.cpp
 )
 add_library(forge_msgs::forge_msgs ALIAS forge_msgs_cpp)
 
@@ -94,6 +96,13 @@ if(FORGE_MSGS_CPP_BUILD_TESTS)
         --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
     )
     set_tests_properties(forge_msgs_python_cpp_interop PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+      NAME forge_msgs_motion_python_cpp_interop
+      COMMAND Python3::Interpreter
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_motion_python_cpp_interop.py
+        --driver $<TARGET_FILE:forge_msgs_ipc_fixture>
+    )
   endif()
 
   set(FORGE_MSGS_CPP_CONSUMER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/fetch_content_consumer)
@@ -103,6 +112,7 @@ if(FORGE_MSGS_CPP_BUILD_TESTS)
       -S ${CMAKE_CURRENT_SOURCE_DIR}/tests/fetch_content_consumer
       -B ${FORGE_MSGS_CPP_CONSUMER_BUILD_DIR}
       -G ${CMAKE_GENERATOR}
+      -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
       -DFORGE_FETCH_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../..
   )
   add_test(

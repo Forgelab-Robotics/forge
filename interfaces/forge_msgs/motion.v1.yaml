@@ -1,0 +1,500 @@
+version: 1
+package: forge_msgs
+domain: motion
+
+transport:
+  pattern: dora_action
+  metadata:
+    goal_feedback_cancel_result:
+      - goal_id
+    result:
+      - goal_status
+  notes:
+    - goal_id and goal_status are Dora well-known event metadata and are not duplicated in payload columns.
+    - goal_status must be one of the lowercase Dora values succeeded, aborted, or canceled.
+    - All payloads are single-row Arrow RecordBatch values.
+    - Every joint name item, when present, must be non-empty; fields marked unique_items must not contain duplicates.
+
+enums:
+  FollowJointTrajectoryErrorCode:
+    arrow: utf8
+    values:
+      - SUCCESS
+      - INVALID_GOAL
+      - INVALID_JOINTS
+      - BUSY
+      - NO_FRESH_ROBOT_STATE
+      - START_STATE_MISMATCH
+      - PATH_TOLERANCE_VIOLATED
+      - GOAL_TOLERANCE_VIOLATED
+      - FEEDBACK_STALE
+      - EXECUTION_TIMED_OUT
+      - HARDWARE_FAULT
+      - CANCELED
+      - INTERNAL_ERROR
+
+  MotionPhase:
+    arrow: utf8
+    values:
+      - VALIDATING
+      - PLANNING
+      - WAITING_FOR_CONTROLLER
+      - EXECUTING
+      - SETTLING
+
+  MotionErrorCode:
+    arrow: utf8
+    values:
+      - SUCCESS
+      - INVALID_GOAL
+      - BUSY
+      - INVALID_GROUP
+      - INVALID_JOINTS
+      - INVALID_FRAME
+      - NO_FRESH_ROBOT_STATE
+      - IK_FAILED
+      - IK_TIMED_OUT
+      - JOINT_LIMIT_VIOLATION
+      - PLANNING_FAILED
+      - TRAJECTORY_GENERATION_FAILED
+      - TRAJECTORY_REJECTED
+      - TRAJECTORY_EXECUTION_FAILED
+      - FINAL_JOINT_TOLERANCE_VIOLATED
+      - FINAL_POSE_TOLERANCE_VIOLATED
+      - CANCELED
+      - INTERNAL_ERROR
+
+messages:
+  JointTrajectoryPoint:
+    purpose: Joint-space trajectory sample at a duration relative to trajectory start.
+    row_count: single
+    fields:
+      positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: false
+      velocities:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      accelerations:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      effort:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      time_from_start_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+    validation:
+      - positions must contain at least one finite value.
+      - velocities, accelerations, and effort must either be empty or contain the same number of finite values as positions.
+      - time_from_start_ns must be non-negative.
+
+  JointTrajectory:
+    purpose: Time-ordered trajectory for a named joint group.
+    row_count: single
+    fields:
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      points:
+        arrow: "list<struct<positions: list<float64>, velocities: list<float64>, accelerations: list<float64>, effort: list<float64>, time_from_start_ns: int64>>"
+        required: true
+        empty_allowed: false
+        item_message: JointTrajectoryPoint
+    validation:
+      - joint_names must contain unique non-empty names.
+      - points must contain at least one JointTrajectoryPoint.
+      - Every point positions list must have the same length as joint_names.
+      - Every non-empty point velocities, accelerations, and effort list must have the same length as joint_names.
+      - time_from_start_ns values must be strictly increasing.
+      - The first point may have time_from_start_ns equal to zero or greater than zero.
+
+  JointTolerance:
+    purpose: Optional position, velocity, and acceleration error limits for one joint.
+    row_count: single
+    fields:
+      joint_name:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      position:
+        arrow: float64
+        required: false
+        nullable: true
+      velocity:
+        arrow: float64
+        required: false
+        nullable: true
+      acceleration:
+        arrow: float64
+        required: false
+        nullable: true
+    validation:
+      - joint_name must be non-empty.
+      - At least one of position, velocity, or acceleration must be specified.
+      - Specified tolerances must be finite and non-negative.
+      - Null means unspecified; zero is a real zero tolerance and has no sentinel meaning.
+
+  FollowJointTrajectoryGoal:
+    purpose: Goal payload for the Dora FollowJointTrajectory action served by a joint trajectory controller.
+    row_count: single
+    fields:
+      trajectory:
+        arrow: "struct<joint_names: list<utf8>, points: list<struct<positions: list<float64>, velocities: list<float64>, accelerations: list<float64>, effort: list<float64>, time_from_start_ns: int64>>>"
+        required: true
+        message: JointTrajectory
+      path_tolerance:
+        arrow: "list<struct<joint_name: utf8, position: float64?, velocity: float64?, acceleration: float64?>>"
+        required: true
+        empty_allowed: true
+        item_message: JointTolerance
+      goal_tolerance:
+        arrow: "list<struct<joint_name: utf8, position: float64?, velocity: float64?, acceleration: float64?>>"
+        required: true
+        empty_allowed: true
+        item_message: JointTolerance
+      goal_time_tolerance_ns:
+        arrow: int64
+        required: false
+        nullable: true
+        unit: nanosecond
+    validation:
+      - trajectory must satisfy JointTrajectory validation.
+      - Joint names in each tolerance list must be unique and belong to trajectory.joint_names.
+      - Empty tolerance lists select controller defaults.
+      - goal_time_tolerance_ns, when specified, must be non-negative.
+
+  FollowJointTrajectoryFeedback:
+    purpose: Periodic desired, actual, and error samples for an executing trajectory goal.
+    row_count: single
+    fields:
+      sequence:
+        arrow: uint64
+        required: true
+      point_index:
+        arrow: uint32
+        required: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      duration_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      desired:
+        arrow: "struct<positions: list<float64>, velocities: list<float64>, accelerations: list<float64>, effort: list<float64>, time_from_start_ns: int64>"
+        required: true
+        message: JointTrajectoryPoint
+      actual:
+        arrow: "struct<positions: list<float64>, velocities: list<float64>, accelerations: list<float64>, effort: list<float64>, time_from_start_ns: int64>"
+        required: true
+        message: JointTrajectoryPoint
+      error:
+        arrow: "struct<positions: list<float64>, velocities: list<float64>, accelerations: list<float64>, effort: list<float64>, time_from_start_ns: int64>"
+        required: true
+        message: JointTrajectoryPoint
+    validation:
+      - elapsed_ns and duration_ns must be non-negative.
+      - elapsed_ns may exceed duration_ns while settling within goal_time_tolerance_ns.
+      - desired, actual, and error must have equal positions lengths.
+
+  FollowJointTrajectoryResult:
+    purpose: Terminal domain result for a FollowJointTrajectory action.
+    row_count: single
+    fields:
+      error_code:
+        arrow: utf8
+        required: true
+        enum: FollowJointTrajectoryErrorCode
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      final_position_error:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      final_velocity_error:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+    validation:
+      - elapsed_ns must be non-negative.
+      - joint_names may be empty when execution never started.
+      - final_position_error and final_velocity_error must either be empty or have the same length as joint_names.
+      - SUCCESS is paired with Dora goal_status succeeded, CANCELED with canceled, and all other errors with aborted.
+
+  MoveJointsGoal:
+    purpose: Joint target goal for a configured kinematic group motion server.
+    row_count: single
+    fields:
+      group_name:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: false
+      velocity_scale:
+        arrow: float64
+        required: true
+      acceleration_scale:
+        arrow: float64
+        required: true
+      requested_duration_ns:
+        arrow: int64
+        required: false
+        nullable: true
+        unit: nanosecond
+    validation:
+      - group_name and joint_names must be non-empty.
+      - positions must contain one finite value per joint name.
+      - velocity_scale and acceleration_scale must be finite and in the interval (0, 1].
+      - requested_duration_ns, when specified, must be non-negative.
+      - Motion server configuration may require joint_names to equal the complete configured group.
+
+  MoveJointsFeedback:
+    purpose: Periodic planning and execution feedback for a MoveJoints action.
+    row_count: single
+    fields:
+      phase:
+        arrow: utf8
+        required: true
+        enum: MotionPhase
+      progress:
+        arrow: float64
+        required: false
+        nullable: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      estimated_duration_ns:
+        arrow: int64
+        required: false
+        nullable: true
+        unit: nanosecond
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: false
+      actual_positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      target_positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: false
+      position_errors:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+    validation:
+      - progress, when specified, must be finite and in the interval [0, 1].
+      - elapsed_ns and estimated_duration_ns, when specified, must be non-negative.
+      - target_positions must have the same length as joint_names.
+      - actual_positions and position_errors must either be empty or have the same length as joint_names.
+
+  MoveJointsResult:
+    purpose: Terminal domain result for a MoveJoints action.
+    row_count: single
+    fields:
+      error_code:
+        arrow: utf8
+        required: true
+        enum: MotionErrorCode
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      final_positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+      final_position_errors:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+    validation:
+      - elapsed_ns must be non-negative.
+      - joint_names may be empty when planning or execution never started.
+      - final_positions and final_position_errors must either be empty or have the same length as joint_names.
+
+  MovePoseGoal:
+    purpose: Cartesian pose target goal for a configured kinematic group motion server.
+    row_count: single
+    fields:
+      group_name:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      reference_frame:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      target_frame:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      target_pose:
+        arrow: "struct<x: float64, y: float64, z: float64, qx: float64, qy: float64, qz: float64, qw: float64>"
+        required: true
+        message: Pose
+      velocity_scale:
+        arrow: float64
+        required: true
+      acceleration_scale:
+        arrow: float64
+        required: true
+      requested_duration_ns:
+        arrow: int64
+        required: false
+        nullable: true
+        unit: nanosecond
+      position_tolerance_m:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: meter
+      orientation_tolerance_rad:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: radian
+    validation:
+      - group_name, reference_frame, and target_frame must be non-empty.
+      - target_pose must satisfy Pose validation and its quaternion is not silently normalized.
+      - velocity_scale and acceleration_scale must be finite and in the interval (0, 1].
+      - requested_duration_ns, when specified, must be non-negative.
+      - Specified pose tolerances must be finite and non-negative.
+      - The pose means target_frame expressed in reference_frame.
+
+  MovePoseFeedback:
+    purpose: Periodic planning and execution feedback for a MovePose action.
+    row_count: single
+    fields:
+      phase:
+        arrow: utf8
+        required: true
+        enum: MotionPhase
+      progress:
+        arrow: float64
+        required: false
+        nullable: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      estimated_duration_ns:
+        arrow: int64
+        required: false
+        nullable: true
+        unit: nanosecond
+      actual_pose:
+        arrow: "struct<x: float64, y: float64, z: float64, qx: float64, qy: float64, qz: float64, qw: float64>"
+        required: false
+        nullable: true
+        message: Pose
+      position_error_m:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: meter
+      orientation_error_rad:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: radian
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+    validation:
+      - progress, when specified, must be finite and in the interval [0, 1].
+      - elapsed_ns and estimated_duration_ns, when specified, must be non-negative.
+      - actual_pose, when specified, must satisfy Pose validation.
+      - Specified pose errors must be finite and non-negative.
+
+  MovePoseResult:
+    purpose: Terminal domain result for a MovePose action.
+    row_count: single
+    fields:
+      error_code:
+        arrow: utf8
+        required: true
+        enum: MotionErrorCode
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      final_pose:
+        arrow: "struct<x: float64, y: float64, z: float64, qx: float64, qy: float64, qz: float64, qw: float64>"
+        required: false
+        nullable: true
+        message: Pose
+      final_position_error_m:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: meter
+      final_orientation_error_rad:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: radian
+      joint_names:
+        arrow: list<utf8>
+        required: true
+        unique_items: true
+        empty_allowed: true
+      final_joint_positions:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+    validation:
+      - elapsed_ns must be non-negative.
+      - final_pose, when specified, must satisfy Pose validation.
+      - Specified pose errors must be finite and non-negative.
+      - final_joint_positions must either be empty or have the same length as joint_names.

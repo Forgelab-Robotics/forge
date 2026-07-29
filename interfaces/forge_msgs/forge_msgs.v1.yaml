@@ -12,6 +12,7 @@ transport:
 schema_files:
   common: common.v1.yaml
   control: control.v1.yaml
+  motion: motion.v1.yaml
   geometry: geometry.v1.yaml
   interaction: interaction.v1.yaml
   perception: perception.v1.yaml

@@ -8,7 +8,8 @@ namespace {
 
 int Usage() {
   std::cerr << "usage: forge_msgs_ipc_fixture <command> <path>\n"
-            << "commands: write/read-{text,audio,classification,keypoint2d,keypoint3d,segmentation}\n";
+            << "commands: write/read-{text,audio,classification,keypoint2d,keypoint3d,segmentation,"
+               "follow-joint-trajectory-goal,move-joints-goal,move-pose-goal}\n";
   return 2;
 }
 
@@ -207,6 +208,115 @@ int main(int argc, char** argv) {
       } else {
         std::cout << value->score.front() << "\n";
       }
+    }
+    return 0;
+  }
+
+  if (command == "write-follow-joint-trajectory-goal") {
+    forge_msgs::JointTrajectory trajectory{
+        {"joint_1", "joint_2"},
+        {{{0.0, 0.5}, {}, {}, {}, 0},
+         {{1.0, 1.5}, {0.1, 0.2}, {}, {}, 1000000}}};
+    forge_msgs::FollowJointTrajectoryGoal value{
+        trajectory,
+        {{"joint_1", 0.05, std::nullopt, std::nullopt}},
+        {},
+        2000000};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-follow-joint-trajectory-goal") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::FollowJointTrajectoryGoal::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->trajectory.joint_names.size() << " "
+              << value->trajectory.points.size() << " " << value->path_tolerance.size() << " ";
+    if (value->goal_time_tolerance_ns) {
+      std::cout << *value->goal_time_tolerance_ns << "\n";
+    } else {
+      std::cout << "null\n";
+    }
+    return 0;
+  }
+
+  if (command == "write-move-joints-goal") {
+    forge_msgs::MoveJointsGoal value{"arm", {"joint_1", "joint_2"}, {1.0, 1.5},
+                                     0.5, 0.4, std::nullopt};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-move-joints-goal") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::MoveJointsGoal::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->group_name << " " << value->joint_names.size() << " "
+              << value->positions.front() << " ";
+    if (value->requested_duration_ns) {
+      std::cout << *value->requested_duration_ns << "\n";
+    } else {
+      std::cout << "null\n";
+    }
+    return 0;
+  }
+
+  if (command == "write-move-pose-goal") {
+    forge_msgs::MovePoseGoal value{"arm", "world", "tool0",
+                                   forge_msgs::Pose::Identity(0.4, 0.2, 0.3),
+                                   0.5, 0.4, std::nullopt, 0.01, std::nullopt};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-move-pose-goal") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::MovePoseGoal::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->group_name << " " << value->reference_frame << " "
+              << value->target_frame << " " << value->target_pose.x << " ";
+    if (value->requested_duration_ns) {
+      std::cout << *value->requested_duration_ns << " ";
+    } else {
+      std::cout << "null ";
+    }
+    if (value->position_tolerance_m) {
+      std::cout << *value->position_tolerance_m << "\n";
+    } else {
+      std::cout << "null\n";
     }
     return 0;
   }

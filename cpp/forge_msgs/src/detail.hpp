@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -39,9 +40,43 @@ inline arrow::Result<std::shared_ptr<arrow::Array>> ScalarU32(std::uint32_t valu
   return builder.Finish();
 }
 
+inline arrow::Result<std::shared_ptr<arrow::Array>> ScalarU64(std::uint64_t value) {
+  arrow::UInt64Builder builder;
+  ARROW_RETURN_NOT_OK(builder.Append(value));
+  return builder.Finish();
+}
+
+inline arrow::Result<std::shared_ptr<arrow::Array>> ScalarI64(std::int64_t value) {
+  arrow::Int64Builder builder;
+  ARROW_RETURN_NOT_OK(builder.Append(value));
+  return builder.Finish();
+}
+
+inline arrow::Result<std::shared_ptr<arrow::Array>> OptionalI64(
+    const std::optional<std::int64_t>& value) {
+  arrow::Int64Builder builder;
+  if (value) {
+    ARROW_RETURN_NOT_OK(builder.Append(*value));
+  } else {
+    ARROW_RETURN_NOT_OK(builder.AppendNull());
+  }
+  return builder.Finish();
+}
+
 inline arrow::Result<std::shared_ptr<arrow::Array>> ScalarF64(double value) {
   arrow::DoubleBuilder builder;
   ARROW_RETURN_NOT_OK(builder.Append(value));
+  return builder.Finish();
+}
+
+inline arrow::Result<std::shared_ptr<arrow::Array>> OptionalF64(
+    const std::optional<double>& value) {
+  arrow::DoubleBuilder builder;
+  if (value) {
+    ARROW_RETURN_NOT_OK(builder.Append(*value));
+  } else {
+    ARROW_RETURN_NOT_OK(builder.AppendNull());
+  }
   return builder.Finish();
 }
 
@@ -181,9 +216,37 @@ inline arrow::Result<std::uint32_t> ReadU32(const arrow::RecordBatch& batch, con
   return array->Value(0);
 }
 
+inline arrow::Result<std::uint64_t> ReadU64(const arrow::RecordBatch& batch,
+                                            const std::string& name) {
+  ARROW_ASSIGN_OR_RAISE(auto array, ScalarColumn<arrow::UInt64Array>(batch, name));
+  return array->Value(0);
+}
+
+inline arrow::Result<std::int64_t> ReadI64(const arrow::RecordBatch& batch,
+                                           const std::string& name) {
+  ARROW_ASSIGN_OR_RAISE(auto array, ScalarColumn<arrow::Int64Array>(batch, name));
+  return array->Value(0);
+}
+
+inline arrow::Result<std::optional<std::int64_t>> ReadOptionalI64(
+    const arrow::RecordBatch& batch, const std::string& name) {
+  ARROW_ASSIGN_OR_RAISE(auto array, ColumnAs<arrow::Int64Array>(batch, name));
+  if (array->length() != 1) return arrow::Status::Invalid(name, " must contain one row");
+  if (array->IsNull(0)) return std::optional<std::int64_t>{};
+  return std::optional<std::int64_t>{array->Value(0)};
+}
+
 inline arrow::Result<double> ReadF64(const arrow::RecordBatch& batch, const std::string& name) {
   ARROW_ASSIGN_OR_RAISE(auto array, ScalarColumn<arrow::DoubleArray>(batch, name));
   return array->Value(0);
+}
+
+inline arrow::Result<std::optional<double>> ReadOptionalF64(
+    const arrow::RecordBatch& batch, const std::string& name) {
+  ARROW_ASSIGN_OR_RAISE(auto array, ColumnAs<arrow::DoubleArray>(batch, name));
+  if (array->length() != 1) return arrow::Status::Invalid(name, " must contain one row");
+  if (array->IsNull(0)) return std::optional<double>{};
+  return std::optional<double>{array->Value(0)};
 }
 
 inline arrow::Result<bool> ReadBool(const arrow::RecordBatch& batch, const std::string& name) {
@@ -431,6 +494,18 @@ inline std::size_t BytesPerSample(const std::string& sample_format) {
   if (sample_format == "s16le") return 2;
   return 0;
 }
+
+arrow::Result<std::shared_ptr<arrow::Array>> StructScalar(
+    const arrow::RecordBatch& batch, bool valid = true);
+arrow::Result<std::shared_ptr<arrow::Array>> StructList(
+    const std::vector<std::shared_ptr<arrow::RecordBatch>>& batches,
+    const std::vector<std::shared_ptr<arrow::Field>>& fields);
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> ReadStruct(
+    const arrow::RecordBatch& batch, const std::string& name);
+arrow::Result<std::optional<std::shared_ptr<arrow::RecordBatch>>> ReadOptionalStruct(
+    const arrow::RecordBatch& batch, const std::string& name);
+arrow::Result<std::vector<std::shared_ptr<arrow::RecordBatch>>> ReadStructList(
+    const arrow::RecordBatch& batch, const std::string& name);
 
 inline std::size_t BytesPerPixel(const std::string& encoding) {
   if (encoding == "rgb8" || encoding == "bgr8") return 3;

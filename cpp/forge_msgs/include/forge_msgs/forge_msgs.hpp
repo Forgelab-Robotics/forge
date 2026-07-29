@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -162,6 +163,222 @@ struct Pose {
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
   static arrow::Result<Pose> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct JointTrajectoryPoint {
+  std::vector<double> positions;
+  std::vector<double> velocities;
+  std::vector<double> accelerations;
+  std::vector<double> effort;
+  std::int64_t time_from_start_ns = 0;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<JointTrajectoryPoint> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct JointTrajectory {
+  std::vector<std::string> joint_names;
+  std::vector<JointTrajectoryPoint> points;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<JointTrajectory> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct JointTolerance {
+  std::string joint_name;
+  std::optional<double> position;
+  std::optional<double> velocity;
+  std::optional<double> acceleration;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<JointTolerance> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+enum class FollowJointTrajectoryErrorCode {
+  Success,
+  InvalidGoal,
+  InvalidJoints,
+  Busy,
+  NoFreshRobotState,
+  StartStateMismatch,
+  PathToleranceViolated,
+  GoalToleranceViolated,
+  FeedbackStale,
+  ExecutionTimedOut,
+  HardwareFault,
+  Canceled,
+  InternalError,
+};
+
+std::string ToString(FollowJointTrajectoryErrorCode value);
+arrow::Result<FollowJointTrajectoryErrorCode> FollowJointTrajectoryErrorCodeFromString(
+    const std::string& value);
+
+enum class MotionPhase {
+  Validating,
+  Planning,
+  WaitingForController,
+  Executing,
+  Settling,
+};
+
+std::string ToString(MotionPhase value);
+arrow::Result<MotionPhase> MotionPhaseFromString(const std::string& value);
+
+enum class MotionErrorCode {
+  Success,
+  InvalidGoal,
+  Busy,
+  InvalidGroup,
+  InvalidJoints,
+  InvalidFrame,
+  NoFreshRobotState,
+  IkFailed,
+  IkTimedOut,
+  JointLimitViolation,
+  PlanningFailed,
+  TrajectoryGenerationFailed,
+  TrajectoryRejected,
+  TrajectoryExecutionFailed,
+  FinalJointToleranceViolated,
+  FinalPoseToleranceViolated,
+  Canceled,
+  InternalError,
+};
+
+std::string ToString(MotionErrorCode value);
+arrow::Result<MotionErrorCode> MotionErrorCodeFromString(const std::string& value);
+
+struct FollowJointTrajectoryGoal {
+  JointTrajectory trajectory;
+  std::vector<JointTolerance> path_tolerance;
+  std::vector<JointTolerance> goal_tolerance;
+  std::optional<std::int64_t> goal_time_tolerance_ns;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<FollowJointTrajectoryGoal> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct FollowJointTrajectoryFeedback {
+  std::uint64_t sequence = 0;
+  std::uint32_t point_index = 0;
+  std::int64_t elapsed_ns = 0;
+  std::int64_t duration_ns = 0;
+  JointTrajectoryPoint desired;
+  JointTrajectoryPoint actual;
+  JointTrajectoryPoint error;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<FollowJointTrajectoryFeedback> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct FollowJointTrajectoryResult {
+  FollowJointTrajectoryErrorCode error_code = FollowJointTrajectoryErrorCode::Success;
+  std::string message;
+  std::int64_t elapsed_ns = 0;
+  std::vector<std::string> joint_names;
+  std::vector<double> final_position_error;
+  std::vector<double> final_velocity_error;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<FollowJointTrajectoryResult> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct MoveJointsGoal {
+  std::string group_name;
+  std::vector<std::string> joint_names;
+  std::vector<double> positions;
+  double velocity_scale = 1.0;
+  double acceleration_scale = 1.0;
+  std::optional<std::int64_t> requested_duration_ns;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MoveJointsGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct MoveJointsFeedback {
+  MotionPhase phase = MotionPhase::Validating;
+  std::optional<double> progress;
+  std::int64_t elapsed_ns = 0;
+  std::optional<std::int64_t> estimated_duration_ns;
+  std::vector<std::string> joint_names;
+  std::vector<double> actual_positions;
+  std::vector<double> target_positions;
+  std::vector<double> position_errors;
+  std::string message;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MoveJointsFeedback> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct MoveJointsResult {
+  MotionErrorCode error_code = MotionErrorCode::Success;
+  std::string message;
+  std::int64_t elapsed_ns = 0;
+  std::vector<std::string> joint_names;
+  std::vector<double> final_positions;
+  std::vector<double> final_position_errors;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MoveJointsResult> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct MovePoseGoal {
+  std::string group_name;
+  std::string reference_frame;
+  std::string target_frame;
+  Pose target_pose;
+  double velocity_scale = 1.0;
+  double acceleration_scale = 1.0;
+  std::optional<std::int64_t> requested_duration_ns;
+  std::optional<double> position_tolerance_m;
+  std::optional<double> orientation_tolerance_rad;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MovePoseGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct MovePoseFeedback {
+  MotionPhase phase = MotionPhase::Validating;
+  std::optional<double> progress;
+  std::int64_t elapsed_ns = 0;
+  std::optional<std::int64_t> estimated_duration_ns;
+  std::optional<Pose> actual_pose;
+  std::optional<double> position_error_m;
+  std::optional<double> orientation_error_rad;
+  std::string message;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MovePoseFeedback> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct MovePoseResult {
+  MotionErrorCode error_code = MotionErrorCode::Success;
+  std::string message;
+  std::int64_t elapsed_ns = 0;
+  std::optional<Pose> final_pose;
+  std::optional<double> final_position_error_m;
+  std::optional<double> final_orientation_error_rad;
+  std::vector<std::string> joint_names;
+  std::vector<double> final_joint_positions;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<MovePoseResult> FromRecordBatch(const arrow::RecordBatch& batch);
 };
 
 struct PoseSet {
