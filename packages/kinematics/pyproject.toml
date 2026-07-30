@@ -14,6 +14,11 @@ dependencies = [
     "pin>=3.0,<5",
 ]
 
+[project.optional-dependencies]
+least-squares = [
+    "scipy>=1.16,<2",
+]
+
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"

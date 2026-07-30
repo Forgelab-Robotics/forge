@@ -1,19 +1,20 @@
 # forge-kinematics
 
-Deterministic URDF forward kinematics, geometric Jacobians, and damped-least-squares inverse kinematics backed by [Pinocchio](https://stack-of-tasks.github.io/pinocchio/).
+Deterministic URDF forward kinematics, geometric Jacobians, and Pinocchio-based inverse kinematics with damped-least-squares and bounded nonlinear least-squares backends.
 
 ## Scope
 
-The package is a model and solver library. It does not depend on ROS, Dora, robot drivers, teleoperation policies, collision checking, or motion execution. The DLS solver uses Pinocchio's numerical API and NumPy directly; it does not require CasADi or Conda.
+The package is a model and solver library. It does not depend on ROS, Dora, robot drivers, teleoperation policies, collision checking, or motion execution. The DLS solver uses Pinocchio's numerical API and NumPy directly. The bounded least-squares solver adds an optional SciPy dependency. Neither backend requires CasADi or Conda.
 
 - A `RobotModel` owns the immutable full URDF model, while `RobotState` carries a complete named-joint configuration.
 - A `KinematicGroup` declares ordered active joints, a base frame, one or more tip frames, and optional permanently locked joints.
 - `KinematicsContext` owns mutable Pinocchio evaluation storage. Contexts are per-thread; each IK solve creates and reuses one private context.
 - `IKRequest` groups the seed, targets, full context state, dynamic fixed joints, options, and an optional state-validity callback.
-- `KinematicsSolver` is the backend-independent solver protocol implemented by `PinocchioDlsSolver`.
+- `KinematicsSolver` is the backend-independent solver protocol implemented by `PinocchioDlsSolver` and `PinocchioBoundedLeastSquaresSolver`.
 - Public joint vectors always follow the caller-declared group order, independently of Pinocchio's internal `q`/`v` layout.
 - FK returns `T_base_tip`; Jacobians are expressed in base-aligned coordinates with linear rows followed by angular rows.
 - `PinocchioDlsSolver` performs one deterministic seed-based solve. It does not perform random restarts or silently accept approximate results.
+- `PinocchioBoundedLeastSquaresSolver` minimizes the same weighted pose residual with analytic Pinocchio Jacobians, per-joint box constraints, optional neutral/seed regularization, and a strict function-evaluation budget.
 
 Version 1 supports independent single-DoF revolute, continuous, and prismatic active joints. Floating, planar, mimic, collision-aware, and search IK are intentionally out of scope.
 
@@ -23,6 +24,12 @@ From the Forge workspace:
 
 ```bash
 uv sync --package forge-kinematics
+```
+
+Install the optional bounded least-squares backend with:
+
+```bash
+uv sync --package forge-kinematics --extra least-squares
 ```
 
 The top-level `forge` meta package does not depend on `forge-kinematics`, so downstream projects opt into the Pinocchio dependency explicitly.
@@ -104,5 +111,7 @@ commanded_positions = result.solution
 `task_weights` are per-axis and are multiplied by the overall position and orientation weights. This supports position-only, orientation-only, or partially constrained poses. Backend-independent request controls such as timeout, tolerances, approximate-result policy, and total displacement live in `IKOptions`. DLS algorithm controls such as damping, iteration step, singularity handling, and null-space avoidance live in the solver's immutable `DlsConfig`. `max_iteration_joint_step` limits each numerical update, while `max_solution_joint_displacement` independently limits each joint's total tangent displacement from the effective seed. The solver reports adaptive damping, singularity, joint-limit margin, and the null-space avoidance activation coefficient. Limit avoidance never moves an already satisfied target away from its seed.
 
 Failed solves return no `solution`; callers must explicitly opt into `approximate_solution` through `IKOptions`. Dynamic `fixed_joint_positions` remain present in the caller-ordered result but are removed from the IK Jacobian for that solve. A converged candidate rejected by the validator returns `REJECTED_BY_VALIDATOR` and is never exposed as a solution; rejected approximate candidates are omitted while preserving the solve's original failure status.
+
+For bounded solves, construct `BoundedLeastSquaresConfig` with optional `joint_position_bounds` or native-unit `joint_limit_margins`. These interior bounds apply only to free joints; dynamic fixed joints are still checked against the URDF hard limits. Absolute `joint_position_bounds` are intentionally rejected for continuous joints because a linear interval is ambiguous across the wrap boundary; use `IKOptions.max_solution_joint_displacement` for a seed-relative manifold bound instead. A free seed outside the effective box is projected before optimization and reported through `IKResult.seed_was_projected`. `regularization_weight` penalizes displacement from the group's neutral posture, while `smooth_weight` penalizes displacement from the effective seed. `max_nfev` strictly bounds model kinematics evaluations and `IKOptions.timeout_s` provides an independent soft deadline; on failure, the opt-in approximate result is the evaluated feasible candidate with the lowest pose residual, not merely SciPy's final regularized state.
 
 Every target names its `reference_frame`, which must equal the group's base frame; frame transforms stay in the adapter layer. `IKResult.raw_*` errors describe the complete pose difference, while `active_*` errors include only enabled task axes and determine convergence. `timeout_s` is a soft deadline: native Pinocchio or linear-algebra calls already in progress cannot be preempted.

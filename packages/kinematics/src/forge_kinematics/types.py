@@ -295,6 +295,7 @@ class IKResult:
     effective_damping: float | None
     minimum_joint_limit_margin: float | None
     joint_limit_avoidance_activity: float
+    seed_was_projected: bool
     _solution_data: bytes | None = field(repr=False)
     _approximate_solution_data: bytes | None = field(repr=False)
 
@@ -317,6 +318,7 @@ class IKResult:
         effective_damping: float | None = None,
         minimum_joint_limit_margin: float | None = None,
         joint_limit_avoidance_activity: float = 0.0,
+        seed_was_projected: bool = False,
     ) -> None:
         if not isinstance(status, IKStatus):
             raise TypeError("status must be an IKStatus")
@@ -394,6 +396,8 @@ class IKResult:
             joint_limit_avoidance_activity,
             nonnegative=True,
         )
+        if not isinstance(seed_was_projected, bool):
+            raise TypeError("seed_was_projected must be a bool")
         if not isinstance(message, str):
             raise TypeError("message must be a string")
 
@@ -426,6 +430,7 @@ class IKResult:
         object.__setattr__(
             self, "joint_limit_avoidance_activity", canonical_avoidance_activity
         )
+        object.__setattr__(self, "seed_was_projected", seed_was_projected)
         object.__setattr__(self, "_solution_data", solution_data)
         object.__setattr__(
             self, "_approximate_solution_data", approximate_solution_data
@@ -477,6 +482,7 @@ class IKResult:
             and self.minimum_joint_limit_margin == other.minimum_joint_limit_margin
             and self.joint_limit_avoidance_activity
             == other.joint_limit_avoidance_activity
+            and self.seed_was_projected == other.seed_was_projected
         )
 
     def __deepcopy__(self, memo: dict[int, object]) -> IKResult:
@@ -501,5 +507,6 @@ class IKResult:
                 self.effective_damping,
                 self.minimum_joint_limit_margin,
                 self.joint_limit_avoidance_activity,
+                self.seed_was_projected,
             ),
         )
