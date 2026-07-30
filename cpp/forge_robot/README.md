@@ -12,7 +12,7 @@ Implement `forge_robot::RobotDriver` for hardware-specific drivers:
 - `Disconnect()` releases hardware resources and should be safe to call during
   shutdown.
 - `GetState()` returns a `forge_msgs::JointState`.
-- `SetCommand()` consumes a `forge_msgs::JointCommand`.
+- `SetCommand()` consumes a sparse `forge_msgs::JointCommand`: only joints listed in `name` are updated, and omitted joints retain their prior target.
 - `JointOrder()` may return a fixed joint order for runner-side validation.
 
 Drivers that support planar base velocity commands can also inherit

@@ -30,7 +30,7 @@ class RobotDriver(Protocol):
         ...
 
     def set_command(self, command: JointCommand) -> None:
-        """下发关节命令到硬件；实现方应做限位等安全处理。"""
+        """下发 sparse 关节命令；只更新 name 中列出的执行器并做安全限位。"""
         ...
 
 
@@ -73,5 +73,5 @@ class BaseRobotDriver(ABC):
 
     @abstractmethod
     def set_command(self, command: JointCommand) -> None:
-        """下发关节命令到硬件。"""
+        """下发 sparse 关节命令，未列出的执行器必须保持原目标。"""
         ...

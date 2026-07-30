@@ -221,6 +221,13 @@ def test_joint_command_roundtrip_and_unitree_fields() -> None:
     )
 
 
+def test_joint_command_sparse_update_roundtrip() -> None:
+    command = JointCommand(name=["gripper"], position=[0.04])
+
+    assert JointCommand.from_arrow(command.to_arrow()) == command
+    assert command.name == ["gripper"]
+
+
 def test_joint_command_reads_legacy_arrow_without_mode() -> None:
     batch = pa.RecordBatch.from_pydict(
         {

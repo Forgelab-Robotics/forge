@@ -109,8 +109,16 @@ void TestArrowValidationAndConversion() {
   assert(batch.ok());
   auto valid = forge_robot::ValidateRobotControlRecordBatch(**batch, {"shoulder", "elbow"});
   assert(valid.ok());
-  auto missing = forge_robot::ValidateRobotControlRecordBatch(**batch, {"shoulder", "wrist"});
-  assert(!missing.ok());
+  forge_msgs::JointCommand sparse_command{
+      {"shoulder"}, "position", {1.0}, {}, {}, {}, {}};
+  auto sparse_batch = sparse_command.ToRecordBatch();
+  assert(sparse_batch.ok());
+  auto sparse = forge_robot::ValidateRobotControlRecordBatch(
+      **sparse_batch, {"shoulder", "elbow"}, true);
+  assert(sparse.ok());
+  auto unexpected = forge_robot::ValidateRobotControlRecordBatch(
+      **batch, {"shoulder", "wrist"}, true);
+  assert(!unexpected.ok());
 
   forge_msgs::JointState state{{"shoulder", "elbow"}, {3.0, 4.0}, {}, {}};
   auto mirror = forge_robot::JointStateToCommand(state);

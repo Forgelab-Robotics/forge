@@ -13,7 +13,7 @@ Message payloads use `forge_msgs.JointState`, `forge_msgs.JointCommand`, and opt
 The standard Dora node loop uses fixed input semantics:
 
 - input `tick` to publish `state`
-- input `action` as a low-level `JointCommand` for VLA/policy joint actions
+- input `action` as a sparse low-level `JointCommand`; drivers update only joints listed in `name` and retain targets for omitted joints
 - input `master_state` as a leader `JointState` mirrored to a low-level position `JointCommand`
 - input `locomotion_command` as a high-level `LocomotionCommand` when the driver implements `LocomotionRobotDriver`
 

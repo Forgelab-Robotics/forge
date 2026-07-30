@@ -34,6 +34,8 @@ Command payload for robot drivers and controllers.
 
 `mode` describes the command semantics. `position`, `velocity`, and `effort` match the common ROS2 command interfaces; `hybrid` is for low-level position/velocity/effort commands with optional `kp`/`kd` gains. Payloads written before `mode` existed are read as `mode="position"`.
 
+`name` is a sparse update set: consumers update only the listed joints. Omitted joints retain their previous command target and must never be reset or filled with zero implicitly. Disjoint arm and gripper controllers can therefore share an ordered command stream without constructing a complete joint vector.
+
 For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 
 ### `LocomotionCommand`

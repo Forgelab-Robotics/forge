@@ -120,7 +120,11 @@ class JointState(BaseModel):
 
 
 class JointCommand(BaseModel):
-    """Joint command payload for robot drivers and controllers."""
+    """Sparse joint command payload for robot drivers and controllers.
+
+    ``name`` is the update set for this message. Actuators omitted from ``name``
+    must retain their previous command target and must not be reset implicitly.
+    """
 
     name: list[str]
     mode: CommandMode = "position"

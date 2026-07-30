@@ -61,7 +61,7 @@ def validate_robot_control_arrow(
 
     JointCommand schema 固定为 name / position / velocity / effort / kp / kd，
     mode 为兼容新增列；缺失时按 position 处理。
-    ``joint_order`` 用于校验本节点期望的关节是否都在 payload 中。
+    ``joint_order`` 描述本节点可控制的关节全集；JointCommand 允许只包含其子集。
 
     Args:
         value: ``RecordBatch`` / ``Table`` / ``StructArray`` / ``bytes``（与 ``from_arrow`` 一致）。
@@ -94,12 +94,6 @@ def validate_robot_control_arrow(
     names = _read_name_list(batch)
     _validate_vector_lengths(batch, names, ("position", "velocity", "effort", "kp", "kd"))
     _validate_command_mode(batch)
-
-    missing = set(joint_order) - set(names)
-    if missing:
-        raise RobotArrowSchemaError(
-            f"缺少必需 joint {sorted(missing)}；joint_order={list(joint_order)!r}"
-        )
 
     if strict_extra_columns:
         extra = set(names) - set(joint_order)

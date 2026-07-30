@@ -86,6 +86,8 @@ Rules:
 - `name` items must be unique.
 - `mode` must be one of `position`, `velocity`, `effort`, or `hybrid`. Payloads written before `mode` existed may omit it; readers treat missing or null `mode` as `position`.
 - Each numeric list must either be empty or have the same length as `name`.
+- `name` is the update set for this message. A consumer MUST update only listed joints; joints omitted from `name` retain their previous command target and MUST NOT be reset or filled with zero implicitly.
+- Multiple disjoint command sources may therefore share an actuator-facing stream as ordered sparse updates. Arbitration is still required if sources can command the same joint.
 - `kp` and `kd` are optional low-level gains. For Unitree-style low-level control, map `position -> q`, `velocity -> dq`, `effort -> tau`, `kp -> kp`, and `kd -> kd`.
 
 ### LocomotionCommand

@@ -200,6 +200,38 @@ def test_runner_parses_command_arrow(
     assert driver.commands[0].position == [0.5]
 
 
+def test_runner_accepts_sparse_command_subset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    command = JointCommand(name=["joint1"], position=[0.5])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "action",
+                "value": command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert (
+        run_dora_robot_node(
+            driver,
+            joint_order=["joint1", "joint2"],
+            strict_extra_arrow_columns=True,
+        )
+        == 0
+    )
+
+    assert driver.commands == [command]
+
+
 def test_runner_maps_master_state_to_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

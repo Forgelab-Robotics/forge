@@ -1,7 +1,7 @@
 """标准 Dora 机器人节点循环。
 
 输入语义：
-- action: low-level JointCommand，通常来自 VLA/policy 的关节级动作。
+- action: sparse low-level JointCommand；仅更新 name 中列出的关节。
 - master_state: leader JointState，镜像为 low-level position JointCommand。
 - locomotion_command: high-level LocomotionCommand，表达整机平面移动速度。
 """
@@ -161,7 +161,7 @@ def run_dora_robot_node(
 ) -> int:
     """
     运行标准 Dora 机器人节点循环：tick 发 state，并处理固定输入语义：
-    action 为 low-level JointCommand，master_state 为 leader JointState 镜像，
+    action 为 sparse low-level JointCommand，master_state 为 leader JointState 镜像，
     locomotion_command 为 high-level LocomotionCommand。
 
     Args:

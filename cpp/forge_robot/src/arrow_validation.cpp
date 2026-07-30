@@ -59,7 +59,14 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> ValidateRobotControlRecordBat
   ARROW_RETURN_NOT_OK(RequireColumns(
       batch, {"name", "position", "velocity", "effort", "kp", "kd"}));
   ARROW_ASSIGN_OR_RAISE(auto command, forge_msgs::JointCommand::FromRecordBatch(batch));
-  ARROW_RETURN_NOT_OK(RequireJointOrder(command.name, joint_order, strict_extra_columns));
+  if (strict_extra_columns) {
+    std::set<std::string> expected(joint_order.begin(), joint_order.end());
+    for (const auto& name : command.name) {
+      if (expected.find(name) == expected.end()) {
+        return arrow::Status::Invalid("unexpected joint: ", name);
+      }
+    }
+  }
   return batch.Slice(0, batch.num_rows());
 }
 
