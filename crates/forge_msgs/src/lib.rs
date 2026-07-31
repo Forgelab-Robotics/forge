@@ -18,8 +18,10 @@ pub use crate::joint::{JointCommand, JointState};
 pub use crate::locomotion::LocomotionCommand;
 pub use crate::motion::{
     FollowJointTrajectoryErrorCode, FollowJointTrajectoryFeedback, FollowJointTrajectoryGoal,
-    FollowJointTrajectoryResult, MotionError, MotionErrorCode, MotionPhase, MoveJointsFeedback,
-    MoveJointsGoal, MoveJointsResult, MovePoseFeedback, MovePoseGoal, MovePoseResult,
+    FollowJointTrajectoryResult, GripperCommandErrorCode, GripperCommandFeedback,
+    GripperCommandGoal, GripperCommandResult, MotionError, MotionErrorCode, MotionPhase,
+    MoveJointsFeedback, MoveJointsGoal, MoveJointsResult, MovePoseFeedback, MovePoseGoal,
+    MovePoseResult,
 };
 pub use crate::perception::{
     Classification, Detection2DSet, Detection3DSet, Keypoint2DSet, Keypoint3DSet,

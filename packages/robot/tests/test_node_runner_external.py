@@ -200,6 +200,45 @@ def test_runner_parses_command_arrow(
     assert driver.commands[0].position == [0.5]
 
 
+def test_runner_accepts_namespaced_sparse_action_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import forge_robot.node_runner as node_runner
+
+    arm_command = JointCommand(name=["joint1"], position=[0.5])
+    gripper_command = JointCommand(name=["joint2"], position=[0.08])
+    FakeNode.reset(
+        [
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "action/arm",
+                "value": arm_command.to_arrow(),
+            },
+            {
+                "kind": "dora",
+                "type": "INPUT",
+                "id": "action/gripper",
+                "value": gripper_command.to_arrow(),
+            },
+            {"kind": "dora", "type": "STOP"},
+        ]
+    )
+    monkeypatch.setattr(node_runner, "Node", FakeNode)
+
+    driver = FakeDriver()
+    assert (
+        run_dora_robot_node(
+            driver,
+            joint_order=["joint1", "joint2"],
+            strict_extra_arrow_columns=True,
+        )
+        == 0
+    )
+
+    assert driver.commands == [arm_command, gripper_command]
+
+
 def test_runner_accepts_sparse_command_subset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -259,7 +298,18 @@ def test_runner_maps_master_state_to_command(
     assert driver.commands[0].velocity == []
 
 
-@pytest.mark.parametrize("input_id", ["command", "master_joint_state", "cmd_vel", "locomotion"])
+@pytest.mark.parametrize(
+    "input_id",
+    [
+        "command",
+        "master_joint_state",
+        "cmd_vel",
+        "locomotion",
+        "action/",
+        "actions/gripper",
+        "action-gripper",
+    ],
+)
 def test_runner_ignores_non_standard_control_aliases(
     monkeypatch: pytest.MonkeyPatch,
     input_id: str,

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -49,6 +50,57 @@ void CheckSchema(const Message& message,
   Check((*batch)->schema()->Equals(*arrow::schema(expected), false), name + " exact schema");
   Check((*batch)->GetColumnByName("goal_id") == nullptr, name + " excludes goal_id");
   Check((*batch)->GetColumnByName("goal_status") == nullptr, name + " excludes goal_status");
+}
+
+template <typename Message>
+void CheckRejectsMalformedSchemas(const Message& message, const std::string& name) {
+  auto batch_result = message.ToRecordBatch();
+  Check(batch_result.ok(), name + " malformed schema source batch");
+  if (!batch_result.ok()) return;
+
+  const auto& batch = **batch_result;
+  const auto fields = batch.schema()->fields();
+  const auto columns = batch.columns();
+  const auto check_rejected = [&](std::vector<std::shared_ptr<arrow::Field>> bad_fields,
+                                  std::vector<std::shared_ptr<arrow::Array>> bad_columns,
+                                  const std::string& reason) {
+    auto malformed = arrow::RecordBatch::Make(
+        arrow::schema(std::move(bad_fields)), batch.num_rows(), std::move(bad_columns));
+    Check(!Message::FromRecordBatch(*malformed).ok(), name + " rejects " + reason);
+  };
+
+  auto extra_fields = fields;
+  auto extra_columns = columns;
+  extra_fields.push_back(
+      arrow::field("goal_id", fields.front()->type(), fields.front()->nullable()));
+  extra_columns.push_back(columns.front());
+  check_rejected(std::move(extra_fields), std::move(extra_columns), "extra goal_id field");
+
+  auto nullable_fields = fields;
+  nullable_fields.front() = arrow::field(fields.front()->name(), fields.front()->type(),
+                                         !fields.front()->nullable());
+  check_rejected(std::move(nullable_fields), columns, "wrong field nullability");
+
+  auto reordered_fields = fields;
+  auto reordered_columns = columns;
+  std::swap(reordered_fields[0], reordered_fields[1]);
+  std::swap(reordered_columns[0], reordered_columns[1]);
+  check_rejected(std::move(reordered_fields), std::move(reordered_columns),
+                 "wrong field order");
+
+  arrow::Int32Builder builder;
+  auto append_status = builder.Append(1);
+  Check(append_status.ok(), name + " wrong-type test array append");
+  auto wrong_type_array = builder.Finish();
+  Check(wrong_type_array.ok(), name + " wrong-type test array finish");
+  if (!append_status.ok() || !wrong_type_array.ok()) return;
+  auto wrong_type_fields = fields;
+  auto wrong_type_columns = columns;
+  wrong_type_fields.front() =
+      arrow::field(fields.front()->name(), arrow::int32(), fields.front()->nullable());
+  wrong_type_columns.front() = *wrong_type_array;
+  check_rejected(std::move(wrong_type_fields), std::move(wrong_type_columns),
+                 "wrong field type");
 }
 
 }  // namespace
@@ -144,6 +196,12 @@ int main() {
   FollowJointTrajectoryResult follow_result{FollowJointTrajectoryErrorCode::Success, "done",
                                             2000000, {"joint_1", "joint_2"},
                                             {0.01, -0.01}, {}};
+  GripperCommandGoal gripper_goal{0.08, std::nullopt, 12.0};
+  GripperCommandFeedback gripper_feedback{1000000, 0.04, std::nullopt, -0.25,
+                                          false, false};
+  GripperCommandResult gripper_result{GripperCommandErrorCode::NoFreshRobotState,
+                                      "state unavailable", 0, std::nullopt,
+                                      std::nullopt, std::nullopt, false, false};
   MoveJointsGoal move_joints_goal{"arm", {"joint_1", "joint_2"}, {1.0, 1.5},
                                   0.5, 0.4, std::nullopt};
   MoveJointsFeedback move_joints_feedback{MotionPhase::Executing, 0.5, 1000000,
@@ -166,6 +224,9 @@ int main() {
   CheckRoundTrip(follow_goal, "FollowJointTrajectoryGoal");
   CheckRoundTrip(follow_feedback, "FollowJointTrajectoryFeedback");
   CheckRoundTrip(follow_result, "FollowJointTrajectoryResult");
+  CheckRoundTrip(gripper_goal, "GripperCommandGoal");
+  CheckRoundTrip(gripper_feedback, "GripperCommandFeedback");
+  CheckRoundTrip(gripper_result, "GripperCommandResult");
   CheckRoundTrip(move_joints_goal, "MoveJointsGoal");
   CheckRoundTrip(move_joints_feedback, "MoveJointsFeedback");
   CheckRoundTrip(move_joints_result, "MoveJointsResult");
@@ -201,6 +262,32 @@ int main() {
                arrow::field("final_position_error", f64_list, false),
                arrow::field("final_velocity_error", f64_list, false)},
               "FollowJointTrajectoryResult");
+  CheckSchema(gripper_goal,
+              {arrow::field("position", arrow::float64(), false),
+               arrow::field("max_velocity", arrow::float64(), true),
+               arrow::field("max_effort", arrow::float64(), true)},
+              "GripperCommandGoal");
+  CheckSchema(gripper_feedback,
+              {arrow::field("elapsed_ns", arrow::int64(), false),
+               arrow::field("position", arrow::float64(), false),
+               arrow::field("velocity", arrow::float64(), true),
+               arrow::field("effort", arrow::float64(), true),
+               arrow::field("stalled", arrow::boolean(), false),
+               arrow::field("reached_goal", arrow::boolean(), false)},
+              "GripperCommandFeedback");
+  CheckSchema(gripper_result,
+              {arrow::field("error_code", arrow::utf8(), false),
+               arrow::field("message", arrow::utf8(), false),
+               arrow::field("elapsed_ns", arrow::int64(), false),
+               arrow::field("position", arrow::float64(), true),
+               arrow::field("velocity", arrow::float64(), true),
+               arrow::field("effort", arrow::float64(), true),
+               arrow::field("stalled", arrow::boolean(), false),
+               arrow::field("reached_goal", arrow::boolean(), false)},
+              "GripperCommandResult");
+  CheckRejectsMalformedSchemas(gripper_goal, "GripperCommandGoal");
+  CheckRejectsMalformedSchemas(gripper_feedback, "GripperCommandFeedback");
+  CheckRejectsMalformedSchemas(gripper_result, "GripperCommandResult");
   CheckSchema(move_joints_goal,
               {arrow::field("group_name", arrow::utf8(), false),
                arrow::field("joint_names", string_list, false),
@@ -271,17 +358,65 @@ int main() {
         "MotionErrorCode string value");
   Check(MotionErrorCodeFromString("FINAL_POSE_TOLERANCE_VIOLATED").ok(),
         "MotionErrorCode parses schema value");
+  Check(ToString(GripperCommandErrorCode::UnsupportedVelocity) == "UNSUPPORTED_VELOCITY",
+        "GripperCommandErrorCode string value");
+  Check(GripperCommandErrorCodeFromString("POSITION_LIMIT_VIOLATION").ok(),
+        "GripperCommandErrorCode parses schema value");
+  Check(GripperCommandErrorCodeFromString("bad").status().IsInvalid(),
+        "GripperCommandErrorCode rejects invalid value");
 
   Check(!JointTrajectory{{"joint_1"}, {point0, point0}}.Validate().ok(),
         "JointTrajectory rejects non-increasing time");
   Check(!JointTolerance{"joint_1", std::nullopt, std::nullopt, std::nullopt}.Validate().ok(),
         "JointTolerance requires one tolerance");
+  Check(!GripperCommandGoal{NAN, std::nullopt, std::nullopt}.Validate().ok(),
+        "GripperCommandGoal rejects non-finite position");
+  Check(!GripperCommandGoal{0.0, -0.1, std::nullopt}.Validate().ok(),
+        "GripperCommandGoal rejects negative max velocity");
+  Check(!GripperCommandFeedback{-1, 0.0, std::nullopt, std::nullopt, false, false}
+             .Validate().ok(),
+        "GripperCommandFeedback rejects negative elapsed time");
+  const auto gripper_result_flags_valid =
+      [](GripperCommandErrorCode error_code, bool stalled, bool reached_goal) {
+        return GripperCommandResult{error_code, "", 0, std::nullopt, std::nullopt,
+                                    std::nullopt, stalled, reached_goal}
+            .Validate()
+            .ok();
+      };
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::Success, false, false),
+        "GripperCommandResult SUCCESS requires a terminal flag");
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::Success, true, true),
+        "GripperCommandResult SUCCESS rejects both terminal flags");
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::Stalled, false, false),
+        "GripperCommandResult STALLED requires stalled");
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::Stalled, false, true),
+        "GripperCommandResult STALLED rejects reached_goal only");
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::Stalled, true, true),
+        "GripperCommandResult STALLED rejects both terminal flags");
+  Check(!gripper_result_flags_valid(GripperCommandErrorCode::InternalError, true, true),
+        "GripperCommandResult always rejects both terminal flags");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::Success, true, false),
+        "GripperCommandResult SUCCESS allows stalled only");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::Success, false, true),
+        "GripperCommandResult SUCCESS allows reached_goal only");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::Stalled, true, false),
+        "GripperCommandResult STALLED requires stalled only");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::InternalError, false, false),
+        "GripperCommandResult non-SUCCESS allows neither terminal flag");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::InternalError, true, false),
+        "GripperCommandResult non-SUCCESS allows stalled only");
+  Check(gripper_result_flags_valid(GripperCommandErrorCode::InternalError, false, true),
+        "GripperCommandResult non-SUCCESS allows reached_goal only");
   Check(!MoveJointsGoal{"arm", {"joint_1"}, {NAN}, 0.5, 0.5, std::nullopt}
              .Validate().ok(),
         "MoveJointsGoal rejects non-finite position");
   Check(!MovePoseGoal{"arm", "world", "tool0", Pose{}, 0.0, 0.5, std::nullopt,
                       std::nullopt, std::nullopt}.Validate().ok(),
         "MovePoseGoal rejects zero scale");
+  auto nullable_gripper_batch = gripper_result.ToRecordBatch();
+  Check(nullable_gripper_batch.ok() &&
+            (*nullable_gripper_batch)->GetColumnByName("position")->IsNull(0),
+        "GripperCommandResult emits null optional state");
   auto nullable_feedback_batch = move_pose_feedback.ToRecordBatch();
   Check(nullable_feedback_batch.ok() &&
             (*nullable_feedback_batch)->GetColumnByName("actual_pose")->IsNull(0),

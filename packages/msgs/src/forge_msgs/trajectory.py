@@ -163,7 +163,8 @@ class _ArrowMessage(BaseModel):
     _ARROW_SCHEMA: ClassVar[pa.Schema]
 
     def to_arrow(self) -> pa.RecordBatch:
-        return _record_batch(self.model_dump(mode="python"), self._ARROW_SCHEMA)
+        validated = type(self).model_validate(self.model_dump(mode="python"))
+        return _record_batch(validated.model_dump(mode="python"), self._ARROW_SCHEMA)
 
     @classmethod
     def from_arrow(

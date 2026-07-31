@@ -7,6 +7,10 @@ from forge_msgs.image import CompressedImage, Image
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.motion import (
+    GripperCommandErrorCode,
+    GripperCommandFeedback,
+    GripperCommandGoal,
+    GripperCommandResult,
     MotionErrorCode,
     MotionPhase,
     MoveJointsFeedback,
@@ -48,6 +52,10 @@ __all__ = [
     "FollowJointTrajectoryFeedback",
     "FollowJointTrajectoryGoal",
     "FollowJointTrajectoryResult",
+    "GripperCommandErrorCode",
+    "GripperCommandFeedback",
+    "GripperCommandGoal",
+    "GripperCommandResult",
     "Image",
     "JointCommand",
     "JointState",

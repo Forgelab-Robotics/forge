@@ -7,6 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from forge_msgs import (
+    GripperCommandFeedback,
+    GripperCommandGoal,
+    GripperCommandResult,
     MoveJointsFeedback,
     MoveJointsGoal,
     MoveJointsResult,
@@ -19,6 +22,164 @@ from forge_msgs import (
 
 def _pose() -> Pose:
     return Pose(x=0.4, y=-0.2, z=0.8, qx=0.0, qy=0.0, qz=0.0, qw=1.0)
+
+
+def test_gripper_command_goal_schema_roundtrip_and_metadata_omission() -> None:
+    goal = GripperCommandGoal(
+        position=0.08,
+        max_velocity=None,
+        max_effort=12.0,
+    )
+    batch = goal.to_arrow()
+
+    assert batch.num_rows == 1
+    assert batch.schema.names == ["position", "max_velocity", "max_effort"]
+    assert batch.schema == pa.schema(
+        [
+            pa.field("position", pa.float64(), nullable=False),
+            pa.field("max_velocity", pa.float64(), nullable=True),
+            pa.field("max_effort", pa.float64(), nullable=True),
+        ]
+    )
+    assert batch["max_velocity"][0].as_py() is None
+    assert batch["max_effort"][0].as_py() == 12.0
+    assert "goal_id" not in batch.schema.names
+    assert "goal_status" not in batch.schema.names
+    assert "joint_name" not in batch.schema.names
+    assert GripperCommandGoal.from_arrow(batch) == goal
+
+
+def test_gripper_command_feedback_nullable_scalars_roundtrip() -> None:
+    feedback = GripperCommandFeedback(
+        elapsed_ns=15,
+        position=1.2,
+        velocity=None,
+        effort=-0.25,
+        stalled=False,
+        reached_goal=False,
+    )
+    batch = feedback.to_arrow()
+
+    assert batch.schema.names == [
+        "elapsed_ns",
+        "position",
+        "velocity",
+        "effort",
+        "stalled",
+        "reached_goal",
+    ]
+    assert batch["velocity"][0].as_py() is None
+    assert batch["effort"][0].as_py() == -0.25
+    assert GripperCommandFeedback.from_arrow(batch) == feedback
+
+
+def test_gripper_command_result_roundtrip_with_unknown_state() -> None:
+    result = GripperCommandResult(
+        error_code="NO_FRESH_ROBOT_STATE",
+        message="state unavailable",
+        elapsed_ns=0,
+        position=None,
+        velocity=None,
+        effort=None,
+        stalled=False,
+        reached_goal=False,
+    )
+    batch = result.to_arrow()
+
+    assert batch.schema.names == [
+        "error_code",
+        "message",
+        "elapsed_ns",
+        "position",
+        "velocity",
+        "effort",
+        "stalled",
+        "reached_goal",
+    ]
+    assert batch["position"][0].as_py() is None
+    assert GripperCommandResult.from_arrow(pa.Table.from_batches([batch])) == result
+
+
+def test_gripper_command_validation_contract() -> None:
+    with pytest.raises(ValidationError, match="position"):
+        GripperCommandGoal(position=math.inf)
+    with pytest.raises(ValidationError, match="max_velocity"):
+        GripperCommandGoal(position=0.0, max_velocity=-0.1)
+    with pytest.raises(ValidationError, match="max_effort"):
+        GripperCommandGoal(position=0.0, max_effort=math.nan)
+    with pytest.raises(ValidationError, match="elapsed_ns"):
+        GripperCommandFeedback(
+            elapsed_ns=-1,
+            position=0.0,
+            stalled=False,
+            reached_goal=False,
+        )
+    with pytest.raises(ValidationError, match="velocity"):
+        GripperCommandFeedback(
+            elapsed_ns=0,
+            position=0.0,
+            velocity=math.inf,
+            stalled=False,
+            reached_goal=False,
+        )
+    with pytest.raises(ValidationError):
+        GripperCommandResult(
+            error_code="UNKNOWN",  # type: ignore[arg-type]
+            message="",
+            elapsed_ns=0,
+            stalled=False,
+            reached_goal=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("error_code", "stalled", "reached_goal"),
+    [
+        ("SUCCESS", False, False),
+        ("SUCCESS", True, True),
+        ("STALLED", False, False),
+        ("STALLED", False, True),
+        ("STALLED", True, True),
+        ("INTERNAL_ERROR", True, True),
+    ],
+)
+def test_gripper_command_result_rejects_invalid_flag_combinations(
+    error_code: str, stalled: bool, reached_goal: bool
+) -> None:
+    with pytest.raises(ValidationError):
+        GripperCommandResult(
+            error_code=error_code,  # type: ignore[arg-type]
+            message="",
+            elapsed_ns=0,
+            stalled=stalled,
+            reached_goal=reached_goal,
+        )
+
+
+@pytest.mark.parametrize(
+    ("error_code", "stalled", "reached_goal"),
+    [
+        ("SUCCESS", True, False),
+        ("SUCCESS", False, True),
+        ("STALLED", True, False),
+        ("INTERNAL_ERROR", False, False),
+        ("INTERNAL_ERROR", True, False),
+        ("INTERNAL_ERROR", False, True),
+    ],
+)
+def test_gripper_command_result_allows_other_flag_combinations(
+    error_code: str, stalled: bool, reached_goal: bool
+) -> None:
+    result = GripperCommandResult(
+        error_code=error_code,  # type: ignore[arg-type]
+        message="",
+        elapsed_ns=0,
+        stalled=stalled,
+        reached_goal=reached_goal,
+    )
+
+    assert result.stalled is stalled
+    assert result.reached_goal is reached_goal
 
 
 def test_move_joints_goal_schema_roundtrip_and_metadata_omission() -> None:

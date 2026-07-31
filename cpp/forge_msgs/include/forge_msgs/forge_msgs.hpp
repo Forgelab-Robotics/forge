@@ -252,6 +252,26 @@ enum class MotionErrorCode {
 std::string ToString(MotionErrorCode value);
 arrow::Result<MotionErrorCode> MotionErrorCodeFromString(const std::string& value);
 
+enum class GripperCommandErrorCode {
+  Success,
+  InvalidGoal,
+  Busy,
+  PositionLimitViolation,
+  UnsupportedVelocity,
+  UnsupportedEffort,
+  NoFreshRobotState,
+  FeedbackStale,
+  Stalled,
+  ExecutionTimedOut,
+  HardwareFault,
+  Canceled,
+  InternalError,
+};
+
+std::string ToString(GripperCommandErrorCode value);
+arrow::Result<GripperCommandErrorCode> GripperCommandErrorCodeFromString(
+    const std::string& value);
+
 struct FollowJointTrajectoryGoal {
   JointTrajectory trajectory;
   std::vector<JointTolerance> path_tolerance;
@@ -290,6 +310,46 @@ struct FollowJointTrajectoryResult {
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
   static arrow::Result<FollowJointTrajectoryResult> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct GripperCommandGoal {
+  double position = 0.0;
+  std::optional<double> max_velocity;
+  std::optional<double> max_effort;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<GripperCommandGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+};
+
+struct GripperCommandFeedback {
+  std::int64_t elapsed_ns = 0;
+  double position = 0.0;
+  std::optional<double> velocity;
+  std::optional<double> effort;
+  bool stalled = false;
+  bool reached_goal = false;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<GripperCommandFeedback> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct GripperCommandResult {
+  GripperCommandErrorCode error_code = GripperCommandErrorCode::Success;
+  std::string message;
+  std::int64_t elapsed_ns = 0;
+  std::optional<double> position;
+  std::optional<double> velocity;
+  std::optional<double> effort;
+  bool stalled = false;
+  bool reached_goal = false;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<GripperCommandResult> FromRecordBatch(
       const arrow::RecordBatch& batch);
 };
 

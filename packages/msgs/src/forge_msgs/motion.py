@@ -45,6 +45,22 @@ MotionErrorCode = Literal[
     "INTERNAL_ERROR",
 ]
 
+GripperCommandErrorCode = Literal[
+    "SUCCESS",
+    "INVALID_GOAL",
+    "BUSY",
+    "POSITION_LIMIT_VIOLATION",
+    "UNSUPPORTED_VELOCITY",
+    "UNSUPPORTED_EFFORT",
+    "NO_FRESH_ROBOT_STATE",
+    "FEEDBACK_STALE",
+    "STALLED",
+    "EXECUTION_TIMED_OUT",
+    "HARDWARE_FAULT",
+    "CANCELED",
+    "INTERNAL_ERROR",
+]
+
 _POSE_TYPE = pa.struct(
     [
         pa.field("x", pa.float64(), nullable=False),
@@ -70,11 +86,14 @@ def _validate_progress(progress: float | None) -> None:
         raise ValueError("progress must be finite and in the interval [0, 1]")
 
 
-def _validate_optional_finite_non_negative(
-    name: str, value: float | None
-) -> None:
+def _validate_optional_finite_non_negative(name: str, value: float | None) -> None:
     if value is not None and (not math.isfinite(value) or value < 0.0):
         raise ValueError(f"{name} must be finite and non-negative")
+
+
+def _validate_optional_finite(name: str, value: float | None) -> None:
+    if value is not None and not math.isfinite(value):
+        raise ValueError(f"{name} must be finite")
 
 
 def _validate_joint_names(joint_names: list[str], *, empty_allowed: bool) -> None:
@@ -90,6 +109,97 @@ def _validate_optional_joint_vector(
 ) -> None:
     if values and len(values) != len(joint_names):
         raise ValueError(f"{name} must be empty or have the same length as joint_names")
+
+
+class GripperCommandGoal(_ArrowMessage):
+    """Position goal for a controller-configured gripper coordinate."""
+
+    position: float
+    max_velocity: float | None = None
+    max_effort: float | None = None
+
+    _ARROW_SCHEMA = _schema(
+        ("position", pa.float64(), False),
+        ("max_velocity", pa.float64(), True),
+        ("max_effort", pa.float64(), True),
+    )
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not math.isfinite(self.position):
+            raise ValueError("position must be finite")
+        _validate_optional_finite_non_negative("max_velocity", self.max_velocity)
+        _validate_optional_finite_non_negative("max_effort", self.max_effort)
+        return self
+
+
+class GripperCommandFeedback(_ArrowMessage):
+    """Periodic observed state for an executing gripper command."""
+
+    elapsed_ns: int
+    position: float
+    velocity: float | None = None
+    effort: float | None = None
+    stalled: bool
+    reached_goal: bool
+
+    _ARROW_SCHEMA = _schema(
+        ("elapsed_ns", pa.int64(), False),
+        ("position", pa.float64(), False),
+        ("velocity", pa.float64(), True),
+        ("effort", pa.float64(), True),
+        ("stalled", pa.bool_(), False),
+        ("reached_goal", pa.bool_(), False),
+    )
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        _validate_non_negative("elapsed_ns", self.elapsed_ns)
+        if not math.isfinite(self.position):
+            raise ValueError("position must be finite")
+        _validate_optional_finite("velocity", self.velocity)
+        _validate_optional_finite("effort", self.effort)
+        return self
+
+
+class GripperCommandResult(_ArrowMessage):
+    """Terminal domain result for a GripperCommand action."""
+
+    error_code: GripperCommandErrorCode
+    message: str
+    elapsed_ns: int
+    position: float | None = None
+    velocity: float | None = None
+    effort: float | None = None
+    stalled: bool
+    reached_goal: bool
+
+    _ARROW_SCHEMA = _schema(
+        ("error_code", pa.string(), False),
+        ("message", pa.string(), False),
+        ("elapsed_ns", pa.int64(), False),
+        ("position", pa.float64(), True),
+        ("velocity", pa.float64(), True),
+        ("effort", pa.float64(), True),
+        ("stalled", pa.bool_(), False),
+        ("reached_goal", pa.bool_(), False),
+    )
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        _validate_non_negative("elapsed_ns", self.elapsed_ns)
+        _validate_optional_finite("position", self.position)
+        _validate_optional_finite("velocity", self.velocity)
+        _validate_optional_finite("effort", self.effort)
+        if self.stalled and self.reached_goal:
+            raise ValueError("stalled and reached_goal cannot both be true")
+        if self.error_code == "SUCCESS" and not (self.stalled or self.reached_goal):
+            raise ValueError(
+                "SUCCESS requires exactly one of stalled/reached_goal true"
+            )
+        if self.error_code == "STALLED" and (not self.stalled or self.reached_goal):
+            raise ValueError("STALLED requires stalled=true and reached_goal=false")
+        return self
 
 
 class MoveJointsGoal(_ArrowMessage):
@@ -155,9 +265,7 @@ class MoveJointsFeedback(_ArrowMessage):
     def _validate(self) -> Self:
         _validate_progress(self.progress)
         _validate_non_negative("elapsed_ns", self.elapsed_ns)
-        _validate_non_negative(
-            "estimated_duration_ns", self.estimated_duration_ns
-        )
+        _validate_non_negative("estimated_duration_ns", self.estimated_duration_ns)
         _validate_joint_names(self.joint_names, empty_allowed=False)
         if len(self.target_positions) != len(self.joint_names):
             raise ValueError(
@@ -273,9 +381,7 @@ class MovePoseFeedback(_ArrowMessage):
     def _validate(self) -> Self:
         _validate_progress(self.progress)
         _validate_non_negative("elapsed_ns", self.elapsed_ns)
-        _validate_non_negative(
-            "estimated_duration_ns", self.estimated_duration_ns
-        )
+        _validate_non_negative("estimated_duration_ns", self.estimated_duration_ns)
         _validate_optional_finite_non_negative(
             "position_error_m", self.position_error_m
         )

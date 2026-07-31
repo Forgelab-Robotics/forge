@@ -1,7 +1,7 @@
 """标准 Dora 机器人节点循环。
 
 输入语义：
-- action: sparse low-level JointCommand；仅更新 name 中列出的关节。
+- action 或 action/<source>: sparse low-level JointCommand；仅更新 name 中列出的关节。
 - master_state: leader JointState，镜像为 low-level position JointCommand。
 - locomotion_command: high-level LocomotionCommand，表达整机平面移动速度。
 """
@@ -41,6 +41,12 @@ def _has_joint_order(input_id: str, joint_order: list[str]) -> bool:
     return False
 
 
+def _is_action_input(input_id: str) -> bool:
+    return input_id == "action" or (
+        input_id.startswith("action/") and len(input_id) > len("action/")
+    )
+
+
 def _handle_control_input(
     input_id: str,
     value: Any,
@@ -53,33 +59,34 @@ def _handle_control_input(
     strict_extra_arrow_columns: bool,
 ) -> None:
     """处理低层 action、leader master_state 和高层 locomotion_command。"""
-    match input_id:
-        case "action":
-            if is_follower:
-                if not _has_joint_order(input_id, joint_order):
+    if _is_action_input(input_id):
+        if is_follower:
+            if not _has_joint_order(input_id, joint_order):
+                return
+            if validate_control_arrow:
+                try:
+                    validate_robot_control_arrow(
+                        value,
+                        joint_order,
+                        strict_extra_columns=strict_extra_arrow_columns,
+                    )
+                except RobotArrowSchemaError as e:
+                    logger.error("忽略无效 %s（Arrow schema）: %s", input_id, e)
                     return
-                if validate_control_arrow:
-                    try:
-                        validate_robot_control_arrow(
-                            value,
-                            joint_order,
-                            strict_extra_columns=strict_extra_arrow_columns,
-                        )
-                    except RobotArrowSchemaError as e:
-                        logger.error("忽略无效 %s（Arrow schema）: %s", input_id, e)
-                        return
-                command = JointCommand.from_arrow(value)
-                if debug:
-                    try:
-                        sample = {
-                            name: float(command.to_np([name], "position")[0])
-                            for name in joint_order[:3]
-                        }
-                        logger.debug("收到 %s，sample_joints=%s", input_id, sample)
-                    except Exception:
-                        pass
-                driver.set_command(command)
-            return
+            command = JointCommand.from_arrow(value)
+            if debug:
+                try:
+                    sample = {
+                        name: float(command.to_np([name], "position")[0])
+                        for name in joint_order[:3]
+                    }
+                    logger.debug("收到 %s，sample_joints=%s", input_id, sample)
+                except Exception:
+                    pass
+            driver.set_command(command)
+        return
+
+    match input_id:
         case "master_state":
             if is_follower:
                 if not _has_joint_order(input_id, joint_order):
@@ -161,7 +168,7 @@ def run_dora_robot_node(
 ) -> int:
     """
     运行标准 Dora 机器人节点循环：tick 发 state，并处理固定输入语义：
-    action 为 sparse low-level JointCommand，master_state 为 leader JointState 镜像，
+    action 或 action/<source> 为 sparse low-level JointCommand，master_state 为 leader JointState 镜像，
     locomotion_command 为 high-level LocomotionCommand。
 
     Args:
@@ -172,7 +179,7 @@ def run_dora_robot_node(
         on_tick_after_state: 可选；每 tick 发送 state 后调用 (node, driver)，用于额外输出（如 image）。
         external_subscriptions: 可选 Dora external subscriptions；传入后会在 Node 上 merge_external_events。
         on_external_event: 可选 external payload handler；通常用于将 ROS2 payload 写入 driver 内部缓存。
-        validate_control_arrow: 为 True 时，在解析 action 前校验 Arrow 是否包含所需关节名。
+        validate_control_arrow: 为 True 时，在解析 action 或 action/<source> 前校验 Arrow。
         strict_extra_arrow_columns: 为 True 时，除上述列外不允许多余列（需 validate_control_arrow=True）。
 
     Returns:

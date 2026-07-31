@@ -46,7 +46,9 @@ change the wire contract of existing messages.
 
 ### Motion action payloads
 
-`motion.v1.yaml` defines reusable `JointTrajectoryPoint`, `JointTrajectory`, and `JointTolerance` values plus the Goal/Feedback/Result payloads for the `FollowJointTrajectory`, `MoveJoints`, and `MovePose` Dora actions. Durations are non-negative signed 64-bit integer nanoseconds and are relative to action or trajectory start, not wall-clock timestamps. Optional scalar values use Arrow nulls rather than numeric sentinels. Action payloads do not duplicate Dora's `goal_id` or `goal_status` metadata.
+`motion.v1.yaml` defines reusable `JointTrajectoryPoint`, `JointTrajectory`, and `JointTolerance` values plus the Goal/Feedback/Result payloads for the `FollowJointTrajectory`, `GripperCommand`, `MoveJoints`, and `MovePose` Dora actions. Durations are non-negative signed 64-bit integer nanoseconds and are relative to action or trajectory start, not wall-clock timestamps. Optional scalar values use Arrow nulls rather than numeric sentinels. Action payloads do not duplicate Dora's `goal_id` or `goal_status` metadata.
+
+`GripperCommand` controls one coordinate selected by the action endpoint and controller configuration, so its payload does not carry `joint_name` or a dynamic unit field. Prismatic coordinates use meters, meters/s, and Newtons; revolute or rotary actuator coordinates use radians, radians/s, and Newton-meters. This permits a logical Piper total-gap coordinate to use meters while an R1-A5 DEX1 motor coordinate remains in radians.
 
 ### JointState
 

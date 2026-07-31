@@ -5,6 +5,14 @@
 namespace forge_robot {
 namespace {
 
+bool IsActionInput(const std::string& input_id) {
+  constexpr char kActionPrefix[] = "action/";
+  constexpr std::size_t kActionPrefixLength = sizeof(kActionPrefix) - 1;
+  return input_id == "action" ||
+         (input_id.size() > kActionPrefixLength &&
+          input_id.compare(0, kActionPrefixLength, kActionPrefix) == 0);
+}
+
 bool HasColumn(const arrow::RecordBatch& batch, const std::string& name) {
   return batch.schema()->GetFieldIndex(name) >= 0;
 }
@@ -107,7 +115,7 @@ void HandleRobotInput(
     return;
   }
 
-  if (input_id == "action") {
+  if (IsActionInput(input_id)) {
     if (options.joint_order.empty()) {
       logger.Error("ignored action: joint_order must not be empty");
       return;

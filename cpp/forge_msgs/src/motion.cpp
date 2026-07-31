@@ -14,6 +14,14 @@ using namespace detail;
 
 namespace {
 
+arrow::Status ValidateOptionalFinite(const std::string& name,
+                                     const std::optional<double>& value) {
+  if (value && !std::isfinite(*value)) {
+    return arrow::Status::Invalid(name, " must be finite when specified");
+  }
+  return arrow::Status::OK();
+}
+
 arrow::Status ValidateFiniteValues(const std::string& name,
                                    const std::vector<double>& values) {
   for (double value : values) {
@@ -62,6 +70,45 @@ std::vector<std::shared_ptr<arrow::Field>> JointToleranceFields() {
           arrow::field("position", arrow::float64(), true),
           arrow::field("velocity", arrow::float64(), true),
           arrow::field("acceleration", arrow::float64(), true)};
+}
+
+std::vector<std::shared_ptr<arrow::Field>> GripperCommandGoalFields() {
+  return {arrow::field("position", arrow::float64(), false),
+          arrow::field("max_velocity", arrow::float64(), true),
+          arrow::field("max_effort", arrow::float64(), true)};
+}
+
+std::vector<std::shared_ptr<arrow::Field>> GripperCommandFeedbackFields() {
+  return {arrow::field("elapsed_ns", arrow::int64(), false),
+          arrow::field("position", arrow::float64(), false),
+          arrow::field("velocity", arrow::float64(), true),
+          arrow::field("effort", arrow::float64(), true),
+          arrow::field("stalled", arrow::boolean(), false),
+          arrow::field("reached_goal", arrow::boolean(), false)};
+}
+
+std::vector<std::shared_ptr<arrow::Field>> GripperCommandResultFields() {
+  return {arrow::field("error_code", arrow::utf8(), false),
+          arrow::field("message", arrow::utf8(), false),
+          arrow::field("elapsed_ns", arrow::int64(), false),
+          arrow::field("position", arrow::float64(), true),
+          arrow::field("velocity", arrow::float64(), true),
+          arrow::field("effort", arrow::float64(), true),
+          arrow::field("stalled", arrow::boolean(), false),
+          arrow::field("reached_goal", arrow::boolean(), false)};
+}
+
+arrow::Status RequireExactSchema(
+    const arrow::RecordBatch& batch,
+    const std::vector<std::shared_ptr<arrow::Field>>& expected_fields,
+    const std::string& message_name) {
+  const auto expected = arrow::schema(expected_fields);
+  if (!batch.schema()->Equals(*expected, false)) {
+    return arrow::Status::Invalid(message_name, " RecordBatch schema must exactly match ",
+                                  expected->ToString(), "; got ",
+                                  batch.schema()->ToString());
+  }
+  return arrow::Status::OK();
 }
 
 template <typename Message>
@@ -239,6 +286,45 @@ arrow::Result<MotionErrorCode> MotionErrorCodeFromString(const std::string& valu
   return arrow::Status::Invalid("unsupported MotionErrorCode: ", value);
 }
 
+std::string ToString(GripperCommandErrorCode value) {
+  switch (value) {
+    case GripperCommandErrorCode::Success: return "SUCCESS";
+    case GripperCommandErrorCode::InvalidGoal: return "INVALID_GOAL";
+    case GripperCommandErrorCode::Busy: return "BUSY";
+    case GripperCommandErrorCode::PositionLimitViolation: return "POSITION_LIMIT_VIOLATION";
+    case GripperCommandErrorCode::UnsupportedVelocity: return "UNSUPPORTED_VELOCITY";
+    case GripperCommandErrorCode::UnsupportedEffort: return "UNSUPPORTED_EFFORT";
+    case GripperCommandErrorCode::NoFreshRobotState: return "NO_FRESH_ROBOT_STATE";
+    case GripperCommandErrorCode::FeedbackStale: return "FEEDBACK_STALE";
+    case GripperCommandErrorCode::Stalled: return "STALLED";
+    case GripperCommandErrorCode::ExecutionTimedOut: return "EXECUTION_TIMED_OUT";
+    case GripperCommandErrorCode::HardwareFault: return "HARDWARE_FAULT";
+    case GripperCommandErrorCode::Canceled: return "CANCELED";
+    case GripperCommandErrorCode::InternalError: return "INTERNAL_ERROR";
+  }
+  return {};
+}
+
+arrow::Result<GripperCommandErrorCode> GripperCommandErrorCodeFromString(
+    const std::string& value) {
+  if (value == "SUCCESS") return GripperCommandErrorCode::Success;
+  if (value == "INVALID_GOAL") return GripperCommandErrorCode::InvalidGoal;
+  if (value == "BUSY") return GripperCommandErrorCode::Busy;
+  if (value == "POSITION_LIMIT_VIOLATION") {
+    return GripperCommandErrorCode::PositionLimitViolation;
+  }
+  if (value == "UNSUPPORTED_VELOCITY") return GripperCommandErrorCode::UnsupportedVelocity;
+  if (value == "UNSUPPORTED_EFFORT") return GripperCommandErrorCode::UnsupportedEffort;
+  if (value == "NO_FRESH_ROBOT_STATE") return GripperCommandErrorCode::NoFreshRobotState;
+  if (value == "FEEDBACK_STALE") return GripperCommandErrorCode::FeedbackStale;
+  if (value == "STALLED") return GripperCommandErrorCode::Stalled;
+  if (value == "EXECUTION_TIMED_OUT") return GripperCommandErrorCode::ExecutionTimedOut;
+  if (value == "HARDWARE_FAULT") return GripperCommandErrorCode::HardwareFault;
+  if (value == "CANCELED") return GripperCommandErrorCode::Canceled;
+  if (value == "INTERNAL_ERROR") return GripperCommandErrorCode::InternalError;
+  return arrow::Status::Invalid("unsupported GripperCommandErrorCode: ", value);
+}
+
 arrow::Status FollowJointTrajectoryGoal::Validate() const {
   ARROW_RETURN_NOT_OK(trajectory.Validate());
   const std::set<std::string> names(trajectory.joint_names.begin(), trajectory.joint_names.end());
@@ -388,6 +474,127 @@ FollowJointTrajectoryResult::FromRecordBatch(const arrow::RecordBatch& batch) {
                         ReadF64List(batch, "final_position_error"));
   ARROW_ASSIGN_OR_RAISE(value.final_velocity_error,
                         ReadF64List(batch, "final_velocity_error"));
+  ARROW_RETURN_NOT_OK(value.Validate());
+  return value;
+}
+
+arrow::Status GripperCommandGoal::Validate() const {
+  ARROW_RETURN_NOT_OK(ValidateFinite("position", position));
+  ARROW_RETURN_NOT_OK(ValidateOptionalNonNegative("max_velocity", max_velocity));
+  return ValidateOptionalNonNegative("max_effort", max_effort);
+}
+
+arrow::Result<std::shared_ptr<arrow::RecordBatch>>
+GripperCommandGoal::ToRecordBatch() const {
+  ARROW_RETURN_NOT_OK(Validate());
+  ARROW_ASSIGN_OR_RAISE(auto position_array, ScalarF64(position));
+  ARROW_ASSIGN_OR_RAISE(auto velocity_array, OptionalF64(max_velocity));
+  ARROW_ASSIGN_OR_RAISE(auto effort_array, OptionalF64(max_effort));
+  return MakeBatch(GripperCommandGoalFields(),
+                   {position_array, velocity_array, effort_array});
+}
+
+arrow::Result<GripperCommandGoal> GripperCommandGoal::FromRecordBatch(
+    const arrow::RecordBatch& batch) {
+  ARROW_RETURN_NOT_OK(RequireOneRow(batch));
+  ARROW_RETURN_NOT_OK(
+      RequireExactSchema(batch, GripperCommandGoalFields(), "GripperCommandGoal"));
+  GripperCommandGoal value;
+  ARROW_ASSIGN_OR_RAISE(value.position, ReadF64(batch, "position"));
+  ARROW_ASSIGN_OR_RAISE(value.max_velocity, ReadOptionalF64(batch, "max_velocity"));
+  ARROW_ASSIGN_OR_RAISE(value.max_effort, ReadOptionalF64(batch, "max_effort"));
+  ARROW_RETURN_NOT_OK(value.Validate());
+  return value;
+}
+
+arrow::Status GripperCommandFeedback::Validate() const {
+  if (elapsed_ns < 0) return arrow::Status::Invalid("elapsed_ns must be non-negative");
+  ARROW_RETURN_NOT_OK(ValidateFinite("position", position));
+  ARROW_RETURN_NOT_OK(ValidateOptionalFinite("velocity", velocity));
+  return ValidateOptionalFinite("effort", effort);
+}
+
+arrow::Result<std::shared_ptr<arrow::RecordBatch>>
+GripperCommandFeedback::ToRecordBatch() const {
+  ARROW_RETURN_NOT_OK(Validate());
+  ARROW_ASSIGN_OR_RAISE(auto elapsed_array, ScalarI64(elapsed_ns));
+  ARROW_ASSIGN_OR_RAISE(auto position_array, ScalarF64(position));
+  ARROW_ASSIGN_OR_RAISE(auto velocity_array, OptionalF64(velocity));
+  ARROW_ASSIGN_OR_RAISE(auto effort_array, OptionalF64(effort));
+  ARROW_ASSIGN_OR_RAISE(auto stalled_array, ScalarBool(stalled));
+  ARROW_ASSIGN_OR_RAISE(auto reached_array, ScalarBool(reached_goal));
+  return MakeBatch(GripperCommandFeedbackFields(),
+                   {elapsed_array, position_array, velocity_array, effort_array,
+                    stalled_array, reached_array});
+}
+
+arrow::Result<GripperCommandFeedback> GripperCommandFeedback::FromRecordBatch(
+    const arrow::RecordBatch& batch) {
+  ARROW_RETURN_NOT_OK(RequireOneRow(batch));
+  ARROW_RETURN_NOT_OK(
+      RequireExactSchema(batch, GripperCommandFeedbackFields(), "GripperCommandFeedback"));
+  GripperCommandFeedback value;
+  ARROW_ASSIGN_OR_RAISE(value.elapsed_ns, ReadI64(batch, "elapsed_ns"));
+  ARROW_ASSIGN_OR_RAISE(value.position, ReadF64(batch, "position"));
+  ARROW_ASSIGN_OR_RAISE(value.velocity, ReadOptionalF64(batch, "velocity"));
+  ARROW_ASSIGN_OR_RAISE(value.effort, ReadOptionalF64(batch, "effort"));
+  ARROW_ASSIGN_OR_RAISE(value.stalled, ReadBool(batch, "stalled"));
+  ARROW_ASSIGN_OR_RAISE(value.reached_goal, ReadBool(batch, "reached_goal"));
+  ARROW_RETURN_NOT_OK(value.Validate());
+  return value;
+}
+
+arrow::Status GripperCommandResult::Validate() const {
+  if (ToString(error_code).empty()) return arrow::Status::Invalid("error_code is invalid");
+  if (elapsed_ns < 0) return arrow::Status::Invalid("elapsed_ns must be non-negative");
+  ARROW_RETURN_NOT_OK(ValidateOptionalFinite("position", position));
+  ARROW_RETURN_NOT_OK(ValidateOptionalFinite("velocity", velocity));
+  ARROW_RETURN_NOT_OK(ValidateOptionalFinite("effort", effort));
+  if (stalled && reached_goal) {
+    return arrow::Status::Invalid("stalled and reached_goal cannot both be true");
+  }
+  if (error_code == GripperCommandErrorCode::Success && !stalled && !reached_goal) {
+    return arrow::Status::Invalid(
+        "SUCCESS requires exactly one of stalled/reached_goal true");
+  }
+  if (error_code == GripperCommandErrorCode::Stalled && (!stalled || reached_goal)) {
+    return arrow::Status::Invalid(
+        "STALLED requires stalled=true and reached_goal=false");
+  }
+  return arrow::Status::OK();
+}
+
+arrow::Result<std::shared_ptr<arrow::RecordBatch>>
+GripperCommandResult::ToRecordBatch() const {
+  ARROW_RETURN_NOT_OK(Validate());
+  ARROW_ASSIGN_OR_RAISE(auto error_array, ScalarString(ToString(error_code)));
+  ARROW_ASSIGN_OR_RAISE(auto message_array, ScalarString(message));
+  ARROW_ASSIGN_OR_RAISE(auto elapsed_array, ScalarI64(elapsed_ns));
+  ARROW_ASSIGN_OR_RAISE(auto position_array, OptionalF64(position));
+  ARROW_ASSIGN_OR_RAISE(auto velocity_array, OptionalF64(velocity));
+  ARROW_ASSIGN_OR_RAISE(auto effort_array, OptionalF64(effort));
+  ARROW_ASSIGN_OR_RAISE(auto stalled_array, ScalarBool(stalled));
+  ARROW_ASSIGN_OR_RAISE(auto reached_array, ScalarBool(reached_goal));
+  return MakeBatch(GripperCommandResultFields(),
+                   {error_array, message_array, elapsed_array, position_array,
+                    velocity_array, effort_array, stalled_array, reached_array});
+}
+
+arrow::Result<GripperCommandResult> GripperCommandResult::FromRecordBatch(
+    const arrow::RecordBatch& batch) {
+  ARROW_RETURN_NOT_OK(RequireOneRow(batch));
+  ARROW_RETURN_NOT_OK(
+      RequireExactSchema(batch, GripperCommandResultFields(), "GripperCommandResult"));
+  GripperCommandResult value;
+  ARROW_ASSIGN_OR_RAISE(auto error_code, ReadString(batch, "error_code"));
+  ARROW_ASSIGN_OR_RAISE(value.error_code, GripperCommandErrorCodeFromString(error_code));
+  ARROW_ASSIGN_OR_RAISE(value.message, ReadString(batch, "message"));
+  ARROW_ASSIGN_OR_RAISE(value.elapsed_ns, ReadI64(batch, "elapsed_ns"));
+  ARROW_ASSIGN_OR_RAISE(value.position, ReadOptionalF64(batch, "position"));
+  ARROW_ASSIGN_OR_RAISE(value.velocity, ReadOptionalF64(batch, "velocity"));
+  ARROW_ASSIGN_OR_RAISE(value.effort, ReadOptionalF64(batch, "effort"));
+  ARROW_ASSIGN_OR_RAISE(value.stalled, ReadBool(batch, "stalled"));
+  ARROW_ASSIGN_OR_RAISE(value.reached_goal, ReadBool(batch, "reached_goal"));
   ARROW_RETURN_NOT_OK(value.Validate());
   return value;
 }

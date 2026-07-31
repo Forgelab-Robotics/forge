@@ -130,7 +130,8 @@ void TestArrowValidationAndConversion() {
 
 void TestHandleRobotInput() {
   forge_robot::RobotNodeOptions options;
-  options.joint_order = {"shoulder", "elbow"};
+  options.joint_order = {"shoulder", "elbow", "gripper"};
+  options.strict_extra_arrow_columns = true;
 
   FakeDriver driver;
   forge_msgs::JointCommand command{
@@ -147,12 +148,39 @@ void TestHandleRobotInput() {
   forge_robot::HandleRobotInput("action", **command_batch, driver, options);
   assert(driver.command_count == 1);
   assert(driver.last_command.position == std::vector<double>({1.0, 2.0}));
+  forge_msgs::JointCommand arm_command{
+      {"shoulder", "elbow"}, "position", {1.5, 2.5}, {}, {}, {}, {}};
+  auto arm_batch = arm_command.ToRecordBatch();
+  assert(arm_batch.ok());
+  assert((*arm_batch)->schema()->GetFieldIndex("goal_id") == -1);
+  assert((*arm_batch)->schema()->GetFieldIndex("goal_status") == -1);
+  forge_robot::HandleRobotInput("action/arm", **arm_batch, driver, options);
+  assert(driver.command_count == 2);
+  assert(driver.last_command.name == std::vector<std::string>({"shoulder", "elbow"}));
+  assert(driver.last_command.position == std::vector<double>({1.5, 2.5}));
+  assert(driver.last_command.effort.empty());
+
+  forge_msgs::JointCommand gripper_command{
+      {"gripper"}, "effort", {}, {}, {4.0}, {}, {}};
+  auto gripper_batch = gripper_command.ToRecordBatch();
+  assert(gripper_batch.ok());
+  assert((*gripper_batch)->schema()->GetFieldIndex("goal_id") == -1);
+  assert((*gripper_batch)->schema()->GetFieldIndex("goal_status") == -1);
+  forge_robot::HandleRobotInput("action/gripper", **gripper_batch, driver, options);
+  assert(driver.command_count == 3);
+  assert(driver.last_command.name == std::vector<std::string>({"gripper"}));
+  assert(driver.last_command.position.empty());
+  assert(driver.last_command.effort == std::vector<double>({4.0}));
+
+  forge_robot::HandleRobotInput("action/", **gripper_batch, driver, options);
+  forge_robot::HandleRobotInput("actions/gripper", **gripper_batch, driver, options);
+  assert(driver.command_count == 3);
 
   forge_msgs::JointState state{{"shoulder", "elbow"}, {3.0, 4.0}, {}, {}};
   auto state_batch = state.ToRecordBatch();
   assert(state_batch.ok());
   forge_robot::HandleRobotInput("master_state", **state_batch, driver, options);
-  assert(driver.command_count == 2);
+  assert(driver.command_count == 4);
   assert(driver.last_command.mode == "position");
   assert(driver.last_command.position == std::vector<double>({3.0, 4.0}));
 

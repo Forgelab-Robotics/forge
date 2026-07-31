@@ -23,7 +23,7 @@ Drivers that support planar base velocity commands can also inherit
 The optional Dora runner mirrors the Python `forge_robot` node loop:
 
 - input `tick` reads `driver.GetState()` and publishes output `state`.
-- input `action` parses `JointCommand` and calls `driver.SetCommand(...)`.
+- input `action` or `action/<source>` parses a sparse `JointCommand` and calls `driver.SetCommand(...)`; namespaced inputs allow disjoint arm and gripper streams, while sources that can command the same joint still require explicit arbitration.
 - input `master_state` parses leader `JointState`, converts it to a position
   `JointCommand`, then calls `driver.SetCommand(...)`.
 - input `locomotion_command` parses `LocomotionCommand` and calls

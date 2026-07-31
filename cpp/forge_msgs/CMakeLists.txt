@@ -102,6 +102,7 @@ if(FORGE_MSGS_CPP_BUILD_TESTS)
       COMMAND Python3::Interpreter
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_motion_python_cpp_interop.py
         --driver $<TARGET_FILE:forge_msgs_ipc_fixture>
+        --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
     )
   endif()
 

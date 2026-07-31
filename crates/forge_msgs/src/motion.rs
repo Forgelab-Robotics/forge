@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use arrow_array::{
-    Array, ArrayRef, Float64Array, Int64Array, RecordBatch, StringArray, StructArray, UInt32Array,
-    UInt64Array,
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, StructArray,
+    UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, Field, Fields, Schema};
 
@@ -97,6 +97,22 @@ string_enum!(MotionErrorCode {
     InternalError => "INTERNAL_ERROR",
 });
 
+string_enum!(GripperCommandErrorCode {
+    Success => "SUCCESS",
+    InvalidGoal => "INVALID_GOAL",
+    Busy => "BUSY",
+    PositionLimitViolation => "POSITION_LIMIT_VIOLATION",
+    UnsupportedVelocity => "UNSUPPORTED_VELOCITY",
+    UnsupportedEffort => "UNSUPPORTED_EFFORT",
+    NoFreshRobotState => "NO_FRESH_ROBOT_STATE",
+    FeedbackStale => "FEEDBACK_STALE",
+    Stalled => "STALLED",
+    ExecutionTimedOut => "EXECUTION_TIMED_OUT",
+    HardwareFault => "HARDWARE_FAULT",
+    Canceled => "CANCELED",
+    InternalError => "INTERNAL_ERROR",
+});
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FollowJointTrajectoryGoal {
     pub trajectory: JointTrajectory,
@@ -124,6 +140,35 @@ pub struct FollowJointTrajectoryResult {
     pub joint_names: Vec<String>,
     pub final_position_error: Vec<f64>,
     pub final_velocity_error: Vec<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GripperCommandGoal {
+    pub position: f64,
+    pub max_velocity: Option<f64>,
+    pub max_effort: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GripperCommandFeedback {
+    pub elapsed_ns: i64,
+    pub position: f64,
+    pub velocity: Option<f64>,
+    pub effort: Option<f64>,
+    pub stalled: bool,
+    pub reached_goal: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GripperCommandResult {
+    pub error_code: GripperCommandErrorCode,
+    pub message: String,
+    pub elapsed_ns: i64,
+    pub position: Option<f64>,
+    pub velocity: Option<f64>,
+    pub effort: Option<f64>,
+    pub stalled: bool,
+    pub reached_goal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -392,6 +437,190 @@ impl FollowJointTrajectoryResult {
                 .map_err(from_trajectory_error)?,
             read_float_list(batch.column(5), 0, "final_velocity_error")
                 .map_err(from_trajectory_error)?,
+        )
+    }
+}
+
+impl GripperCommandGoal {
+    pub fn new(
+        position: f64,
+        max_velocity: Option<f64>,
+        max_effort: Option<f64>,
+    ) -> Result<Self, MotionError> {
+        let value = Self {
+            position,
+            max_velocity,
+            max_effort,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MotionError> {
+        validate_finite("position", self.position)?;
+        validate_optional_non_negative_f64("max_velocity", self.max_velocity)
+            .map_err(from_trajectory_error)?;
+        validate_optional_non_negative_f64("max_effort", self.max_effort)
+            .map_err(from_trajectory_error)
+    }
+
+    pub fn to_record_batch(&self) -> Result<RecordBatch, MotionError> {
+        self.validate()?;
+        make_batch(
+            gripper_command_goal_schema(),
+            vec![
+                Arc::new(Float64Array::from(vec![self.position])),
+                Arc::new(Float64Array::from(vec![self.max_velocity])),
+                Arc::new(Float64Array::from(vec![self.max_effort])),
+            ],
+        )
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, MotionError> {
+        validate_batch_ignoring_schema_metadata(batch, &gripper_command_goal_schema())?;
+        Self::new(
+            read_f64(batch.column(0), 0, "position")?,
+            read_optional_f64(batch.column(1), 0, "max_velocity").map_err(from_trajectory_error)?,
+            read_optional_f64(batch.column(2), 0, "max_effort").map_err(from_trajectory_error)?,
+        )
+    }
+}
+
+impl GripperCommandFeedback {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        elapsed_ns: i64,
+        position: f64,
+        velocity: Option<f64>,
+        effort: Option<f64>,
+        stalled: bool,
+        reached_goal: bool,
+    ) -> Result<Self, MotionError> {
+        let value = Self {
+            elapsed_ns,
+            position,
+            velocity,
+            effort,
+            stalled,
+            reached_goal,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MotionError> {
+        validate_non_negative_i64("elapsed_ns", self.elapsed_ns).map_err(from_trajectory_error)?;
+        validate_finite("position", self.position)?;
+        validate_optional_finite("velocity", self.velocity)?;
+        validate_optional_finite("effort", self.effort)
+    }
+
+    pub fn to_record_batch(&self) -> Result<RecordBatch, MotionError> {
+        self.validate()?;
+        make_batch(
+            gripper_command_feedback_schema(),
+            vec![
+                Arc::new(Int64Array::from(vec![self.elapsed_ns])),
+                Arc::new(Float64Array::from(vec![self.position])),
+                Arc::new(Float64Array::from(vec![self.velocity])),
+                Arc::new(Float64Array::from(vec![self.effort])),
+                Arc::new(BooleanArray::from(vec![self.stalled])),
+                Arc::new(BooleanArray::from(vec![self.reached_goal])),
+            ],
+        )
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, MotionError> {
+        validate_batch_ignoring_schema_metadata(batch, &gripper_command_feedback_schema())?;
+        Self::new(
+            read_i64(batch.column(0), 0, "elapsed_ns")?,
+            read_f64(batch.column(1), 0, "position")?,
+            read_optional_f64(batch.column(2), 0, "velocity").map_err(from_trajectory_error)?,
+            read_optional_f64(batch.column(3), 0, "effort").map_err(from_trajectory_error)?,
+            read_bool(batch.column(4), 0, "stalled")?,
+            read_bool(batch.column(5), 0, "reached_goal")?,
+        )
+    }
+}
+
+impl GripperCommandResult {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        error_code: GripperCommandErrorCode,
+        message: impl Into<String>,
+        elapsed_ns: i64,
+        position: Option<f64>,
+        velocity: Option<f64>,
+        effort: Option<f64>,
+        stalled: bool,
+        reached_goal: bool,
+    ) -> Result<Self, MotionError> {
+        let value = Self {
+            error_code,
+            message: message.into(),
+            elapsed_ns,
+            position,
+            velocity,
+            effort,
+            stalled,
+            reached_goal,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MotionError> {
+        validate_non_negative_i64("elapsed_ns", self.elapsed_ns).map_err(from_trajectory_error)?;
+        validate_optional_finite("position", self.position)?;
+        validate_optional_finite("velocity", self.velocity)?;
+        validate_optional_finite("effort", self.effort)?;
+        if self.stalled && self.reached_goal {
+            return invalid("stalled and reached_goal cannot both be true");
+        }
+        if self.error_code == GripperCommandErrorCode::Success
+            && !self.stalled
+            && !self.reached_goal
+        {
+            return invalid("SUCCESS requires exactly one of stalled/reached_goal true");
+        }
+        if self.error_code == GripperCommandErrorCode::Stalled
+            && (!self.stalled || self.reached_goal)
+        {
+            return invalid("STALLED requires stalled=true and reached_goal=false");
+        }
+        Ok(())
+    }
+
+    pub fn to_record_batch(&self) -> Result<RecordBatch, MotionError> {
+        self.validate()?;
+        make_batch(
+            gripper_command_result_schema(),
+            vec![
+                string_array(self.error_code.as_str()),
+                string_array(&self.message),
+                Arc::new(Int64Array::from(vec![self.elapsed_ns])),
+                Arc::new(Float64Array::from(vec![self.position])),
+                Arc::new(Float64Array::from(vec![self.velocity])),
+                Arc::new(Float64Array::from(vec![self.effort])),
+                Arc::new(BooleanArray::from(vec![self.stalled])),
+                Arc::new(BooleanArray::from(vec![self.reached_goal])),
+            ],
+        )
+    }
+
+    pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, MotionError> {
+        validate_batch_ignoring_schema_metadata(batch, &gripper_command_result_schema())?;
+        Self::new(
+            GripperCommandErrorCode::try_from(
+                read_string(batch.column(0), 0, "error_code")?.as_str(),
+            )?,
+            read_string(batch.column(1), 0, "message")?,
+            read_i64(batch.column(2), 0, "elapsed_ns")?,
+            read_optional_f64(batch.column(3), 0, "position").map_err(from_trajectory_error)?,
+            read_optional_f64(batch.column(4), 0, "velocity").map_err(from_trajectory_error)?,
+            read_optional_f64(batch.column(5), 0, "effort").map_err(from_trajectory_error)?,
+            read_bool(batch.column(6), 0, "stalled")?,
+            read_bool(batch.column(7), 0, "reached_goal")?,
         )
     }
 }
@@ -897,6 +1126,38 @@ fn follow_result_schema() -> Schema {
     ])
 }
 
+fn gripper_command_goal_schema() -> Schema {
+    Schema::new(vec![
+        Field::new("position", DataType::Float64, false),
+        Field::new("max_velocity", DataType::Float64, true),
+        Field::new("max_effort", DataType::Float64, true),
+    ])
+}
+
+fn gripper_command_feedback_schema() -> Schema {
+    Schema::new(vec![
+        Field::new("elapsed_ns", DataType::Int64, false),
+        Field::new("position", DataType::Float64, false),
+        Field::new("velocity", DataType::Float64, true),
+        Field::new("effort", DataType::Float64, true),
+        Field::new("stalled", DataType::Boolean, false),
+        Field::new("reached_goal", DataType::Boolean, false),
+    ])
+}
+
+fn gripper_command_result_schema() -> Schema {
+    Schema::new(vec![
+        Field::new("error_code", DataType::Utf8, false),
+        Field::new("message", DataType::Utf8, false),
+        Field::new("elapsed_ns", DataType::Int64, false),
+        Field::new("position", DataType::Float64, true),
+        Field::new("velocity", DataType::Float64, true),
+        Field::new("effort", DataType::Float64, true),
+        Field::new("stalled", DataType::Boolean, false),
+        Field::new("reached_goal", DataType::Boolean, false),
+    ])
+}
+
 fn move_joints_goal_schema() -> Schema {
     Schema::new(vec![
         Field::new("group_name", DataType::Utf8, false),
@@ -1078,6 +1339,20 @@ fn validate_progress(value: Option<f64>) -> Result<(), MotionError> {
     Ok(())
 }
 
+fn validate_finite(name: &str, value: f64) -> Result<(), MotionError> {
+    if !value.is_finite() {
+        return invalid(format!("{name} must be finite"));
+    }
+    Ok(())
+}
+
+fn validate_optional_finite(name: &str, value: Option<f64>) -> Result<(), MotionError> {
+    if value.is_some_and(|value| !value.is_finite()) {
+        return invalid(format!("{name} must be finite when specified"));
+    }
+    Ok(())
+}
+
 fn validate_finite_values(name: &str, values: &[f64]) -> Result<(), MotionError> {
     if values.iter().any(|value| !value.is_finite()) {
         return invalid(format!("{name} values must be finite"));
@@ -1100,6 +1375,19 @@ fn validate_batch(batch: &RecordBatch, expected: &Schema) -> Result<(), MotionEr
     }
     if batch.schema().as_ref() != expected {
         return invalid("RecordBatch schema does not match the message schema");
+    }
+    Ok(())
+}
+
+fn validate_batch_ignoring_schema_metadata(
+    batch: &RecordBatch,
+    expected: &Schema,
+) -> Result<(), MotionError> {
+    if batch.num_rows() != 1 {
+        return invalid("RecordBatch must contain exactly one row");
+    }
+    if batch.schema().fields() != expected.fields() {
+        return invalid("RecordBatch schema fields do not match the message schema");
     }
     Ok(())
 }
@@ -1148,6 +1436,17 @@ fn read_f64(array: &ArrayRef, index: usize, name: &str) -> Result<f64, MotionErr
         .as_any()
         .downcast_ref::<Float64Array>()
         .ok_or_else(|| MotionError::Invalid(format!("{name} must be float64")))?;
+    if index >= values.len() || values.is_null(index) {
+        return invalid(format!("{name} must be non-null"));
+    }
+    Ok(values.value(index))
+}
+
+fn read_bool(array: &ArrayRef, index: usize, name: &str) -> Result<bool, MotionError> {
+    let values = array
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .ok_or_else(|| MotionError::Invalid(format!("{name} must be bool")))?;
     if index >= values.len() || values.is_null(index) {
         return invalid(format!("{name} must be non-null"));
     }
@@ -1206,12 +1505,16 @@ impl std::error::Error for MotionError {}
 
 #[cfg(test)]
 mod tests {
-    use arrow_array::Array;
-    use arrow_schema::DataType;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use arrow_array::{Array, ArrayRef, Int64Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
 
     use super::{
         FollowJointTrajectoryErrorCode, FollowJointTrajectoryFeedback, FollowJointTrajectoryGoal,
-        FollowJointTrajectoryResult, MotionErrorCode, MotionPhase, MoveJointsFeedback,
+        FollowJointTrajectoryResult, GripperCommandErrorCode, GripperCommandFeedback,
+        GripperCommandGoal, GripperCommandResult, MotionErrorCode, MotionPhase, MoveJointsFeedback,
         MoveJointsGoal, MoveJointsResult, MovePoseFeedback, MovePoseGoal, MovePoseResult,
     };
     use crate::{JointTolerance, JointTrajectory, JointTrajectoryPoint, Pose};
@@ -1283,6 +1586,125 @@ mod tests {
             |value| value.to_record_batch().unwrap(),
             |batch| FollowJointTrajectoryResult::from_record_batch(batch).unwrap(),
         );
+    }
+
+    #[test]
+    fn all_gripper_command_messages_roundtrip() {
+        let goal = GripperCommandGoal::new(0.08, None, Some(12.0)).unwrap();
+        let goal_batch = goal.to_record_batch().unwrap();
+        assert!(goal_batch.column(1).is_null(0));
+        assert!(!goal_batch.column(2).is_null(0));
+        assert_eq!(
+            GripperCommandGoal::from_record_batch(&goal_batch).unwrap(),
+            goal
+        );
+
+        let feedback =
+            GripperCommandFeedback::new(5, 1.2, None, Some(-0.25), false, false).unwrap();
+        roundtrip(
+            feedback,
+            |value| value.to_record_batch().unwrap(),
+            |batch| GripperCommandFeedback::from_record_batch(batch).unwrap(),
+        );
+
+        let result = GripperCommandResult::new(
+            GripperCommandErrorCode::NoFreshRobotState,
+            "state unavailable",
+            0,
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let result_batch = result.to_record_batch().unwrap();
+        assert!(result_batch.column(3).is_null(0));
+        assert_eq!(
+            GripperCommandResult::from_record_batch(&result_batch).unwrap(),
+            result
+        );
+    }
+
+    #[test]
+    fn gripper_schema_ignores_schema_metadata_but_rejects_structural_changes() {
+        let with_metadata = |batch: &RecordBatch| {
+            let schema = Schema::new_with_metadata(
+                batch.schema().fields().clone(),
+                HashMap::from([("producer".to_owned(), "review-test".to_owned())]),
+            );
+            RecordBatch::try_new(Arc::new(schema), batch.columns().to_vec()).unwrap()
+        };
+
+        let goal = GripperCommandGoal::new(0.08, None, Some(12.0)).unwrap();
+        let goal_batch = goal.to_record_batch().unwrap();
+        assert_eq!(
+            GripperCommandGoal::from_record_batch(&with_metadata(&goal_batch)).unwrap(),
+            goal
+        );
+
+        let feedback =
+            GripperCommandFeedback::new(5, 1.2, None, Some(-0.25), false, false).unwrap();
+        let feedback_batch = feedback.to_record_batch().unwrap();
+        assert_eq!(
+            GripperCommandFeedback::from_record_batch(&with_metadata(&feedback_batch)).unwrap(),
+            feedback
+        );
+
+        let result = GripperCommandResult::new(
+            GripperCommandErrorCode::NoFreshRobotState,
+            "state unavailable",
+            0,
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let result_batch = result.to_record_batch().unwrap();
+        assert_eq!(
+            GripperCommandResult::from_record_batch(&with_metadata(&result_batch)).unwrap(),
+            result
+        );
+
+        let fields = goal_batch
+            .schema()
+            .fields()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let columns = goal_batch.columns().to_vec();
+        let assert_rejected =
+            |fields: Vec<Arc<Field>>, columns: Vec<ArrayRef>, difference: &str| {
+                let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+                assert!(
+                    GripperCommandGoal::from_record_batch(&batch).is_err(),
+                    "accepted {difference}"
+                );
+            };
+
+        let mut extra_fields = fields.clone();
+        let mut extra_columns = columns.clone();
+        extra_fields.push(Arc::new(Field::new("goal_id", DataType::Float64, false)));
+        extra_columns.push(goal_batch.column(0).clone());
+        assert_rejected(extra_fields, extra_columns, "an extra field");
+
+        let mut reordered_fields = fields.clone();
+        let mut reordered_columns = columns.clone();
+        reordered_fields.swap(0, 1);
+        reordered_columns.swap(0, 1);
+        assert_rejected(reordered_fields, reordered_columns, "reordered fields");
+
+        let mut wrong_type_fields = fields.clone();
+        let mut wrong_type_columns = columns.clone();
+        wrong_type_fields[0] = Arc::new(Field::new("position", DataType::Int64, false));
+        wrong_type_columns[0] = Arc::new(Int64Array::from(vec![0]));
+        assert_rejected(wrong_type_fields, wrong_type_columns, "a wrong field type");
+
+        let mut wrong_nullability_fields = fields;
+        wrong_nullability_fields[0] = Arc::new(Field::new("position", DataType::Float64, true));
+        assert_rejected(wrong_nullability_fields, columns, "wrong field nullability");
     }
 
     #[test]
@@ -1444,6 +1866,41 @@ mod tests {
             );
         }
 
+        let gripper_codes = [
+            (GripperCommandErrorCode::Success, "SUCCESS"),
+            (GripperCommandErrorCode::InvalidGoal, "INVALID_GOAL"),
+            (GripperCommandErrorCode::Busy, "BUSY"),
+            (
+                GripperCommandErrorCode::PositionLimitViolation,
+                "POSITION_LIMIT_VIOLATION",
+            ),
+            (
+                GripperCommandErrorCode::UnsupportedVelocity,
+                "UNSUPPORTED_VELOCITY",
+            ),
+            (
+                GripperCommandErrorCode::UnsupportedEffort,
+                "UNSUPPORTED_EFFORT",
+            ),
+            (
+                GripperCommandErrorCode::NoFreshRobotState,
+                "NO_FRESH_ROBOT_STATE",
+            ),
+            (GripperCommandErrorCode::FeedbackStale, "FEEDBACK_STALE"),
+            (GripperCommandErrorCode::Stalled, "STALLED"),
+            (
+                GripperCommandErrorCode::ExecutionTimedOut,
+                "EXECUTION_TIMED_OUT",
+            ),
+            (GripperCommandErrorCode::HardwareFault, "HARDWARE_FAULT"),
+            (GripperCommandErrorCode::Canceled, "CANCELED"),
+            (GripperCommandErrorCode::InternalError, "INTERNAL_ERROR"),
+        ];
+        for (value, text) in gripper_codes {
+            assert_eq!(value.as_str(), text);
+            assert_eq!(GripperCommandErrorCode::try_from(text).unwrap(), value);
+        }
+
         let phases = [
             (MotionPhase::Validating, "VALIDATING"),
             (MotionPhase::Planning, "PLANNING"),
@@ -1519,6 +1976,24 @@ mod tests {
         assert!(goal.schema().index_of("goal_id").is_err());
         assert!(goal.schema().index_of("goal_status").is_err());
 
+        let gripper_goal = GripperCommandGoal::new(0.0, None, None)
+            .unwrap()
+            .to_record_batch()
+            .unwrap();
+        let gripper_fields = gripper_goal.schema().fields().clone();
+        assert_eq!(
+            gripper_fields
+                .iter()
+                .map(|field| field.name())
+                .collect::<Vec<_>>(),
+            vec!["position", "max_velocity", "max_effort"]
+        );
+        assert!(!gripper_fields[0].is_nullable());
+        assert!(gripper_fields[1].is_nullable());
+        assert!(gripper_fields[2].is_nullable());
+        assert!(gripper_goal.schema().index_of("joint_name").is_err());
+        assert!(gripper_goal.schema().index_of("goal_id").is_err());
+
         let feedback =
             MovePoseFeedback::new(MotionPhase::Validating, None, 0, None, None, None, None, "")
                 .unwrap()
@@ -1538,6 +2013,51 @@ mod tests {
             vec!["x", "y", "z", "qx", "qy", "qz", "qw"]
         );
         assert!(pose_fields.iter().all(|field| !field.is_nullable()));
+    }
+
+    #[test]
+    fn validates_gripper_command_values() {
+        assert!(GripperCommandGoal::new(f64::INFINITY, None, None).is_err());
+        assert!(GripperCommandGoal::new(0.0, Some(-0.1), None).is_err());
+        assert!(GripperCommandGoal::new(0.0, None, Some(f64::NAN)).is_err());
+        assert!(GripperCommandFeedback::new(-1, 0.0, None, None, false, false).is_err());
+        assert!(
+            GripperCommandFeedback::new(0, 0.0, Some(f64::INFINITY), None, false, false).is_err()
+        );
+        assert!(
+            GripperCommandResult::new(
+                GripperCommandErrorCode::Success,
+                "",
+                0,
+                Some(f64::NAN),
+                None,
+                None,
+                false,
+                true,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn validates_gripper_command_result_flag_combinations() {
+        let result = |error_code, stalled, reached_goal| {
+            GripperCommandResult::new(error_code, "", 0, None, None, None, stalled, reached_goal)
+        };
+
+        assert!(result(GripperCommandErrorCode::Success, false, false).is_err());
+        assert!(result(GripperCommandErrorCode::Success, true, true).is_err());
+        assert!(result(GripperCommandErrorCode::Stalled, false, false).is_err());
+        assert!(result(GripperCommandErrorCode::Stalled, false, true).is_err());
+        assert!(result(GripperCommandErrorCode::Stalled, true, true).is_err());
+        assert!(result(GripperCommandErrorCode::InternalError, true, true).is_err());
+
+        assert!(result(GripperCommandErrorCode::Success, true, false).is_ok());
+        assert!(result(GripperCommandErrorCode::Success, false, true).is_ok());
+        assert!(result(GripperCommandErrorCode::Stalled, true, false).is_ok());
+        assert!(result(GripperCommandErrorCode::InternalError, false, false).is_ok());
+        assert!(result(GripperCommandErrorCode::InternalError, true, false).is_ok());
+        assert!(result(GripperCommandErrorCode::InternalError, false, true).is_ok());
     }
 
     #[test]

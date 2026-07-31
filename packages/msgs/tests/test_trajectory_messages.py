@@ -197,6 +197,22 @@ def test_trajectory_validation_contract() -> None:
         )
 
 
+def test_to_arrow_revalidates_post_construction_scalar_mutation() -> None:
+    point = _point(0)
+    point.time_from_start_ns = -1
+
+    with pytest.raises(ValidationError, match="non-negative"):
+        point.to_arrow()
+
+
+def test_to_arrow_revalidates_post_construction_list_mutation() -> None:
+    point = _point(0)
+    point.positions.clear()
+
+    with pytest.raises(ValidationError, match="positions"):
+        point.to_arrow()
+
+
 def test_trajectory_from_arrow_rejects_noncanonical_order_and_row_count() -> None:
     point_batch = _point(0).to_arrow()
     reordered = pa.RecordBatch.from_arrays(

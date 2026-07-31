@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -29,8 +30,16 @@ def assert_schema(batch: pa.RecordBatch, schema: pa.Schema) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--driver", required=True)
+    parser.add_argument("--pythonpath", required=True)
     args = parser.parse_args()
     driver = Path(args.driver)
+
+    sys.path.insert(0, args.pythonpath)
+    from forge_msgs import (
+        GripperCommandFeedback,
+        GripperCommandGoal,
+        GripperCommandResult,
+    )
 
     string_list = pa.list_(pa.string())
     f64_list = pa.list_(pa.float64())
@@ -66,6 +75,36 @@ def main() -> int:
             pa.field("qy", pa.float64(), nullable=False),
             pa.field("qz", pa.float64(), nullable=False),
             pa.field("qw", pa.float64(), nullable=False),
+        ]
+    )
+
+    gripper_goal_schema = pa.schema(
+        [
+            pa.field("position", pa.float64(), nullable=False),
+            pa.field("max_velocity", pa.float64(), nullable=True),
+            pa.field("max_effort", pa.float64(), nullable=True),
+        ]
+    )
+    gripper_feedback_schema = pa.schema(
+        [
+            pa.field("elapsed_ns", pa.int64(), nullable=False),
+            pa.field("position", pa.float64(), nullable=False),
+            pa.field("velocity", pa.float64(), nullable=True),
+            pa.field("effort", pa.float64(), nullable=True),
+            pa.field("stalled", pa.bool_(), nullable=False),
+            pa.field("reached_goal", pa.bool_(), nullable=False),
+        ]
+    )
+    gripper_result_schema = pa.schema(
+        [
+            pa.field("error_code", pa.string(), nullable=False),
+            pa.field("message", pa.string(), nullable=False),
+            pa.field("elapsed_ns", pa.int64(), nullable=False),
+            pa.field("position", pa.float64(), nullable=True),
+            pa.field("velocity", pa.float64(), nullable=True),
+            pa.field("effort", pa.float64(), nullable=True),
+            pa.field("stalled", pa.bool_(), nullable=False),
+            pa.field("reached_goal", pa.bool_(), nullable=False),
         ]
     )
 
@@ -124,8 +163,120 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
+        cpp_gripper_goal = root / "cpp_gripper_goal.arrow"
+        subprocess.run(
+            [driver, "write-gripper-command-goal", cpp_gripper_goal], check=True
+        )
+        batch = read_ipc(cpp_gripper_goal)
+        assert_schema(batch, gripper_goal_schema)
+        assert "joint_name" not in batch.schema.names
+        assert batch["position"][0].as_py() == 0.08
+        assert batch["max_velocity"][0].as_py() is None
+        assert batch["max_effort"][0].as_py() == 12.0
+        assert GripperCommandGoal.from_arrow(
+            cpp_gripper_goal.read_bytes()
+        ) == GripperCommandGoal(
+            position=0.08,
+            max_velocity=None,
+            max_effort=12.0,
+        )
+
+        py_gripper_goal = root / "py_gripper_goal.arrow"
+        write_ipc(
+            GripperCommandGoal(
+                position=0.04,
+                max_velocity=0.1,
+                max_effort=None,
+            ).to_arrow(),
+            py_gripper_goal,
+        )
+        output = subprocess.check_output(
+            [driver, "read-gripper-command-goal", py_gripper_goal], text=True
+        ).strip()
+        assert output == "0.04 0.1 null"
+
+        cpp_gripper_feedback = root / "cpp_gripper_feedback.arrow"
+        subprocess.run(
+            [driver, "write-gripper-command-feedback", cpp_gripper_feedback], check=True
+        )
+        batch = read_ipc(cpp_gripper_feedback)
+        assert_schema(batch, gripper_feedback_schema)
+        assert batch["velocity"][0].as_py() is None
+        assert batch["effort"][0].as_py() == -0.25
+        assert batch["stalled"][0].as_py() is False
+        assert GripperCommandFeedback.from_arrow(
+            cpp_gripper_feedback.read_bytes()
+        ) == GripperCommandFeedback(
+            elapsed_ns=15,
+            position=1.2,
+            velocity=None,
+            effort=-0.25,
+            stalled=False,
+            reached_goal=False,
+        )
+
+        py_gripper_feedback = root / "py_gripper_feedback.arrow"
+        write_ipc(
+            GripperCommandFeedback(
+                elapsed_ns=25,
+                position=0.5,
+                velocity=-0.1,
+                effort=None,
+                stalled=True,
+                reached_goal=False,
+            ).to_arrow(),
+            py_gripper_feedback,
+        )
+        output = subprocess.check_output(
+            [driver, "read-gripper-command-feedback", py_gripper_feedback], text=True
+        ).strip()
+        assert output == "25 0.5 -0.1 null 1 0"
+
+        cpp_gripper_result = root / "cpp_gripper_result.arrow"
+        subprocess.run(
+            [driver, "write-gripper-command-result", cpp_gripper_result], check=True
+        )
+        batch = read_ipc(cpp_gripper_result)
+        assert_schema(batch, gripper_result_schema)
+        assert batch["error_code"][0].as_py() == "NO_FRESH_ROBOT_STATE"
+        assert batch["position"][0].as_py() is None
+        assert batch["reached_goal"][0].as_py() is False
+        assert GripperCommandResult.from_arrow(
+            cpp_gripper_result.read_bytes()
+        ) == GripperCommandResult(
+            error_code="NO_FRESH_ROBOT_STATE",
+            message="state_unavailable",
+            elapsed_ns=0,
+            position=None,
+            velocity=None,
+            effort=None,
+            stalled=False,
+            reached_goal=False,
+        )
+
+        py_gripper_result = root / "py_gripper_result.arrow"
+        write_ipc(
+            GripperCommandResult(
+                error_code="SUCCESS",
+                message="done",
+                elapsed_ns=20,
+                position=0.0,
+                velocity=0.0,
+                effort=None,
+                stalled=False,
+                reached_goal=True,
+            ).to_arrow(),
+            py_gripper_result,
+        )
+        output = subprocess.check_output(
+            [driver, "read-gripper-command-result", py_gripper_result], text=True
+        ).strip()
+        assert output == "SUCCESS done 20 0 0 null 0 1"
+
         cpp_follow = root / "cpp_follow.arrow"
-        subprocess.run([driver, "write-follow-joint-trajectory-goal", cpp_follow], check=True)
+        subprocess.run(
+            [driver, "write-follow-joint-trajectory-goal", cpp_follow], check=True
+        )
         batch = read_ipc(cpp_follow)
         assert_schema(batch, follow_schema)
         assert batch["trajectory"][0].as_py()["joint_names"] == ["joint_1", "joint_2"]
@@ -138,8 +289,16 @@ def main() -> int:
                 [
                     pa.array([trajectory], type=trajectory_type),
                     pa.array(
-                        [[{"joint_name": "joint_2", "position": None,
-                           "velocity": 0.1, "acceleration": None}]],
+                        [
+                            [
+                                {
+                                    "joint_name": "joint_2",
+                                    "position": None,
+                                    "velocity": 0.1,
+                                    "acceleration": None,
+                                }
+                            ]
+                        ],
                         type=pa.list_(tolerance_type),
                     ),
                     pa.array([[]], type=pa.list_(tolerance_type)),
@@ -197,8 +356,17 @@ def main() -> int:
                     pa.array(["base"], type=pa.string()),
                     pa.array(["tcp"], type=pa.string()),
                     pa.array(
-                        [{"x": 0.6, "y": 0.1, "z": 0.2, "qx": 0.0, "qy": 0.0,
-                          "qz": 0.0, "qw": 1.0}],
+                        [
+                            {
+                                "x": 0.6,
+                                "y": 0.1,
+                                "z": 0.2,
+                                "qx": 0.0,
+                                "qy": 0.0,
+                                "qz": 0.0,
+                                "qw": 1.0,
+                            }
+                        ],
                         type=pose_type,
                     ),
                     pa.array([0.8], type=pa.float64()),

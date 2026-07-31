@@ -9,7 +9,8 @@ namespace {
 int Usage() {
   std::cerr << "usage: forge_msgs_ipc_fixture <command> <path>\n"
             << "commands: write/read-{text,audio,classification,keypoint2d,keypoint3d,segmentation,"
-               "follow-joint-trajectory-goal,move-joints-goal,move-pose-goal}\n";
+               "follow-joint-trajectory-goal,gripper-command-goal,gripper-command-feedback,"
+               "gripper-command-result,move-joints-goal,move-pose-goal}\n";
   return 2;
 }
 
@@ -209,6 +210,121 @@ int main(int argc, char** argv) {
         std::cout << value->score.front() << "\n";
       }
     }
+    return 0;
+  }
+
+  if (command == "write-gripper-command-goal") {
+    forge_msgs::GripperCommandGoal value{0.08, std::nullopt, 12.0};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-gripper-command-goal") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::GripperCommandGoal::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->position << " ";
+    if (value->max_velocity) {
+      std::cout << *value->max_velocity << " ";
+    } else {
+      std::cout << "null ";
+    }
+    if (value->max_effort) {
+      std::cout << *value->max_effort << "\n";
+    } else {
+      std::cout << "null\n";
+    }
+    return 0;
+  }
+
+  if (command == "write-gripper-command-feedback") {
+    forge_msgs::GripperCommandFeedback value{15, 1.2, std::nullopt, -0.25, false, false};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-gripper-command-feedback") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::GripperCommandFeedback::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->elapsed_ns << " " << value->position << " ";
+    if (value->velocity) {
+      std::cout << *value->velocity << " ";
+    } else {
+      std::cout << "null ";
+    }
+    if (value->effort) {
+      std::cout << *value->effort << " ";
+    } else {
+      std::cout << "null ";
+    }
+    std::cout << value->stalled << " " << value->reached_goal << "\n";
+    return 0;
+  }
+
+  if (command == "write-gripper-command-result") {
+    forge_msgs::GripperCommandResult value{
+        forge_msgs::GripperCommandErrorCode::NoFreshRobotState,
+        "state_unavailable", 0, std::nullopt, std::nullopt, std::nullopt, false, false};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-gripper-command-result") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::GripperCommandResult::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << forge_msgs::ToString(value->error_code) << " " << value->message << " "
+              << value->elapsed_ns << " ";
+    if (value->position) {
+      std::cout << *value->position << " ";
+    } else {
+      std::cout << "null ";
+    }
+    if (value->velocity) {
+      std::cout << *value->velocity << " ";
+    } else {
+      std::cout << "null ";
+    }
+    if (value->effort) {
+      std::cout << *value->effort << " ";
+    } else {
+      std::cout << "null ";
+    }
+    std::cout << value->stalled << " " << value->reached_goal << "\n";
     return 0;
   }
 

@@ -143,6 +143,7 @@ configured-group motion actions:
 - `JointTrajectoryPoint`, `JointTrajectory`, and `JointTolerance`
 - `FollowJointTrajectoryGoal`, `FollowJointTrajectoryFeedback`, and
   `FollowJointTrajectoryResult`
+- `GripperCommandGoal`, `GripperCommandFeedback`, and `GripperCommandResult`
 - `MoveJointsGoal`, `MoveJointsFeedback`, and `MoveJointsResult`
 - `MovePoseGoal`, `MovePoseFeedback`, and `MovePoseResult`
 
@@ -150,6 +151,13 @@ Trajectory points and tolerances are encoded as nested Arrow structs, including
 `list<struct>` trajectory and tolerance fields. `MovePose*` messages reuse
 `Pose` as a nested struct. Optional scalar and pose fields are represented by
 Arrow nulls rather than sentinel values.
+
+`GripperCommand` addresses the coordinate configured for its controller endpoint;
+it does not carry `joint_name` or a dynamic unit. Prismatic coordinates use meters,
+meters/s, and Newtons. Revolute or rotary actuator coordinates use radians,
+radians/s, and Newton-meters. Explicit velocity or effort limits remain nullable so
+a position-only backend can reject unsupported requested limits rather than silently
+ignore them.
 
 `goal_id` and `goal_status` are Dora action metadata and are intentionally not
 included in payload columns. Domain result codes are separate from Dora's

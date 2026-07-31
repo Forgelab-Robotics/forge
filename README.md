@@ -256,7 +256,7 @@ Core messages include:
 standard robot nodes:
 
 - input `tick` publishes output `state`
-- input `action` accepts a low-level `JointCommand`
+- input `action` or `action/<source>` accepts a sparse low-level `JointCommand`; namespaced inputs allow disjoint arm and gripper streams, while overlapping command sources require explicit arbitration
 - input `master_state` mirrors a leader `JointState` to a position command
 - input `locomotion_command` accepts a `LocomotionCommand` when the driver
   supports locomotion

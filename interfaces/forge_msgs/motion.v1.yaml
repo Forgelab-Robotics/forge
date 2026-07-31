@@ -64,6 +64,23 @@ enums:
       - CANCELED
       - INTERNAL_ERROR
 
+  GripperCommandErrorCode:
+    arrow: utf8
+    values:
+      - SUCCESS
+      - INVALID_GOAL
+      - BUSY
+      - POSITION_LIMIT_VIOLATION
+      - UNSUPPORTED_VELOCITY
+      - UNSUPPORTED_EFFORT
+      - NO_FRESH_ROBOT_STATE
+      - FEEDBACK_STALE
+      - STALLED
+      - EXECUTION_TIMED_OUT
+      - HARDWARE_FAULT
+      - CANCELED
+      - INTERNAL_ERROR
+
 messages:
   JointTrajectoryPoint:
     purpose: Joint-space trajectory sample at a duration relative to trajectory start.
@@ -239,6 +256,105 @@ messages:
       - elapsed_ns must be non-negative.
       - joint_names may be empty when execution never started.
       - final_position_error and final_velocity_error must either be empty or have the same length as joint_names.
+      - SUCCESS is paired with Dora goal_status succeeded, CANCELED with canceled, and all other errors with aborted.
+
+  GripperCommandGoal:
+    purpose: Position goal for a controller-configured gripper coordinate.
+    row_count: single
+    fields:
+      position:
+        arrow: float64
+        required: true
+      max_velocity:
+        arrow: float64
+        required: false
+        nullable: true
+      max_effort:
+        arrow: float64
+        required: false
+        nullable: true
+    validation:
+      - position must be finite.
+      - max_velocity and max_effort, when specified, must be finite and non-negative.
+      - Null means unspecified; zero is a real limit and has no sentinel meaning.
+      - The action endpoint and controller configuration identify the controlled coordinate; joint_name is not carried in the payload.
+      - For a prismatic coordinate, position, max_velocity, and max_effort use meters, meters per second, and Newtons.
+      - For a revolute or rotary actuator coordinate, position, max_velocity, and max_effort use radians, radians per second, and Newton-meters.
+
+  GripperCommandFeedback:
+    purpose: Periodic observed state for an executing GripperCommand action.
+    row_count: single
+    fields:
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      position:
+        arrow: float64
+        required: true
+      velocity:
+        arrow: float64
+        required: false
+        nullable: true
+      effort:
+        arrow: float64
+        required: false
+        nullable: true
+      stalled:
+        arrow: bool
+        required: true
+      reached_goal:
+        arrow: bool
+        required: true
+    validation:
+      - elapsed_ns must be non-negative and is relative to action start, not a wall-clock timestamp.
+      - position and specified velocity and effort values must be finite.
+      - position, velocity, and effort use the same configured coordinate semantics as the goal.
+      - Null velocity or effort means the observation is unavailable; zero is an observed value, not a sentinel.
+
+  GripperCommandResult:
+    purpose: Terminal domain result for a GripperCommand action.
+    row_count: single
+    fields:
+      error_code:
+        arrow: utf8
+        required: true
+        enum: GripperCommandErrorCode
+      message:
+        arrow: utf8
+        required: true
+        empty_allowed: true
+      elapsed_ns:
+        arrow: int64
+        required: true
+        unit: nanosecond
+      position:
+        arrow: float64
+        required: false
+        nullable: true
+      velocity:
+        arrow: float64
+        required: false
+        nullable: true
+      effort:
+        arrow: float64
+        required: false
+        nullable: true
+      stalled:
+        arrow: bool
+        required: true
+      reached_goal:
+        arrow: bool
+        required: true
+    validation:
+      - elapsed_ns must be non-negative and is relative to action start, not a wall-clock timestamp.
+      - Specified position, velocity, and effort values must be finite and use the configured coordinate semantics.
+      - State values may be null when a goal is rejected before fresh state is available.
+      - stalled and reached_goal are universal result flags and are present for every error_code.
+      - stalled and reached_goal are mutually exclusive for every result.
+      - SUCCESS requires exactly one flag to be true; an allowed stall has stalled true and reached_goal false, while reaching the setpoint has reached_goal true and stalled false.
+      - STALLED requires stalled true and reached_goal false.
+      - Error codes other than SUCCESS and STALLED may use neither flag or either single flag, subject only to mutual exclusion.
       - SUCCESS is paired with Dora goal_status succeeded, CANCELED with canceled, and all other errors with aborted.
 
   MoveJointsGoal:
