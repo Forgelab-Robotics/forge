@@ -243,10 +243,25 @@ cargo test --workspace --locked
 Build and verify release archives before creating a Git tag:
 
 ```bash
-uv build --all-packages
-uv run python packages/kinematics/scripts/check_distribution.py
+uv run python scripts/build_python_distributions.py
 cargo package --workspace --locked
 ```
+
+By default, the Python build script creates local validation artifacts for all
+five packages. It starts from a clean `dist/release/python` directory, verifies
+wheel and sdist identity, Apache-2.0 metadata and exact license layout, runs the
+additional Kinematics checks, and writes `dist/release/python/SHA256SUMS`.
+These all-family artifacts are not a publishing command.
+
+Build a publishable candidate for one family only from a clean commit:
+
+```bash
+uv run python scripts/build_python_distributions.py --release-family msgs
+```
+
+Local release-family mode rejects dirty trees and requires the expected protected
+tag not to exist. A family tag CI run selects that family automatically and
+requires its tag to exist and point to the checked-out `HEAD`.
 
 Run the C++ tests:
 

@@ -44,11 +44,8 @@ jobs:
       - name: Run Python tests
         run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
 
-      - name: Build all Python distributions
-        run: uv build --all-packages
-
-      - name: Check forge-kinematics distributions
-        run: uv run python packages/kinematics/scripts/check_distribution.py
+      - name: Build and validate all Python distributions
+        run: uv run python scripts/build_python_distributions.py
 
   rust:
     name: Rust

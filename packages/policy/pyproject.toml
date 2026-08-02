@@ -5,6 +5,7 @@ description = "通用 policy 节点协议与 Dora runner，供算法策略节点
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "X-ERA" }
 ]

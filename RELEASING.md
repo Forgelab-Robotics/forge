@@ -107,13 +107,27 @@ cargo test --workspace --locked
 Build language packages:
 
 ```bash
-rm -rf dist/release
-uv build --all-packages --out-dir dist/release/python
-uv run python packages/kinematics/scripts/check_distribution.py \
-  dist/release/python
+# Local validation of all five Python packages; do not publish these artifacts.
+uv run python scripts/build_python_distributions.py
+
+# Final candidate for one affected family, from a clean commit.
+uv run python scripts/build_python_distributions.py --release-family msgs
 
 cargo package --workspace --locked
 ```
+
+The Python build entry point cleans `dist/release/python`, checks package-family
+versions, validates wheel and sdist identity, Apache-2.0 metadata and exact
+license layout, runs the additional Kinematics checks when applicable, and
+generates `dist/release/python/SHA256SUMS`. Each package-local `LICENSE` must
+exactly match the repository root `LICENSE`; this duplication is required so
+independently built source distributions carry the complete license text.
+
+`--release-family` builds only that family's Python package and requires a clean
+working tree. For a local pre-tag candidate, the expected protected tag must not
+exist. In a supported family tag pipeline, `CI_COMMIT_TAG` or the GitHub tag
+environment selects release-family mode automatically; that tag must exist and
+point to the checked-out `HEAD`.
 
 Configure, build, and test C++ with the same Python environment used for PyArrow:
 
@@ -150,7 +164,7 @@ After review:
 6. Attach checksums or package registry links to the corresponding GitLab Release if artifacts are uploaded.
 7. Update downstream nodes to use the family tags and regenerate their locks.
 
-For the initial baseline, the intended tags are:
+The initial baseline tags have already been created:
 
 ```text
 forge-common-v1.0.0
@@ -160,4 +174,5 @@ forge-policy-v1.0.0
 forge-kinematics-v1.0.0
 ```
 
-Do not create or move release tags before clean-commit validation completes.
+These and all future release tags are immutable. Never move or reuse one; increment
+the affected family version and create a new protected tag instead.

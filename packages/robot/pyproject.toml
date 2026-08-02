@@ -5,6 +5,7 @@ description = "通用机器人驱动协议与抽象基类，供 forge_robots 各
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "X-ERA" }
 ]

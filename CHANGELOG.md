@@ -2,6 +2,16 @@
 
 Forge package families are versioned independently. Implementations of the same logical family across Python, Rust, C++, and the language-neutral interface contract share one version and one protected GitLab tag.
 
+## Unreleased
+
+### Release tooling
+
+- Include the complete Apache-2.0 `LICENSE` in every Python wheel and source distribution.
+- Add one repository-level command to cleanly build and validate all Python distributions and generate `SHA256SUMS`.
+- Validate wheel and sdist identity, Apache-2.0 metadata, exact license layout, and unexpected output entries.
+- Add guarded, single-family release candidate builds while retaining all-family local validation.
+- Make CI validate all five Python distributions instead of only `forge-kinematics`.
+
 ## Initial package-family 1.0 releases - 2026-08-02
 
 | Package family | Version | Protected tag |
