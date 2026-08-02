@@ -26,8 +26,22 @@ packages, for example a separate `forge_robots` repository.
 
 ## Status
 
-Forge is currently alpha software. Public APIs, message schemas, and runner
-semantics may change before a stable release.
+Forge provides stable `1.0.0` baselines for five independently versioned
+package families: Common, Msgs, Robot, Policy, and Kinematics. Implementations
+of one family across Python, Rust, C++, and the language-neutral interface
+remain synchronized; unrelated families may release at different rates.
+
+Each baseline is identified by a protected family tag such as
+`forge-msgs-v1.0.0`. Historical generic tags such as `v1.0.0` belong to an
+earlier repository layout and do not identify these releases.
+
+The initial family releases define stable contracts for message schemas,
+serialization, shared utilities, kinematics, and robot/policy runners. Each
+family's `1.x` line remains backward compatible; breaking that family contract
+requires its next major version. See
+[`CHANGELOG.md`](CHANGELOG.md) for the release baselines and
+[`RELEASING.md`](RELEASING.md) for package-family boundaries, protected GitLab
+tags, and validation procedures.
 
 ## Repository Layout
 
@@ -44,7 +58,8 @@ forge/
 ├── cpp/forge_common/           # C++ shared utilities
 ├── cpp/forge_msgs/             # C++ message types and Arrow conversion
 ├── cpp/forge_robot/            # C++ robot driver helpers and Dora runner
-├── pyproject.toml              # Python uv workspace
+├── versions.toml               # Package-family release versions
+├── pyproject.toml              # Virtual Python uv workspace
 └── Cargo.toml                  # Rust cargo workspace
 ```
 
@@ -72,7 +87,7 @@ Install every workspace package, including the optional Pinocchio kinematics
 library, when developing or running the complete Python test suite:
 
 ```bash
-uv sync --all-packages --dev
+uv sync --all-packages --all-extras --dev
 ```
 
 Build the Rust workspace:
@@ -132,7 +147,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge
   GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG dev
+  GIT_TAG forge-msgs-v1.0.0
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
@@ -152,7 +167,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge_common
   GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG dev
+  GIT_TAG forge-common-v1.0.0
   SOURCE_SUBDIR cpp/forge_common
 )
 FetchContent_MakeAvailable(forge_common)
@@ -172,7 +187,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge_robot
   GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG dev
+  GIT_TAG forge-robot-v1.0.0
   SOURCE_SUBDIR cpp/forge_robot
 )
 FetchContent_MakeAvailable(forge_robot)
@@ -205,6 +220,14 @@ cmake -S . -B build \
 
 ## Testing
 
+Verify that every Python, Rust, and C++ implementation matches its package
+family version in `versions.toml`, including the Msgs interface major and lock
+files:
+
+```bash
+python scripts/check_release_versions.py
+```
+
 Run the Python tests:
 
 ```bash
@@ -214,7 +237,15 @@ uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests pac
 Run the Rust tests:
 
 ```bash
-cargo test --workspace
+cargo test --workspace --locked
+```
+
+Build and verify release archives before creating a Git tag:
+
+```bash
+uv build --all-packages
+uv run python packages/kinematics/scripts/check_distribution.py
+cargo package --workspace --locked
 ```
 
 Run the C++ tests:

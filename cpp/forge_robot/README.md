@@ -84,7 +84,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge_robot
   GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG dev
+  GIT_TAG forge-robot-v1.0.0
   SOURCE_SUBDIR cpp/forge_robot
 )
 FetchContent_MakeAvailable(forge_robot)

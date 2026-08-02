@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(forge_robot_cpp VERSION 0.1.0 LANGUAGES CXX)
+project(forge_robot_cpp VERSION 1.0.0 LANGUAGES CXX)
+
+find_package(Python3 COMPONENTS Interpreter)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,12 +88,19 @@ if(FORGE_ROBOT_CPP_BUILD_TESTS)
   endif()
 
   set(FORGE_ROBOT_CPP_CONSUMER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/fetch_content_consumer)
+  set(FORGE_ROBOT_CPP_CONSUMER_PYTHON_ARGS)
+  if(Python3_Interpreter_FOUND)
+    list(APPEND FORGE_ROBOT_CPP_CONSUMER_PYTHON_ARGS
+      -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
+    )
+  endif()
   add_test(
     NAME forge_robot_fetch_content_consumer_configure
     COMMAND ${CMAKE_COMMAND}
       -S ${CMAKE_CURRENT_SOURCE_DIR}/tests/fetch_content_consumer
       -B ${FORGE_ROBOT_CPP_CONSUMER_BUILD_DIR}
       -G ${CMAKE_GENERATOR}
+      ${FORGE_ROBOT_CPP_CONSUMER_PYTHON_ARGS}
       -DFORGE_FETCH_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../..
   )
   add_test(

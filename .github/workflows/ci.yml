@@ -4,8 +4,11 @@ on:
   pull_request:
   push:
     branches:
+      - dev
       - main
       - master
+    tags:
+      - "forge-*-v*"
 
 jobs:
   python:
@@ -27,7 +30,10 @@ jobs:
           enable-cache: true
 
       - name: Install Python dependencies
-        run: uv sync --locked --all-packages --dev
+        run: uv sync --locked --all-packages --all-extras --dev
+
+      - name: Validate package-family release versions
+        run: python scripts/check_release_versions.py
 
       - name: Run Ruff
         run: uv run ruff check .
@@ -38,8 +44,8 @@ jobs:
       - name: Run Python tests
         run: uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
 
-      - name: Build forge-kinematics distributions
-        run: uv build --package forge-kinematics
+      - name: Build all Python distributions
+        run: uv build --all-packages
 
       - name: Check forge-kinematics distributions
         run: uv run python packages/kinematics/scripts/check_distribution.py
@@ -56,7 +62,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+      - name: Validate Rust packages
+        run: cargo package --workspace --locked
 
   cpp:
     name: C++

@@ -1,6 +1,6 @@
 [project]
 name = "forge"
-version = "0.1.0"
+version = "1.0.0"
 description = "Core message schemas and Dora node helpers for Forge robotics applications."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,10 +9,10 @@ authors = [
     { name = "X-ERA" }
 ]
 dependencies = [
-    "forge-common",
-    "forge-msgs",
-    "forge-policy",
-    "forge-robot",
+    "forge-common>=1.0.0,<2",
+    "forge-msgs>=1.0.0,<2",
+    "forge-policy>=1.0.0,<2",
+    "forge-robot>=1.0.0,<2",
 ]
 
 [dependency-groups]
@@ -21,6 +21,9 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.14.0",
 ]
+
+[tool.uv]
+package = false
 
 [tool.uv.workspace]
 members = [

@@ -88,15 +88,17 @@ def check_sdist_license(sdist: Path, expected: bytes) -> None:
     )
 
 
-def parse_requirement(requirement: str) -> tuple[str, str]:
-    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)(.*)", requirement)
+def parse_requirement(requirement: str) -> tuple[str, str, str | None]:
+    requirement_part, separator, marker_part = requirement.partition(";")
+    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)(.*)", requirement_part.strip())
     if match is None:
         raise DistributionCheckError(f"cannot parse Requires-Dist: {requirement}")
     canonical_name = re.sub(r"[-_.]+", "-", match.group(1)).lower()
     constraints = match.group(2).replace(" ", "")
     if constraints.startswith("(") and constraints.endswith(")"):
         constraints = constraints[1:-1]
-    return canonical_name, constraints
+    marker = marker_part.replace(" ", "").replace('"', "'") if separator else None
+    return canonical_name, constraints, marker
 
 
 def check_wheel_metadata(archive: zipfile.ZipFile, name: str, version: str) -> None:
@@ -127,18 +129,33 @@ def check_wheel_metadata(archive: zipfile.ZipFile, name: str, version: str) -> N
     if metadata["Requires-Python"] != ">=3.12":
         raise DistributionCheckError("wheel Requires-Python must be >=3.12")
 
-    requirements = dict(
-        parse_requirement(requirement)
-        for requirement in metadata.get_all("Requires-Dist", [])
-    )
-    if set(requirements) != {"numpy", "pin"}:
+    requirements = {
+        name: (constraints, marker)
+        for name, constraints, marker in (
+            parse_requirement(requirement)
+            for requirement in metadata.get_all("Requires-Dist", [])
+        )
+    }
+    if set(requirements) != {"numpy", "pin", "scipy"}:
         raise DistributionCheckError(
             f"unexpected wheel dependencies: {sorted(requirements)}"
         )
-    if requirements["numpy"] != ">=2.0":
+    if requirements["numpy"] != (">=2.0", None):
         raise DistributionCheckError("wheel must require numpy>=2.0")
-    if set(requirements["pin"].split(",")) != {">=3.0", "<5"}:
+    pin_constraints, pin_marker = requirements["pin"]
+    if set(pin_constraints.split(",")) != {">=3.0", "<5"} or pin_marker is not None:
         raise DistributionCheckError("wheel must require pin>=3.0,<5")
+    scipy_constraints, scipy_marker = requirements["scipy"]
+    if set(scipy_constraints.split(",")) != {">=1.16", "<2"}:
+        raise DistributionCheckError(
+            "wheel least-squares extra must require scipy>=1.16,<2"
+        )
+    if scipy_marker != "extra=='least-squares'":
+        raise DistributionCheckError(
+            "wheel scipy dependency must be guarded by extra == 'least-squares'"
+        )
+    if metadata.get_all("Provides-Extra", []) != ["least-squares"]:
+        raise DistributionCheckError("wheel must provide the least-squares extra")
 
 
 def check_wheel_import(wheel: Path) -> None:

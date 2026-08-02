@@ -2,8 +2,10 @@
 
 ## Supported Versions
 
-Forge is currently pre-1.0 alpha software. Security fixes are made on the main
-development branch until a stable release policy is published.
+Forge supports the latest release in each `1.x` package-family line. Security
+fixes are prepared on the development branch and released under protected
+family tags such as `forge-msgs-v1.0.0`. Historical generic repository-era tags
+are not part of these support lines.
 
 ## Reporting a Vulnerability
 

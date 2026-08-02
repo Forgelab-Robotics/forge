@@ -1,6 +1,6 @@
 [project]
 name = "forge-robot"
-version = "0.1.0"
+version = "1.0.0"
 description = "通用机器人驱动协议与抽象基类，供 forge_robots 各机器人实现复用。"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,7 +10,7 @@ authors = [
 ]
 dependencies = [
     "dora-rs==0.4.1",
-    "forge-msgs",
+    "forge-msgs>=1.0.0,<2",
 ]
 
 [tool.uv.sources]
