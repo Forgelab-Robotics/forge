@@ -46,6 +46,17 @@ def test_tool_message_round_trips_record_batch_table_and_ipc() -> None:
     assert ToolMessage.from_arrow(_ipc_bytes(batch)) == message
 
 
+def test_tool_message_round_trips_dora_struct_array() -> None:
+    message = _invoke_message()
+    batch = message.to_arrow()
+    struct = pa.StructArray.from_arrays(
+        [batch.column(index) for index in range(batch.num_columns)],
+        fields=list(batch.schema),
+    )
+
+    assert ToolMessage.from_arrow(struct) == message
+
+
 def test_tool_message_from_payload_uses_deterministic_strict_json() -> None:
     message = ToolMessage.from_payload(
         message_type="tool.invoke.request",

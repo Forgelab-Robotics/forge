@@ -65,6 +65,21 @@ def test_ensure_record_batch_struct_array() -> None:
     assert out["y"][0].as_py() == 2
 
 
+def test_ensure_record_batch_preserves_struct_field_nullability() -> None:
+    fields = [
+        pa.field("required", pa.string(), nullable=False),
+        pa.field("optional", pa.int64(), nullable=True),
+    ]
+    struct = pa.StructArray.from_arrays(
+        [pa.array(["value"]), pa.array([None], type=pa.int64())],
+        fields=fields,
+    )
+
+    out = ensure_record_batch(struct)
+
+    assert out.schema == pa.schema(fields)
+
+
 def test_ensure_record_batch_invalid_type() -> None:
     with pytest.raises(TypeError, match="from_arrow expects"):
         ensure_record_batch([1, 2, 3])  # type: ignore[arg-type]

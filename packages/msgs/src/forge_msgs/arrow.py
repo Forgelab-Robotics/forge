@@ -19,9 +19,9 @@ def ensure_record_batch(
             return pa.RecordBatch.from_pydict({})
         return batches[0]
     if isinstance(data, pa.StructArray):
-        names = [data.type.field(i).name for i in range(data.type.num_fields)]
+        fields = [data.type.field(i) for i in range(data.type.num_fields)]
         arrays = [data.field(i) for i in range(data.type.num_fields)]
-        return pa.RecordBatch.from_arrays(arrays, names=names)
+        return pa.RecordBatch.from_arrays(arrays, schema=pa.schema(fields))
     raise TypeError(
         "from_arrow expects pa.RecordBatch, pa.Table, pa.StructArray, or bytes, "
         f"got: {type(data)}"
