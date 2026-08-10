@@ -1007,7 +1007,6 @@ def test_segmentation_reader_accepts_legacy_payload_without_score() -> None:
     assert canonical.schema.names[-1] == "score"
 
 
-
 def test_point_cloud_roundtrip_and_dense_validation() -> None:
     cloud = PointCloud(
         width=2,

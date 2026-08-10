@@ -134,11 +134,14 @@ def test_validate_robot_control_arrow_accepts_legacy_command_without_mode() -> N
 def test_validate_robot_control_arrow_accepts_sparse_joint_subset() -> None:
     batch = JointCommand(name=["joint_rev"], position=[0.1]).to_arrow()
 
-    assert validate_robot_control_arrow(
-        batch,
-        ["joint_rev", "joint_prism"],
-        strict_extra_columns=True,
-    ) is batch
+    assert (
+        validate_robot_control_arrow(
+            batch,
+            ["joint_rev", "joint_prism"],
+            strict_extra_columns=True,
+        )
+        is batch
+    )
 
 
 def test_validate_robot_control_arrow_rejects_invalid_mode() -> None:

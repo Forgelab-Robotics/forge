@@ -10,6 +10,7 @@ members = [
     "forge-msgs",
     "forge-policy",
     "forge-robot",
+    "forge-tool",
 ]
 
 [[package]]
@@ -277,6 +278,7 @@ dependencies = [
     { name = "forge-msgs" },
     { name = "forge-policy" },
     { name = "forge-robot" },
+    { name = "forge-tool" },
 ]
 
 [package.dev-dependencies]
@@ -292,6 +294,7 @@ requires-dist = [
     { name = "forge-msgs", editable = "packages/msgs" },
     { name = "forge-policy", editable = "packages/policy" },
     { name = "forge-robot", editable = "packages/robot" },
+    { name = "forge-tool", editable = "packages/tool" },
 ]
 
 [package.metadata.requires-dev]
@@ -330,7 +333,7 @@ provides-extras = ["least-squares"]
 
 [[package]]
 name = "forge-msgs"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "packages/msgs" }
 dependencies = [
     { name = "numpy" },
@@ -383,6 +386,20 @@ requires-dist = [
     { name = "dora-rs", specifier = "==0.4.1" },
     { name = "forge-msgs", editable = "packages/msgs" },
 ]
+
+[[package]]
+name = "forge-tool"
+version = "0.1.0"
+source = { editable = "packages/tool" }
+
+[package.optional-dependencies]
+dora = [
+    { name = "forge-msgs" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "forge-msgs", marker = "extra == 'dora'", editable = "packages/msgs" }]
+provides-extras = ["dora"]
 
 [[package]]
 name = "iniconfig"

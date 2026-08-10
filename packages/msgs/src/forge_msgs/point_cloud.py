@@ -46,10 +46,14 @@ class PointCloud(BaseModel):
             elif point_count % self.height == 0:
                 self.width = point_count // self.height
             else:
-                raise ValueError("point count must be divisible by height when width is omitted")
+                raise ValueError(
+                    "point count must be divisible by height when width is omitted"
+                )
         if self.is_dense is None:
             self.is_dense = all(
-                math.isfinite(value) for values in (self.x, self.y, self.z) for value in values
+                math.isfinite(value)
+                for values in (self.x, self.y, self.z)
+                for value in values
             )
         if not 0 <= self.width <= _UINT32_MAX or not 0 <= self.height <= _UINT32_MAX:
             raise ValueError("width and height must be in the uint32 range")
@@ -64,9 +68,13 @@ class PointCloud(BaseModel):
                 raise ValueError(f"{name} values must be in the range [0, 255]")
         populated_rgb = [bool(self.red), bool(self.green), bool(self.blue)]
         if any(populated_rgb) and not all(populated_rgb):
-            raise ValueError("red, green, and blue must all be empty or all be populated")
+            raise ValueError(
+                "red, green, and blue must all be empty or all be populated"
+            )
         if bool(self.is_dense) and any(
-            not math.isfinite(value) for values in (self.x, self.y, self.z) for value in values
+            not math.isfinite(value)
+            for values in (self.x, self.y, self.z)
+            for value in values
         ):
             raise ValueError("dense point clouds must contain finite XYZ values")
         return self

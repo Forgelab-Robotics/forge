@@ -1,12 +1,13 @@
 # Forge
 
 Forge is a small robotics framework core for Dora dataflows. It provides shared
-message schemas, Python and Rust message implementations, and reusable node
-runner helpers for robot drivers and policy nodes.
+message schemas, Python and Rust message implementations, reusable node runner
+helpers for robot drivers and policy nodes, and typed tool endpoint contracts.
 
 This repository intentionally focuses on the framework layer:
 
 - `interfaces/forge_msgs/` contains the canonical message schema.
+- `interfaces/forge_tool/` documents the language-neutral ToolEndpoint Wire Protocol.
 - `packages/msgs` provides Python message models and Arrow serialization.
 - `crates/forge_msgs` provides the Rust message implementation.
 - `cpp/forge_msgs` provides the C++ message implementation.
@@ -16,6 +17,8 @@ This repository intentionally focuses on the framework layer:
   and optional Dora C++ node runner.
 - `packages/policy` provides policy adapter protocols and a standard Dora policy
   node loop.
+- `packages/tool` provides dependency-free Python contracts for describing and
+  invoking query, action, and session tools.
 - `packages/common` and `crates/forge_common` provide shared utilities,
   currently including logging and tracing helpers.
 - `packages/kinematics` provides optional Pinocchio-based URDF forward
@@ -26,14 +29,17 @@ packages, for example a separate `forge_robots` repository.
 
 ## Status
 
-Forge provides stable `1.0.0` baselines for five independently versioned
-package families: Common, Msgs, Robot, Policy, and Kinematics. Implementations
-of one family across Python, Rust, C++, and the language-neutral interface
-remain synchronized; unrelated families may release at different rates.
+Forge tracks six independently versioned package families: Common, Msgs, Robot,
+Policy, Kinematics, and Tool. The first five have stable `1.0.0` baselines; current
+unreleased manifests stage Msgs `1.1.0` and Tool `0.1.0`. Implementations of one
+family across Python, Rust, C++, and the language-neutral interface remain
+synchronized; unrelated families may release at different rates.
 
-Each baseline is identified by a protected family tag such as
-`forge-msgs-v1.0.0`. Historical generic tags such as `v1.0.0` belong to an
-earlier repository layout and do not identify these releases.
+Each release is identified by a protected family tag such as
+`forge-msgs-v1.0.0`; Tool releases use `forge-tool-v<semver>`. Historical generic
+tags such as `v1.0.0` belong to an earlier repository layout and do not identify
+these releases. The tag pattern does not indicate that a Tool tag has been
+published.
 
 The initial family releases define stable contracts for message schemas,
 serialization, shared utilities, kinematics, and robot/policy runners. Each
@@ -48,11 +54,13 @@ tags, and validation procedures.
 ```text
 forge/
 ├── interfaces/forge_msgs/      # Canonical cross-language message schema
+├── interfaces/forge_tool/      # Language-neutral ToolEndpoint Wire Protocol
 ├── packages/common/            # Python shared utilities
 ├── packages/kinematics/        # Python Pinocchio FK/Jacobian/IK library
 ├── packages/msgs/              # Python message models and Arrow conversion
 ├── packages/policy/            # Python policy node protocols and Dora runner
 ├── packages/robot/             # Python robot driver protocols and Dora runner
+├── packages/tool/              # Python ToolEndpoint API and logical protocol
 ├── crates/forge_common/        # Rust shared utilities
 ├── crates/forge_msgs/          # Rust message types and Arrow conversion
 ├── cpp/forge_common/           # C++ shared utilities
@@ -67,7 +75,8 @@ forge/
 
 - Python 3.12 or newer for the workspace
 - Rust toolchain with edition 2024 support
-- CMake 3.20 or newer for C++ packages
+- A C++20-capable compiler and CMake 3.20 or newer for C++ packages;
+  `cpp/forge_msgs` and its dependents require C++20
 - Apache Arrow C++ for `cpp/forge_msgs`
 - Rust/Cargo and network access, or a local Dora `v0.4.1` checkout, for the
   optional C++ `forge_robot` Dora runner
@@ -83,8 +92,8 @@ Clone the repository and install the default Python workspace:
 uv sync --dev
 ```
 
-Install every workspace package, including the optional Pinocchio kinematics
-library, when developing or running the complete Python test suite:
+Install every workspace package, including Tool and the optional Pinocchio
+kinematics library, when developing or running the complete Python test suite:
 
 ```bash
 uv sync --all-packages --all-extras --dev
@@ -231,7 +240,7 @@ python scripts/check_release_versions.py
 Run the Python tests:
 
 ```bash
-uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
+uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests packages/tool/tests
 ```
 
 Run the Rust tests:
@@ -248,7 +257,7 @@ cargo package --workspace --locked
 ```
 
 By default, the Python build script creates local validation artifacts for all
-five packages. It starts from a clean `dist/release/python` directory, verifies
+six packages. It starts from a clean `dist/release/python` directory, verifies
 wheel and sdist identity, Apache-2.0 metadata and exact license layout, runs the
 additional Kinematics checks, and writes `dist/release/python/SHA256SUMS`.
 These all-family artifacts are not a publishing command.
@@ -280,9 +289,10 @@ uv run ruff check .
 ## Message Schema
 
 The canonical cross-language contract starts at
-`interfaces/forge_msgs/forge_msgs.v1.yaml`, which references versioned schemas
-for the control, geometry, interaction, perception, and sensor domains. Python,
-Rust, and C++ implementations should conform to those schemas. See
+`interfaces/forge_msgs/forge_msgs.v1.yaml`, which references `common.v1.yaml`,
+`control.v1.yaml`, `motion.v1.yaml`, `geometry.v1.yaml`, `interaction.v1.yaml`,
+`perception.v1.yaml`, `sensor.v1.yaml`, and `tool.v1.yaml`. Python, Rust, and C++
+implementations should conform to those schemas. See
 `interfaces/forge_msgs/SCHEMA.md` and `packages/msgs/README.md` for message
 semantics and Arrow encoding details.
 
@@ -295,6 +305,15 @@ Core messages include:
 - `PointCloud` for organized and unorganized XYZ data
 - 2D/3D detections and instance masks
 - `Pose`, `PolicyCommand`, and policy status/control messages
+- `ToolMessage` for Forge ToolEndpoint protocol transport
+
+`ToolMessage` is implemented in Python, Rust, and C++ as an exact single-row,
+ten-column Arrow carrier ordered as `protocol`, `message_type`, `request_id`,
+`invocation_id`, `attempt_id`, `endpoint_id`, `endpoint_instance_id`,
+`operation`, `sequence`, and `payload_json`. Optional columns use Arrow null;
+`payload_json` encodes the logical payload object, and message-specific
+validation remains in `forge-tool`. There is no observation timestamp column.
+Bidirectional Arrow IPC compatibility is covered between Python and C++.
 
 ## Dora Node Semantics
 

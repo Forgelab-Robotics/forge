@@ -4,8 +4,7 @@ Forge message definitions for Dora dataflow.
 
 The canonical cross-language contract starts at
 `interfaces/forge_msgs/forge_msgs.v1.yaml`. That manifest references the
-versioned domain schemas that Python, Rust, and future C++ implementations
-should follow.
+versioned domain schemas followed by the Python, Rust, and C++ implementations.
 
 ## Core Messages
 
@@ -104,6 +103,25 @@ Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and oth
 - `text: str`
 
 Producers should omit empty outputs when there is no meaningful text.
+
+### `ToolMessage`
+
+Cross-language single-row Arrow carrier for one Forge ToolEndpoint v1alpha1
+logical message. Its exact ten-column order is `protocol`, `message_type`,
+`request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
+`endpoint_instance_id`, `operation`, `sequence`, and `payload_json`; all are
+`utf8` except nullable `sequence: int64`. `request_id`, `invocation_id`,
+`attempt_id`, `operation`, and `sequence` use Arrow null when omitted, while all
+other columns are non-null.
+
+`payload_json` encodes the logical payload object rather than the full carrier
+envelope. It must be a bounded strict JSON object with unique keys, valid Unicode,
+finite numbers, interoperable integers, and at most 64 levels. The carrier has no
+observation timestamp; use Dora event context for transport observation time.
+`forge_msgs` validates the carrier and generic correlation rules, while
+message-specific payload validation remains in `forge-tool`. Python, Rust, and C++
+implement the carrier, with bidirectional Python/C++ Arrow IPC compatibility
+coverage.
 
 ### Perception result sets
 

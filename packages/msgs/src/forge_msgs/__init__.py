@@ -32,6 +32,7 @@ from forge_msgs.point_cloud import PointCloud
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.teleop import TeleopObservation
 from forge_msgs.text import Text
+from forge_msgs.tool import ToolMessage, ToolMessageType
 from forge_msgs.trajectory import (
     FollowJointTrajectoryErrorCode,
     FollowJointTrajectoryFeedback,
@@ -81,5 +82,7 @@ __all__ = [
     "SegmentationMaskSet",
     "TeleopObservation",
     "Text",
+    "ToolMessage",
+    "ToolMessageType",
     "ensure_record_batch",
 ]

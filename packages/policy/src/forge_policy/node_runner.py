@@ -25,7 +25,9 @@ def _send_command_status(
     result: CommandResult,
 ) -> None:
     try:
-        node.send_output("policy_command_status", result.to_status(state.policy_id).to_arrow())
+        node.send_output(
+            "policy_command_status", result.to_status(state.policy_id).to_arrow()
+        )
     except Exception:
         logger.exception("failed to send policy_command_status")
 
@@ -127,7 +129,9 @@ def run_dora_policy_node(
                 break
 
             case "ERROR":
-                logger.error("policy node received ERROR: %s", event.get("error", "unknown"))
+                logger.error(
+                    "policy node received ERROR: %s", event.get("error", "unknown")
+                )
                 break
 
             case _:

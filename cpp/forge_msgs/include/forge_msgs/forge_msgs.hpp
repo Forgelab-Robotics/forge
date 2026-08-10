@@ -1,5 +1,7 @@
 #pragma once
 
+#include <arrow/api.h>
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -8,14 +10,14 @@
 #include <utility>
 #include <vector>
 
-#include <arrow/api.h>
-
 namespace forge_msgs {
 
 using Bytes = std::vector<std::uint8_t>;
 
-arrow::Status WriteIpcStream(const arrow::RecordBatch& batch, const std::string& path);
-arrow::Result<std::shared_ptr<arrow::RecordBatch>> ReadIpcStream(const std::string& path);
+arrow::Status WriteIpcStream(const arrow::RecordBatch& batch,
+                             const std::string& path);
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> ReadIpcStream(
+    const std::string& path);
 
 struct Text {
   std::string text;
@@ -34,7 +36,8 @@ struct AudioChunk {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<AudioChunk> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<AudioChunk> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Image {
@@ -55,7 +58,8 @@ struct CompressedImage {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<CompressedImage> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<CompressedImage> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct PointCloud {
@@ -70,11 +74,13 @@ struct PointCloud {
   std::vector<std::uint8_t> green;
   std::vector<std::uint8_t> blue;
 
-  static arrow::Result<PointCloud> FromXyz(std::vector<float> x, std::vector<float> y,
+  static arrow::Result<PointCloud> FromXyz(std::vector<float> x,
+                                           std::vector<float> y,
                                            std::vector<float> z);
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<PointCloud> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<PointCloud> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct JointState {
@@ -85,7 +91,8 @@ struct JointState {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<JointState> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<JointState> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct JointCommand {
@@ -99,7 +106,8 @@ struct JointCommand {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<JointCommand> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<JointCommand> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct LocomotionCommand {
@@ -109,7 +117,26 @@ struct LocomotionCommand {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<LocomotionCommand> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<LocomotionCommand> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+struct ToolMessage {
+  std::string protocol = "forge.tool.endpoint/v1alpha1";
+  std::string message_type;
+  std::optional<std::string> request_id;
+  std::optional<std::string> invocation_id;
+  std::optional<std::string> attempt_id;
+  std::string endpoint_id;
+  std::string endpoint_instance_id;
+  std::optional<std::string> operation;
+  std::optional<std::int64_t> sequence;
+  std::string payload_json = "{}";
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<ToolMessage> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct PolicyCommand {
@@ -120,7 +147,8 @@ struct PolicyCommand {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<PolicyCommand> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<PolicyCommand> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 enum class PolicyCommandStatusValue {
@@ -145,7 +173,8 @@ struct PolicyCommandStatus {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<PolicyCommandStatus> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<PolicyCommandStatus> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Pose {
@@ -174,7 +203,8 @@ struct JointTrajectoryPoint {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<JointTrajectoryPoint> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<JointTrajectoryPoint> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct JointTrajectory {
@@ -183,7 +213,8 @@ struct JointTrajectory {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<JointTrajectory> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<JointTrajectory> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct JointTolerance {
@@ -194,7 +225,8 @@ struct JointTolerance {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<JointTolerance> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<JointTolerance> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 enum class FollowJointTrajectoryErrorCode {
@@ -214,8 +246,8 @@ enum class FollowJointTrajectoryErrorCode {
 };
 
 std::string ToString(FollowJointTrajectoryErrorCode value);
-arrow::Result<FollowJointTrajectoryErrorCode> FollowJointTrajectoryErrorCodeFromString(
-    const std::string& value);
+arrow::Result<FollowJointTrajectoryErrorCode>
+FollowJointTrajectoryErrorCodeFromString(const std::string& value);
 
 enum class MotionPhase {
   Validating,
@@ -250,7 +282,8 @@ enum class MotionErrorCode {
 };
 
 std::string ToString(MotionErrorCode value);
-arrow::Result<MotionErrorCode> MotionErrorCodeFromString(const std::string& value);
+arrow::Result<MotionErrorCode> MotionErrorCodeFromString(
+    const std::string& value);
 
 enum class GripperCommandErrorCode {
   Success,
@@ -300,7 +333,8 @@ struct FollowJointTrajectoryFeedback {
 };
 
 struct FollowJointTrajectoryResult {
-  FollowJointTrajectoryErrorCode error_code = FollowJointTrajectoryErrorCode::Success;
+  FollowJointTrajectoryErrorCode error_code =
+      FollowJointTrajectoryErrorCode::Success;
   std::string message;
   std::int64_t elapsed_ns = 0;
   std::vector<std::string> joint_names;
@@ -320,7 +354,8 @@ struct GripperCommandGoal {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<GripperCommandGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<GripperCommandGoal> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct GripperCommandFeedback {
@@ -363,7 +398,8 @@ struct MoveJointsGoal {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MoveJointsGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MoveJointsGoal> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct MoveJointsFeedback {
@@ -379,7 +415,8 @@ struct MoveJointsFeedback {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MoveJointsFeedback> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MoveJointsFeedback> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct MoveJointsResult {
@@ -392,7 +429,8 @@ struct MoveJointsResult {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MoveJointsResult> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MoveJointsResult> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct MovePoseGoal {
@@ -408,7 +446,8 @@ struct MovePoseGoal {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MovePoseGoal> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MovePoseGoal> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct MovePoseFeedback {
@@ -423,7 +462,8 @@ struct MovePoseFeedback {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MovePoseFeedback> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MovePoseFeedback> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct MovePoseResult {
@@ -438,7 +478,8 @@ struct MovePoseResult {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<MovePoseResult> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<MovePoseResult> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct PoseSet {
@@ -453,7 +494,8 @@ struct PoseSet {
 
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<PoseSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<PoseSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Classification {
@@ -463,7 +505,8 @@ struct Classification {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<Classification> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<Classification> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Keypoint2DSet {
@@ -479,7 +522,8 @@ struct Keypoint2DSet {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<Keypoint2DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<Keypoint2DSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Keypoint3DSet {
@@ -496,7 +540,8 @@ struct Keypoint3DSet {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<Keypoint3DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<Keypoint3DSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Detection2DSet {
@@ -515,7 +560,8 @@ struct Detection2DSet {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<Detection2DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<Detection2DSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct Detection3DSet {
@@ -538,7 +584,8 @@ struct Detection3DSet {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<Detection3DSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<Detection3DSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 struct SegmentationMaskSet {
@@ -556,7 +603,8 @@ struct SegmentationMaskSet {
   arrow::Status NormalizeDefaults();
   arrow::Status Validate() const;
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
-  static arrow::Result<SegmentationMaskSet> FromRecordBatch(const arrow::RecordBatch& batch);
+  static arrow::Result<SegmentationMaskSet> FromRecordBatch(
+      const arrow::RecordBatch& batch);
 };
 
 }  // namespace forge_msgs

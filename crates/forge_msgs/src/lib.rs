@@ -9,6 +9,7 @@ pub mod perception;
 pub mod point_cloud;
 pub mod pose;
 pub mod text;
+pub mod tool;
 pub mod trajectory;
 
 pub use crate::audio::AudioChunk;
@@ -30,6 +31,7 @@ pub use crate::perception::{
 pub use crate::point_cloud::PointCloud;
 pub use crate::pose::{Pose, PoseSet};
 pub use crate::text::Text;
+pub use crate::tool::{ToolMessage, ToolMessageError};
 pub use crate::trajectory::{
     JointTolerance, JointTrajectory, JointTrajectoryPoint, TrajectoryError,
 };
