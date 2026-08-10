@@ -42,7 +42,11 @@ location of Dora integration dependencies is intentionally left to the vertical 
 
 The exact Arrow carrier schema used by the Dora binding is part of this contract and
 is implemented as documented below. It carries the logical message without changing
-its identities or semantics. The optional Python Arrow carrier binding is implemented; concrete Dora node I/O
+its identities or semantics. The optional Python Arrow carrier binding is implemented. It enforces a configurable
+logical encoded-message limit, reserves bounded correlated-error headroom before
+accepting requests, and applies separate pre-parse raw payload and in-memory Arrow
+carrier limits. IPC bytes must be decoded by the upstream transport under bounded
+framing and decompression limits before entering the binding; concrete Dora node I/O
 wiring and Web framing remain future work.
 
 ## Logical envelope

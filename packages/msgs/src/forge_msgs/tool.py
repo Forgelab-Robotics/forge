@@ -13,6 +13,16 @@ from forge_msgs.arrow import ensure_record_batch
 TOOL_ENDPOINT_PROTOCOL = "forge.tool.endpoint/v1alpha1"
 MAX_SAFE_JSON_INTEGER = 9_007_199_254_740_991
 
+
+class ToolMessageSizeError(ValueError):
+    """A raw ToolMessage payload exceeds a caller-configured carrier limit."""
+
+    def __init__(self, size: int, maximum: int) -> None:
+        self.size = size
+        self.maximum = maximum
+        super().__init__(f"payload_json size {size} exceeds limit {maximum}")
+
+
 ToolMessageType = Literal[
     "endpoint.register",
     "endpoint.unregister",
@@ -285,6 +295,8 @@ class ToolMessage(BaseModel):
     def from_arrow(
         cls,
         data: pa.RecordBatch | pa.Table | pa.StructArray | bytes,
+        *,
+        max_payload_json_bytes: int | None = None,
     ) -> ToolMessage:
         """Decode an exact-schema single-row Arrow carrier."""
         if isinstance(data, bytes):
@@ -309,6 +321,26 @@ class ToolMessage(BaseModel):
             raise ValueError(
                 "ToolMessage RecordBatch schema must exactly match TOOL_MESSAGE_SCHEMA"
             )
+        payload_json = _read_scalar(batch, "payload_json")
+        if max_payload_json_bytes is not None:
+            if (
+                isinstance(max_payload_json_bytes, bool)
+                or not isinstance(max_payload_json_bytes, int)
+                or max_payload_json_bytes <= 0
+            ):
+                raise ValueError("max_payload_json_bytes must be a positive integer")
+            if isinstance(payload_json, str):
+                try:
+                    payload_size = len(payload_json.encode("utf-8"))
+                except UnicodeEncodeError as error:
+                    raise ValueError(
+                        "payload_json must contain valid Unicode scalar values"
+                    ) from error
+                if payload_size > max_payload_json_bytes:
+                    raise ToolMessageSizeError(
+                        payload_size,
+                        max_payload_json_bytes,
+                    )
         return cls(
             protocol=_read_scalar(batch, "protocol"),
             message_type=_read_scalar(batch, "message_type"),
@@ -319,5 +351,5 @@ class ToolMessage(BaseModel):
             endpoint_instance_id=_read_scalar(batch, "endpoint_instance_id"),
             operation=_read_scalar(batch, "operation"),
             sequence=_read_scalar(batch, "sequence"),
-            payload_json=_read_scalar(batch, "payload_json"),
+            payload_json=payload_json,
         )

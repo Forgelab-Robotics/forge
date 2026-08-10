@@ -139,8 +139,8 @@ class ToolEndpointHandler:
         """Return bound operation names in descriptor order."""
         return tuple(operation.name for operation in self._descriptor.operations)
 
-    async def handle_invoke(self, request: ToolEnvelope) -> ToolEnvelope:
-        """Handle one Query invoke and return a completed, rejected, or error response."""
+    def validate_invoke_route(self, request: ToolEnvelope) -> None:
+        """Validate the trusted endpoint route before payload handling or execution."""
         if not isinstance(request, ToolEnvelope):
             raise TypeError("request must be a ToolEnvelope")
         if request.message_type != "tool.invoke.request":
@@ -167,13 +167,19 @@ class ToolEndpointHandler:
             )
 
         operation_name = cast(str, request.operation)
-        operation_descriptor = self._operation_descriptors.get(operation_name)
-        if operation_descriptor is None:
+        if operation_name not in self._operation_descriptors:
             raise ToolProtocolError(
                 "FORGE_PROTOCOL_UNKNOWN_OPERATION",
                 f"endpoint does not declare operation {operation_name!r}",
                 path="operation",
             )
+
+    async def handle_invoke(self, request: ToolEnvelope) -> ToolEnvelope:
+        """Handle one Query invoke and return a completed, rejected, or error response."""
+        self.validate_invoke_route(request)
+
+        operation_name = cast(str, request.operation)
+        operation_descriptor = self._operation_descriptors[operation_name]
         if operation_descriptor.semantics != "query":
             raise NotImplementedError(
                 "Query-first ToolEndpointHandler does not yet handle "

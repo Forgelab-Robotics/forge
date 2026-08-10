@@ -84,15 +84,10 @@ def _validate_max_size(size: int, maximum: int) -> None:
         )
 
 
-def encode_envelope(
-    envelope: ToolEnvelope,
-    *,
-    max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
-) -> bytes:
-    """Encode one envelope as deterministic compact UTF-8 JSON bytes."""
+def _validated_envelope(envelope: ToolEnvelope) -> ToolEnvelope:
     if not isinstance(envelope, ToolEnvelope):
         raise TypeError("envelope must be a ToolEnvelope")
-    validated = ToolEnvelope(
+    return ToolEnvelope(
         protocol=envelope.protocol,
         message_type=envelope.message_type,
         request_id=envelope.request_id,
@@ -104,10 +99,12 @@ def encode_envelope(
         sequence=envelope.sequence,
         payload=envelope.payload,
     )
-    validate_message_envelope(validated)
+
+
+def _encoded_envelope(envelope: ToolEnvelope) -> bytes:
     try:
         text = json.dumps(
-            validated.to_dict(),
+            envelope.to_dict(),
             ensure_ascii=False,
             allow_nan=False,
             separators=(",", ":"),
@@ -120,6 +117,23 @@ def encode_envelope(
             str(error),
             path="payload",
         ) from error
+    return encoded
+
+
+def encoded_envelope_size(envelope: ToolEnvelope) -> int:
+    """Return deterministic encoded size without typed message-payload validation."""
+    return len(_encoded_envelope(_validated_envelope(envelope)))
+
+
+def encode_envelope(
+    envelope: ToolEnvelope,
+    *,
+    max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
+) -> bytes:
+    """Encode one envelope as deterministic compact UTF-8 JSON bytes."""
+    validated = _validated_envelope(envelope)
+    validate_message_envelope(validated)
+    encoded = _encoded_envelope(validated)
     _validate_max_size(len(encoded), max_message_bytes)
     return encoded
 

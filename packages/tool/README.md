@@ -102,13 +102,28 @@ The integration is explicitly imported so base `import forge_tool` does not load
 ```python
 from forge_tool.dora import DoraToolEndpointBinding
 
-binding = DoraToolEndpointBinding(handler)
+binding = DoraToolEndpointBinding(
+    handler,
+    max_message_bytes=1_048_576,
+    max_carrier_bytes=1_114_112,
+)
 response_batch = await binding.handle_input(input_arrow_value)
 ```
 
 `handle_input()` accepts one exact `ToolMessage` Arrow `RecordBatch`, single-batch
-`Table`, `StructArray`, or IPC stream bytes, converts it to the logical envelope, awaits
-the Query-first handler, and returns a response `RecordBatch`.
+`Table`, or `StructArray`, converts it to the logical envelope, awaits the Query-first
+handler, and returns a response `RecordBatch`. IPC bytes must be decoded upstream under
+transport-owned framing and decompression limits; the binding rejects them to prevent a
+small compressed frame from allocating an unbounded decoded batch. The outbound logical
+encoded-message limit defaults to 1 MiB and is configurable, with a binding minimum of
+1 KiB. Accepted requests use 512 bytes less than that limit so a later endpoint or
+response-encoding failure has correlated-error headroom. Raw `payload_json` is bounded
+before model validation, and the Arrow carrier has a separate configurable pre-decode
+limit that defaults to the logical maximum plus 64 KiB of Arrow framing overhead.
+Carriers rejected before route trust receive no response. Once a request is accepted,
+endpoint exceptions and invalid/oversized responses produce a bounded correlated
+`tool.error` with fixed fallback text instead of copying unbounded validation content or
+silently dropping the response.
 
 The binding deliberately does not import or create a Dora `Node`, choose input/output
 IDs, call `asyncio.run()`, or observe/rewrite Dora event metadata. The concrete business

@@ -6,7 +6,7 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
-from forge_msgs import ToolMessage
+from forge_msgs import ToolMessage, ToolMessageSizeError
 from forge_msgs.tool import MAX_SAFE_JSON_INTEGER, TOOL_MESSAGE_SCHEMA
 
 
@@ -177,6 +177,25 @@ def test_from_arrow_requires_exact_schema_and_one_row() -> None:
     reordered = batch.select(list(reversed(batch.schema.names)))
     with pytest.raises(ValueError, match="exactly match"):
         ToolMessage.from_arrow(reordered)
+
+
+def test_from_arrow_can_bound_raw_payload_json_before_model_validation() -> None:
+    message = _invoke_message(payload_json='{"arguments":{},"context":{}}' + " " * 128)
+
+    with pytest.raises(ToolMessageSizeError) as captured:
+        ToolMessage.from_arrow(
+            message.to_arrow(),
+            max_payload_json_bytes=64,
+        )
+
+    assert captured.value.size > 64
+    assert captured.value.maximum == 64
+
+    with pytest.raises(ValueError, match="max_payload_json_bytes"):
+        ToolMessage.from_arrow(
+            message.to_arrow(),
+            max_payload_json_bytes=True,
+        )
 
 
 def test_from_arrow_requires_exactly_one_record_batch() -> None:
