@@ -2,6 +2,9 @@
 
 from .exceptions import ToolEndpointError
 from .models import (
+    EndpointRegistryOperation,
+    EndpointRegistryResponse,
+    EndpointRegistryResponseStatus,
     EndpointState,
     EndpointStatus,
     ExecutionPhase,
@@ -34,6 +37,9 @@ from .protocol import (
 
 __all__ = [
     "ActionToolEndpoint",
+    "EndpointRegistryOperation",
+    "EndpointRegistryResponse",
+    "EndpointRegistryResponseStatus",
     "EndpointState",
     "EndpointStatus",
     "ExecutionPhase",

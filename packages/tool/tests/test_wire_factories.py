@@ -6,6 +6,7 @@ import pytest
 
 from forge_tool import (
     TOOL_ENDPOINT_PROTOCOL,
+    EndpointRegistryResponse,
     EndpointStatus,
     ToolAccepted,
     ToolContext,
@@ -23,6 +24,7 @@ from forge_tool import (
     ToolResultResponse,
     make_control_request_envelope,
     make_control_response_envelope,
+    make_endpoint_registry_response_envelope,
     make_endpoint_status_envelope,
     make_error_envelope,
     make_error_response_envelope,
@@ -36,6 +38,7 @@ from forge_tool import (
     make_status_request_envelope,
     make_status_response_envelope,
     make_unregister_envelope,
+    validate_management_response_correlation,
     validate_response_correlation,
 )
 
@@ -194,7 +197,6 @@ def test_event_error_and_management_factories_are_complete() -> None:
     endpoint_status = make_endpoint_status_envelope(
         EndpointStatus(endpoint_id="vision.yolo", state="ready"),
         endpoint_instance_id="instance-1",
-        request_id="status-1",
     )
     registration = make_registration_envelope(
         ToolEndpointDescriptor(
@@ -203,14 +205,129 @@ def test_event_error_and_management_factories_are_complete() -> None:
             operations=(ToolOperationDescriptor(name="detect", semantics="query"),),
         ),
         endpoint_instance_id="instance-1",
+        request_id="register-1",
     )
 
     assert event.sequence == 0
     assert error.request_id == "request-1"
     assert heartbeat.request_id == "heartbeat-1"
     assert unregister.request_id == "unregister-1"
-    assert endpoint_status.request_id == "status-1"
+    assert endpoint_status.request_id is None
     assert registration.message_type == "endpoint.register"
+    assert registration.request_id == "register-1"
+
+
+def test_registry_response_factory_copies_request_identity_and_correlates_operation() -> (
+    None
+):
+    registration = make_registration_envelope(
+        ToolEndpointDescriptor(
+            protocol_version=TOOL_ENDPOINT_PROTOCOL,
+            endpoint_id="vision.yolo",
+            operations=(ToolOperationDescriptor(name="detect", semantics="query"),),
+        ),
+        endpoint_instance_id="instance-1",
+        request_id="register-1",
+    )
+    heartbeat = make_heartbeat_envelope(
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+        request_id="heartbeat-1",
+    )
+    unregister = make_unregister_envelope(
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+        request_id="unregister-1",
+    )
+    cases = [
+        (
+            registration,
+            EndpointRegistryResponse(
+                operation="register",
+                status="accepted",
+                registry_revision=7,
+                lease_ttl_ms=30_000,
+            ),
+        ),
+        (
+            heartbeat,
+            EndpointRegistryResponse(
+                operation="heartbeat",
+                status="accepted",
+                registry_revision=8,
+                lease_ttl_ms=30_000,
+            ),
+        ),
+        (
+            unregister,
+            EndpointRegistryResponse(
+                operation="unregister",
+                status="accepted",
+                registry_revision=9,
+            ),
+        ),
+    ]
+
+    for request, registry_response in cases:
+        response = make_endpoint_registry_response_envelope(
+            registry_response,
+            request,
+        )
+
+        validate_management_response_correlation(request, response)
+        assert response.message_type == "endpoint.registry.response"
+        assert response.request_id == request.request_id
+        assert response.endpoint_id == request.endpoint_id
+        assert response.endpoint_instance_id == request.endpoint_instance_id
+
+
+def test_registry_response_correlation_rejects_retargeting_and_wrong_operation() -> (
+    None
+):
+    request = make_unregister_envelope(
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+        request_id="unregister-1",
+    )
+    response = make_endpoint_registry_response_envelope(
+        EndpointRegistryResponse(
+            operation="unregister",
+            status="accepted",
+            registry_revision=8,
+        ),
+        request,
+    )
+
+    with pytest.raises(ToolProtocolError) as identity_error:
+        validate_management_response_correlation(
+            request,
+            replace(response, endpoint_instance_id="instance-2"),
+        )
+    assert identity_error.value.path == "endpoint_instance_id"
+
+    wrong_operation = replace(
+        response,
+        payload={
+            "operation": "heartbeat",
+            "status": "accepted",
+            "registry_revision": 8,
+            "lease_ttl_ms": 30_000,
+        },
+    )
+    with pytest.raises(ToolProtocolError) as operation_error:
+        validate_management_response_correlation(request, wrong_operation)
+    assert operation_error.value.path == "payload.operation"
+
+    with pytest.raises(ValueError, match="operation 'unregister'"):
+        make_endpoint_registry_response_envelope(
+            EndpointRegistryResponse(
+                operation="register",
+                status="accepted",
+                registry_revision=8,
+                lease_ttl_ms=30_000,
+            ),
+            request,
+        )
 
 
 def test_error_response_factory_uses_request_route_without_typed_context() -> None:

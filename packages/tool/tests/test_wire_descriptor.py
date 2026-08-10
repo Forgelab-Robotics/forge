@@ -60,6 +60,7 @@ def test_complete_registration_envelope_is_validated_at_codec_boundary() -> None
     envelope = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
         message_type="endpoint.register",
+        request_id="register-1",
         endpoint_id="policy.lerobot",
         endpoint_instance_id="endpoint-instance-1",
         payload=endpoint_descriptor_to_payload(_descriptor()),
@@ -74,6 +75,7 @@ def test_registration_rejects_invalid_payload_and_endpoint_identity() -> None:
     invalid_payload = (
         '{"protocol":"forge.tool.endpoint/v1alpha1",'
         '"message_type":"endpoint.register",'
+        '"request_id":"register-1",'
         '"endpoint_id":"policy.lerobot",'
         '"endpoint_instance_id":"instance-1",'
         '"payload":{"tool_spec":{}}}'
@@ -84,6 +86,7 @@ def test_registration_rejects_invalid_payload_and_endpoint_identity() -> None:
     mismatched = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
         message_type="endpoint.register",
+        request_id="register-1",
         endpoint_id="policy.other",
         endpoint_instance_id="endpoint-instance-1",
         payload=endpoint_descriptor_to_payload(_descriptor()),

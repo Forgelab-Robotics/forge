@@ -37,6 +37,8 @@ type ToolResultStatus = Literal[
 ]
 type ToolResultResponseStatus = Literal["pending", "available", "not_found"]
 type ToolControlCommand = Literal["cancel", "stop"]
+type EndpointRegistryOperation = Literal["register", "heartbeat", "unregister"]
+type EndpointRegistryResponseStatus = Literal["accepted", "rejected"]
 type ToolControlStatus = Literal[
     "accepted",
     "rejected",
@@ -73,6 +75,8 @@ _TOOL_RESULT_STATUSES = frozenset(
 )
 _TOOL_RESULT_RESPONSE_STATUSES = frozenset(("pending", "available", "not_found"))
 _TOOL_CONTROL_COMMANDS = frozenset(("cancel", "stop"))
+_ENDPOINT_REGISTRY_OPERATIONS = frozenset(("register", "heartbeat", "unregister"))
+_ENDPOINT_REGISTRY_RESPONSE_STATUSES = frozenset(("accepted", "rejected"))
 _TOOL_CONTROL_STATUSES = frozenset(("accepted", "rejected", "terminal", "unsupported"))
 _TERMINAL_PHASE_RESULTS = {
     "completed": "succeeded",
@@ -301,6 +305,77 @@ class ToolError:
         if not isinstance(self.retryable, bool):
             raise TypeError("retryable must be a bool")
         object.__setattr__(self, "details", _mapping_copy(self.details, "details"))
+
+
+@dataclass(frozen=True)
+class EndpointRegistryResponse:
+    """Registry decision for one endpoint-management request.
+
+    ``lease_ttl_ms`` is a lease duration in milliseconds, not an observation
+    timestamp or absolute time.
+    """
+
+    operation: EndpointRegistryOperation
+    status: EndpointRegistryResponseStatus
+    registry_revision: int
+    lease_ttl_ms: int | None = None
+    error: ToolError | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.operation, str)
+            or self.operation not in _ENDPOINT_REGISTRY_OPERATIONS
+        ):
+            raise ValueError(
+                f"unsupported endpoint registry operation: {self.operation!r}"
+            )
+        if (
+            not isinstance(self.status, str)
+            or self.status not in _ENDPOINT_REGISTRY_RESPONSE_STATUSES
+        ):
+            raise ValueError(
+                f"unsupported endpoint registry response status: {self.status!r}"
+            )
+        if (
+            isinstance(self.registry_revision, bool)
+            or not isinstance(self.registry_revision, int)
+            or not 0 <= self.registry_revision <= _MAX_SAFE_JSON_INTEGER
+        ):
+            raise ValueError(
+                f"registry_revision must be in [0, {_MAX_SAFE_JSON_INTEGER}]"
+            )
+        if self.lease_ttl_ms is not None and (
+            isinstance(self.lease_ttl_ms, bool)
+            or not isinstance(self.lease_ttl_ms, int)
+            or not 1 <= self.lease_ttl_ms <= _MAX_SAFE_JSON_INTEGER
+        ):
+            raise ValueError(
+                f"lease_ttl_ms must be in [1, {_MAX_SAFE_JSON_INTEGER}] when provided"
+            )
+        if self.error is not None and not isinstance(self.error, ToolError):
+            raise TypeError("error must be a ToolError or None")
+
+        if self.status == "rejected":
+            if self.lease_ttl_ms is not None:
+                raise ValueError(
+                    "a rejected registry response must not contain lease_ttl_ms"
+                )
+            if self.error is None:
+                raise ValueError("a rejected registry response must contain an error")
+        else:
+            if self.error is not None:
+                raise ValueError(
+                    "an accepted registry response must not contain an error"
+                )
+            if self.operation in ("register", "heartbeat"):
+                if self.lease_ttl_ms is None:
+                    raise ValueError(
+                        f"an accepted {self.operation} response must contain lease_ttl_ms"
+                    )
+            elif self.lease_ttl_ms is not None:
+                raise ValueError(
+                    "an accepted unregister response must not contain lease_ttl_ms"
+                )
 
 
 @dataclass(frozen=True)

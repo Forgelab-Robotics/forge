@@ -239,21 +239,29 @@ int main() {
 
   ToolMessage management_message;
   management_message.message_type = "endpoint.heartbeat";
+  management_message.request_id = "management-request-1";
   management_message.endpoint_id = "vision.yolo";
   management_message.endpoint_instance_id = "endpoint-instance-1";
   CheckRoundTrip(management_message, "ToolMessage management");
-  for (const auto& message_type : {"endpoint.register", "endpoint.unregister",
-                                   "endpoint.heartbeat", "endpoint.status"}) {
+  for (const auto& message_type :
+       {"endpoint.register", "endpoint.unregister", "endpoint.heartbeat",
+        "endpoint.registry.response"}) {
     ToolMessage typed_management_message = management_message;
     typed_management_message.message_type = message_type;
     Check(typed_management_message.Validate().ok(),
           std::string("ToolMessage accepts management type ") + message_type);
   }
+  ToolMessage endpoint_status = management_message;
+  endpoint_status.message_type = "endpoint.status";
+  endpoint_status.request_id = std::nullopt;
+  CheckRoundTrip(endpoint_status, "ToolMessage unsolicited endpoint status");
   auto management_batch = management_message.ToRecordBatch();
   Check(management_batch.ok(), "ToolMessage management batch");
   if (management_batch.ok()) {
-    for (const auto& field : {"request_id", "invocation_id", "attempt_id",
-                              "operation", "sequence"}) {
+    Check(!(*management_batch)->GetColumnByName("request_id")->IsNull(0),
+          "ToolMessage management exchange emits request_id");
+    for (const auto& field : {"invocation_id", "attempt_id", "operation",
+                              "sequence"}) {
       Check((*management_batch)->GetColumnByName(field)->IsNull(0),
             std::string("ToolMessage management emits null ") + field);
     }
@@ -279,6 +287,23 @@ int main() {
   bad_tool_message.invocation_id = "invocation-1";
   Check(!bad_tool_message.Validate().ok(),
         "ToolMessage management rejects execution correlation");
+  for (const auto& message_type :
+       {"endpoint.register", "endpoint.unregister", "endpoint.heartbeat",
+        "endpoint.registry.response"}) {
+    bad_tool_message = management_message;
+    bad_tool_message.message_type = message_type;
+    bad_tool_message.request_id = std::nullopt;
+    Check(!bad_tool_message.Validate().ok(),
+          std::string("ToolMessage management exchange requires request_id: ") +
+              message_type);
+  }
+  bad_tool_message = management_message;
+  bad_tool_message.message_type = "endpoint.status";
+  Check(!bad_tool_message.Validate().ok(),
+        "ToolMessage endpoint status rejects request_id");
+  bad_tool_message.request_id = std::nullopt;
+  Check(bad_tool_message.Validate().ok(),
+        "ToolMessage endpoint status requires null request_id");
   bad_tool_message = tool_event;
   bad_tool_message.request_id = "request-1";
   Check(!bad_tool_message.Validate().ok(),

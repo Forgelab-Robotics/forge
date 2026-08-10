@@ -18,9 +18,10 @@ _MANAGEMENT_TYPES = {
     "endpoint.register",
     "endpoint.unregister",
     "endpoint.heartbeat",
+    "endpoint.registry.response",
     "endpoint.status",
 }
-_TOOL_TYPES_REQUIRING_REQUEST = TOOL_MESSAGE_TYPES - _MANAGEMENT_TYPES - {"tool.event"}
+_MESSAGES_REQUIRING_REQUEST = TOOL_MESSAGE_TYPES - {"endpoint.status", "tool.event"}
 _REMOVED_MESSAGE_TYPES = (
     "tool.query.request",
     "tool.query.response",
@@ -87,6 +88,7 @@ def test_management_envelope_requires_instance_but_forbids_execution_fields() ->
     heartbeat = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
         message_type="endpoint.heartbeat",
+        request_id="heartbeat-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="endpoint-instance-1",
     )
@@ -102,6 +104,7 @@ def test_management_envelope_requires_instance_but_forbids_execution_fields() ->
             ToolEnvelope(
                 protocol=TOOL_ENDPOINT_PROTOCOL,
                 message_type="endpoint.heartbeat",
+                request_id="heartbeat-1",
                 endpoint_id="vision.yolo",
                 endpoint_instance_id="endpoint-instance-1",
                 **{field_name: field_value},
@@ -133,10 +136,42 @@ def test_tool_event_requires_sequence_but_not_request_id() -> None:
     assert captured.value.path == "sequence"
 
 
-@pytest.mark.parametrize("message_type", sorted(_TOOL_TYPES_REQUIRING_REQUEST))
-def test_non_event_tool_messages_require_request_id(message_type: str) -> None:
-    with pytest.raises(ToolProtocolError) as captured:
-        _tool_envelope(message_type=message_type, request_id=None)
+@pytest.mark.parametrize("message_type", sorted(_MESSAGES_REQUIRING_REQUEST))
+def test_exchange_messages_require_request_id(message_type: str) -> None:
+    if message_type in _MANAGEMENT_TYPES:
+        values: dict[str, object] = {
+            "protocol": TOOL_ENDPOINT_PROTOCOL,
+            "message_type": message_type,
+            "endpoint_id": "vision.yolo",
+            "endpoint_instance_id": "endpoint-instance-1",
+        }
+        with pytest.raises(ToolProtocolError) as captured:
+            ToolEnvelope(**values)  # type: ignore[arg-type]
+    else:
+        with pytest.raises(ToolProtocolError) as captured:
+            _tool_envelope(message_type=message_type, request_id=None)
+    assert captured.value.path == "request_id"
+
+
+def test_unsolicited_endpoint_status_must_omit_request_id() -> None:
+    status = ToolEnvelope(
+        protocol=TOOL_ENDPOINT_PROTOCOL,
+        message_type="endpoint.status",
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="endpoint-instance-1",
+    )
+
+    assert status.request_id is None
+    with pytest.raises(
+        ToolProtocolError, match="unsolicited endpoint.status"
+    ) as captured:
+        ToolEnvelope(
+            protocol=TOOL_ENDPOINT_PROTOCOL,
+            message_type="endpoint.status",
+            request_id="status-1",
+            endpoint_id="vision.yolo",
+            endpoint_instance_id="endpoint-instance-1",
+        )
     assert captured.value.path == "request_id"
 
 
@@ -208,6 +243,7 @@ def test_decoder_rejects_unknown_missing_duplicate_and_explicit_null_fields() ->
         decode_envelope(
             '{"protocol":"forge.tool.endpoint/v1alpha1",'
             '"message_type":"endpoint.heartbeat",'
+            '"request_id":"heartbeat-1",'
             '"endpoint_id":"vision.yolo",'
             '"endpoint_instance_id":"instance-1",'
             '"payload":{},"timestamp_ms":1}'
@@ -225,6 +261,7 @@ def test_decoder_rejects_unknown_missing_duplicate_and_explicit_null_fields() ->
         decode_envelope(
             '{"protocol":"forge.tool.endpoint/v1alpha1",'
             '"message_type":"endpoint.heartbeat",'
+            '"request_id":"heartbeat-1",'
             '"endpoint_id":"vision.yolo",'
             '"endpoint_instance_id":"instance-1",'
             '"invocation_id":null,"payload":{}}'
@@ -238,6 +275,7 @@ def test_decoder_rejects_invalid_utf8_non_finite_and_surrogate_json() -> None:
         decode_envelope(
             '{"protocol":"forge.tool.endpoint/v1alpha1",'
             '"message_type":"endpoint.heartbeat",'
+            '"request_id":"heartbeat-1",'
             '"endpoint_id":"vision.yolo",'
             '"endpoint_instance_id":"instance-1",'
             '"payload":{"value":NaN}}'
@@ -246,6 +284,7 @@ def test_decoder_rejects_invalid_utf8_non_finite_and_surrogate_json() -> None:
         decode_envelope(
             '{"protocol":"forge.tool.endpoint/v1alpha1",'
             '"message_type":"endpoint.heartbeat",'
+            '"request_id":"heartbeat-1",'
             '"endpoint_id":"vision.yolo",'
             '"endpoint_instance_id":"instance-1",'
             '"payload":{"value":"\\ud800"}}'
@@ -259,6 +298,7 @@ def test_decoder_normalizes_parser_resource_errors() -> None:
         decode_envelope(
             '{"protocol":"forge.tool.endpoint/v1alpha1",'
             '"message_type":"endpoint.heartbeat",'
+            '"request_id":"heartbeat-1",'
             '"endpoint_id":"vision.yolo",'
             '"endpoint_instance_id":"instance-1",'
             f'"payload":{{"value":{"9" * 5_000}}}}}'

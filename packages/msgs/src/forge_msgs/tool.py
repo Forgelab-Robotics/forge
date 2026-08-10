@@ -27,6 +27,7 @@ ToolMessageType = Literal[
     "endpoint.register",
     "endpoint.unregister",
     "endpoint.heartbeat",
+    "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
     "tool.invoke.response",
@@ -45,7 +46,16 @@ _MANAGEMENT_MESSAGES = frozenset(
         "endpoint.register",
         "endpoint.unregister",
         "endpoint.heartbeat",
+        "endpoint.registry.response",
         "endpoint.status",
+    )
+)
+_MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID = frozenset(
+    (
+        "endpoint.register",
+        "endpoint.unregister",
+        "endpoint.heartbeat",
+        "endpoint.registry.response",
     )
 )
 _EVENT_MESSAGE = "tool.event"
@@ -197,6 +207,17 @@ class ToolMessage(BaseModel):
         ):
             _require_nonempty(getattr(self, field_name), field_name)
         if self.message_type in _MANAGEMENT_MESSAGES:
+            if (
+                self.message_type in _MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID
+                and self.request_id is None
+            ):
+                raise ValueError(
+                    "request_id must be non-null for endpoint management exchanges"
+                )
+            if self.message_type == "endpoint.status" and self.request_id is not None:
+                raise ValueError(
+                    "request_id must be null for unsolicited endpoint.status"
+                )
             for field_name in ("invocation_id", "attempt_id", "operation", "sequence"):
                 if getattr(self, field_name) is not None:
                     raise ValueError(

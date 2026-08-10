@@ -49,6 +49,11 @@ requires its next major version. See
 [`RELEASING.md`](RELEASING.md) for package-family boundaries, protected GitLab
 tags, and validation procedures.
 
+Forge ToolEndpoint v1alpha1 has no earlier tagged/public Tool release. Its first release
+is atomic across `forge-tool`, Python/Rust/C++ `ToolMessage` bindings, Gateway, and
+providers; earlier untagged prototypes are incompatible, and mixed deployments are not
+supported as backward compatible.
+
 ## Repository Layout
 
 ```text
@@ -310,7 +315,10 @@ Core messages include:
 `ToolMessage` is implemented in Python, Rust, and C++ as an exact single-row,
 ten-column Arrow carrier ordered as `protocol`, `message_type`, `request_id`,
 `invocation_id`, `attempt_id`, `endpoint_id`, `endpoint_instance_id`,
-`operation`, `sequence`, and `payload_json`. Optional columns use Arrow null;
+`operation`, `sequence`, and `payload_json`. Nullable columns use Arrow null when
+allowed by the message class; management exchanges, including
+`endpoint.registry.response`, require `request_id`, while unsolicited `endpoint.status`
+requires null.
 `payload_json` encodes the logical payload object, and message-specific
 validation remains in `forge-tool`. There is no observation timestamp column.
 Bidirectional Arrow IPC compatibility is covered between Python and C++.

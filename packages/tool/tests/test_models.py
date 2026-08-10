@@ -7,6 +7,7 @@ import pytest
 
 from forge_tool import (
     MAX_SAFE_JSON_INTEGER,
+    EndpointRegistryResponse,
     EndpointStatus,
     ToolAccepted,
     ToolContext,
@@ -133,6 +134,80 @@ def test_tool_result_terminal_error_invariants() -> None:
         with pytest.raises(ValueError, match="must contain"):
             ToolResult(status=status)  # type: ignore[arg-type]
         assert ToolResult(status=status, error=error).error is error  # type: ignore[arg-type]
+
+
+def test_endpoint_registry_response_invariants() -> None:
+    error = ToolError(code="REGISTRY_REJECTED", message="stale endpoint instance")
+
+    for operation in ("register", "heartbeat"):
+        accepted = EndpointRegistryResponse(
+            operation=operation,  # type: ignore[arg-type]
+            status="accepted",
+            registry_revision=0,
+            lease_ttl_ms=30_000,
+        )
+        assert accepted.lease_ttl_ms == 30_000
+        with pytest.raises(ValueError, match="must contain lease_ttl_ms"):
+            EndpointRegistryResponse(
+                operation=operation,  # type: ignore[arg-type]
+                status="accepted",
+                registry_revision=0,
+            )
+
+    assert (
+        EndpointRegistryResponse(
+            operation="unregister",
+            status="accepted",
+            registry_revision=MAX_SAFE_JSON_INTEGER,
+        ).lease_ttl_ms
+        is None
+    )
+    with pytest.raises(ValueError, match="unregister.*must not contain"):
+        EndpointRegistryResponse(
+            operation="unregister",
+            status="accepted",
+            registry_revision=1,
+            lease_ttl_ms=1,
+        )
+
+    rejected = EndpointRegistryResponse(
+        operation="heartbeat",
+        status="rejected",
+        registry_revision=2,
+        error=error,
+    )
+    assert rejected.error is error
+    with pytest.raises(ValueError, match="must contain an error"):
+        EndpointRegistryResponse(
+            operation="heartbeat",
+            status="rejected",
+            registry_revision=2,
+        )
+    with pytest.raises(ValueError, match="must not contain lease_ttl_ms"):
+        EndpointRegistryResponse(
+            operation="heartbeat",
+            status="rejected",
+            registry_revision=2,
+            lease_ttl_ms=1,
+            error=error,
+        )
+
+    for revision in (-1, MAX_SAFE_JSON_INTEGER + 1, True):
+        with pytest.raises(ValueError, match="registry_revision"):
+            EndpointRegistryResponse(
+                operation="unregister",
+                status="accepted",
+                registry_revision=revision,  # type: ignore[arg-type]
+            )
+    for lease_ttl_ms in (0, MAX_SAFE_JSON_INTEGER + 1, True):
+        with pytest.raises(ValueError, match="lease_ttl_ms"):
+            EndpointRegistryResponse(
+                operation="register",
+                status="accepted",
+                registry_revision=1,
+                lease_ttl_ms=lease_ttl_ms,  # type: ignore[arg-type]
+            )
+    assert "duration" in (EndpointRegistryResponse.__doc__ or "")
 
 
 def test_result_lookup_response_distinguishes_pending_available_and_not_found() -> None:

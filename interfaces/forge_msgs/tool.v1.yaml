@@ -21,6 +21,7 @@ messages:
           - endpoint.register
           - endpoint.unregister
           - endpoint.heartbeat
+          - endpoint.registry.response
           - endpoint.status
           - tool.invoke.request
           - tool.invoke.response
@@ -78,12 +79,15 @@ messages:
       - endpoint_id and endpoint_instance_id must contain valid Unicode and be non-empty after Unicode whitespace trimming.
       - Non-null optional string fields must contain valid Unicode and be non-empty after Unicode whitespace trimming.
       - Endpoint-management messages require null invocation_id, attempt_id, operation, and sequence.
+      - endpoint.register, endpoint.heartbeat, endpoint.unregister, and endpoint.registry.response require a non-null request_id; unsolicited endpoint.status requires null request_id.
       - Tool execution messages require non-null invocation_id, attempt_id, and operation.
       - Every Tool execution message except tool.event requires a non-null request_id.
       - tool.event requires null request_id and a non-negative sequence no greater than 2^53-1.
       - Non-event messages require null sequence.
       - payload_json must be a strict JSON object with unique keys, valid Unicode scalar values, finite numbers, integers in ±(2^53-1), and nesting no deeper than 64. Message-specific payload validation belongs to forge-tool.
     notes:
+      - This is the first tagged/public Tool protocol contract; earlier untagged prototypes are not compatible even if they used the same v1alpha1 protocol identifier.
+      - Python, Rust, and C++ bindings plus Gateway and provider deployments must upgrade atomically; mixed prototype/current deployments are unsupported.
       - The carrier has no observation timestamp. Dora event context supplies transport observation time.
       - The stable correlation fields are real Arrow columns so routing and recordings do not need to parse payload_json.
       - Arrow null represents an omitted optional logical-envelope field; empty strings are not null sentinels.

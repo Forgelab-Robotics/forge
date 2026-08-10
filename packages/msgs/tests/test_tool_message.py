@@ -76,6 +76,7 @@ def test_tool_message_from_payload_uses_deterministic_strict_json() -> None:
 def test_management_and_event_correlation_rules() -> None:
     heartbeat = ToolMessage(
         message_type="endpoint.heartbeat",
+        request_id="heartbeat-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
     )
@@ -90,17 +91,60 @@ def test_management_and_event_correlation_rules() -> None:
         payload_json='{"data":{},"type":"progress"}',
     )
 
-    assert heartbeat.request_id is None
+    assert heartbeat.request_id == "heartbeat-1"
     assert event.request_id is None
     assert event.sequence == 0
 
     with pytest.raises(ValidationError, match="must be null"):
         ToolMessage(
             message_type="endpoint.heartbeat",
+            request_id="heartbeat-1",
             invocation_id="invocation-1",
             endpoint_id="vision.yolo",
             endpoint_instance_id="instance-1",
         )
+    for message_type in (
+        "endpoint.register",
+        "endpoint.heartbeat",
+        "endpoint.unregister",
+        "endpoint.registry.response",
+    ):
+        with pytest.raises(ValidationError, match="request_id must be non-null"):
+            ToolMessage(
+                message_type=message_type,
+                endpoint_id="vision.yolo",
+                endpoint_instance_id="instance-1",
+            )
+
+    endpoint_status = ToolMessage(
+        message_type="endpoint.status",
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+    )
+    assert endpoint_status.request_id is None
+    assert ToolMessage.from_arrow(endpoint_status.to_arrow()) == endpoint_status
+    with pytest.raises(ValidationError, match="unsolicited endpoint.status"):
+        ToolMessage(
+            message_type="endpoint.status",
+            request_id="status-1",
+            endpoint_id="vision.yolo",
+            endpoint_instance_id="instance-1",
+        )
+
+    registry_response = ToolMessage.from_payload(
+        message_type="endpoint.registry.response",
+        request_id="heartbeat-1",
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+        payload={
+            "operation": "heartbeat",
+            "status": "accepted",
+            "registry_revision": 1,
+            "lease_ttl_ms": 30_000,
+        },
+    )
+    assert registry_response.payload()["operation"] == "heartbeat"
+
     with pytest.raises(ValidationError, match="sequence must be non-null"):
         _invoke_message(message_type="tool.event", request_id=None)
     with pytest.raises(ValidationError, match="request_id must be null"):

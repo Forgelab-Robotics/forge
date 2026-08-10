@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..endpoint import (
+    EndpointRegistryResponse,
     EndpointStatus,
     ToolAccepted,
     ToolContext,
@@ -26,6 +27,8 @@ from .messages import (
     control_request_to_payload,
     control_response_from_payload,
     control_response_to_payload,
+    endpoint_registry_response_from_payload,
+    endpoint_registry_response_to_payload,
     endpoint_status_to_payload,
     error_to_payload,
     event_to_payload,
@@ -35,6 +38,13 @@ from .messages import (
     status_response_to_payload,
     validate_message_envelope,
 )
+
+
+_REGISTRY_REQUEST_OPERATIONS = {
+    "endpoint.register": "register",
+    "endpoint.heartbeat": "heartbeat",
+    "endpoint.unregister": "unregister",
+}
 
 
 def _validated(envelope: ToolEnvelope) -> ToolEnvelope:
@@ -281,7 +291,7 @@ def make_registration_envelope(
     descriptor: ToolEndpointDescriptor,
     *,
     endpoint_instance_id: str,
-    request_id: str | None = None,
+    request_id: str,
 ) -> ToolEnvelope:
     """Construct a complete endpoint registration message."""
     if not isinstance(descriptor, ToolEndpointDescriptor):
@@ -302,7 +312,7 @@ def make_heartbeat_envelope(
     *,
     endpoint_id: str,
     endpoint_instance_id: str,
-    request_id: str | None = None,
+    request_id: str,
 ) -> ToolEnvelope:
     """Construct a complete endpoint heartbeat message."""
     return _validated(
@@ -321,7 +331,7 @@ def make_unregister_envelope(
     *,
     endpoint_id: str,
     endpoint_instance_id: str,
-    request_id: str | None = None,
+    request_id: str,
 ) -> ToolEnvelope:
     """Construct a complete endpoint unregister message."""
     return _validated(
@@ -336,11 +346,40 @@ def make_unregister_envelope(
     )
 
 
+def make_endpoint_registry_response_envelope(
+    response: EndpointRegistryResponse,
+    request: ToolEnvelope,
+) -> ToolEnvelope:
+    """Construct a Registry response correlated to its management request."""
+    if not isinstance(response, EndpointRegistryResponse):
+        raise TypeError("response must be an EndpointRegistryResponse")
+    if not isinstance(request, ToolEnvelope):
+        raise TypeError("request must be a ToolEnvelope")
+    expected_operation = _REGISTRY_REQUEST_OPERATIONS.get(request.message_type)
+    if expected_operation is None:
+        raise ValueError("request envelope has no paired Registry response")
+    if response.operation != expected_operation:
+        raise ValueError(
+            f"{request.message_type} requires Registry operation {expected_operation!r}"
+        )
+    envelope = _validated(
+        ToolEnvelope(
+            protocol=TOOL_ENDPOINT_PROTOCOL,
+            message_type="endpoint.registry.response",
+            request_id=request.request_id,
+            endpoint_id=request.endpoint_id,
+            endpoint_instance_id=request.endpoint_instance_id,
+            payload=endpoint_registry_response_to_payload(response),
+        )
+    )
+    validate_management_response_correlation(request, envelope)
+    return envelope
+
+
 def make_endpoint_status_envelope(
     status: EndpointStatus,
     *,
     endpoint_instance_id: str,
-    request_id: str | None = None,
 ) -> ToolEnvelope:
     """Construct a complete endpoint-status message without identity duplication."""
     if not isinstance(status, EndpointStatus):
@@ -349,7 +388,6 @@ def make_endpoint_status_envelope(
         ToolEnvelope(
             protocol=TOOL_ENDPOINT_PROTOCOL,
             message_type="endpoint.status",
-            request_id=request_id,
             endpoint_id=status.endpoint_id,
             endpoint_instance_id=endpoint_instance_id,
             payload=endpoint_status_to_payload(status),
@@ -363,6 +401,30 @@ def _correlation_error(field_name: str) -> ToolProtocolError:
         "response does not match request",
         path=field_name,
     )
+
+
+def validate_management_response_correlation(
+    request: ToolEnvelope,
+    response: ToolEnvelope,
+) -> None:
+    """Validate a Registry response against its originating management request."""
+    if not isinstance(request, ToolEnvelope):
+        raise TypeError("request must be a ToolEnvelope")
+    if not isinstance(response, ToolEnvelope):
+        raise TypeError("response must be a ToolEnvelope")
+    expected_operation = _REGISTRY_REQUEST_OPERATIONS.get(request.message_type)
+    if expected_operation is None:
+        raise ValueError("request envelope has no paired Registry response type")
+    if response.message_type != "endpoint.registry.response":
+        raise _correlation_error("message_type")
+    for field_name in ("request_id", "endpoint_id", "endpoint_instance_id"):
+        if getattr(request, field_name) != getattr(response, field_name):
+            raise _correlation_error(field_name)
+    response_operation = endpoint_registry_response_from_payload(
+        response.payload
+    ).operation
+    if response_operation != expected_operation:
+        raise _correlation_error("payload.operation")
 
 
 def validate_response_correlation(

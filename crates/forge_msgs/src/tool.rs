@@ -7,10 +7,11 @@ use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 pub const TOOL_ENDPOINT_PROTOCOL: &str = "forge.tool.endpoint/v1alpha1";
 pub const MAX_SAFE_JSON_INTEGER: i64 = 9_007_199_254_740_991;
 const MAX_JSON_NESTING_DEPTH: usize = 64;
-pub const TOOL_MESSAGE_TYPES: [&str; 14] = [
+pub const TOOL_MESSAGE_TYPES: [&str; 15] = [
     "endpoint.register",
     "endpoint.unregister",
     "endpoint.heartbeat",
+    "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
     "tool.invoke.response",
@@ -24,11 +25,18 @@ pub const TOOL_MESSAGE_TYPES: [&str; 14] = [
     "tool.error",
 ];
 
-const MANAGEMENT_MESSAGE_TYPES: [&str; 4] = [
+const MANAGEMENT_MESSAGE_TYPES: [&str; 5] = [
     "endpoint.register",
     "endpoint.unregister",
     "endpoint.heartbeat",
+    "endpoint.registry.response",
     "endpoint.status",
+];
+const MANAGEMENT_MESSAGE_TYPES_REQUIRING_REQUEST_ID: [&str; 4] = [
+    "endpoint.register",
+    "endpoint.unregister",
+    "endpoint.heartbeat",
+    "endpoint.registry.response",
 ];
 const EVENT_MESSAGE_TYPE: &str = "tool.event";
 
@@ -97,6 +105,14 @@ impl ToolMessage {
         validate_optional_string("operation", self.operation.as_deref())?;
 
         if MANAGEMENT_MESSAGE_TYPES.contains(&self.message_type.as_str()) {
+            if MANAGEMENT_MESSAGE_TYPES_REQUIRING_REQUEST_ID.contains(&self.message_type.as_str())
+                && self.request_id.is_none()
+            {
+                return invalid("request_id must be non-null for endpoint management exchanges");
+            }
+            if self.message_type == "endpoint.status" && self.request_id.is_some() {
+                return invalid("request_id must be null for unsolicited endpoint.status");
+            }
             for (field_name, is_present) in [
                 ("invocation_id", self.invocation_id.is_some()),
                 ("attempt_id", self.attempt_id.is_some()),
@@ -490,6 +506,21 @@ mod tests {
         .unwrap()
     }
 
+    fn endpoint_status_message() -> ToolMessage {
+        ToolMessage::new(
+            "endpoint.status",
+            None,
+            None,
+            None,
+            "endpoint-1",
+            "instance-1",
+            None,
+            None,
+            "{}",
+        )
+        .unwrap()
+    }
+
     fn assert_payload_rejected(payload_json: impl Into<String>) {
         let mut message = execution_message("tool.invoke.request");
         message.payload_json = payload_json.into();
@@ -541,12 +572,12 @@ mod tests {
     }
 
     #[test]
-    fn management_messages_allow_request_id_but_clear_execution_correlation() {
+    fn management_exchanges_require_request_id_and_clear_execution_correlation() {
         for message_type in [
             "endpoint.register",
             "endpoint.unregister",
             "endpoint.heartbeat",
-            "endpoint.status",
+            "endpoint.registry.response",
         ] {
             let message = management_message(message_type);
             let batch = message.to_record_batch().unwrap();
@@ -557,6 +588,14 @@ mod tests {
             }
             assert_eq!(ToolMessage::from_record_batch(&batch).unwrap(), message);
         }
+
+        let endpoint_status = endpoint_status_message();
+        let batch = endpoint_status.to_record_batch().unwrap();
+        assert!(batch.column(2).is_null(0));
+        assert_eq!(
+            ToolMessage::from_record_batch(&batch).unwrap(),
+            endpoint_status
+        );
     }
 
     #[test]
@@ -568,6 +607,7 @@ mod tests {
                 "endpoint.register",
                 "endpoint.unregister",
                 "endpoint.heartbeat",
+                "endpoint.registry.response",
                 "endpoint.status",
                 "tool.invoke.request",
                 "tool.invoke.response",
@@ -583,7 +623,9 @@ mod tests {
         );
 
         for message_type in TOOL_MESSAGE_TYPES {
-            let message = if message_type.starts_with("endpoint.") {
+            let message = if message_type == "endpoint.status" {
+                endpoint_status_message()
+            } else if message_type.starts_with("endpoint.") {
                 management_message(message_type)
             } else if message_type == "tool.event" {
                 event_message(1)
@@ -617,6 +659,22 @@ mod tests {
         let mut management = management_message("endpoint.register");
         management.invocation_id = Some("invocation-1".to_string());
         assert!(management.validate().is_err());
+
+        for message_type in [
+            "endpoint.register",
+            "endpoint.unregister",
+            "endpoint.heartbeat",
+            "endpoint.registry.response",
+        ] {
+            let mut management_without_request = management_message(message_type);
+            management_without_request.request_id = None;
+            assert!(management_without_request.validate().is_err());
+        }
+
+        let mut endpoint_status = endpoint_status_message();
+        assert!(endpoint_status.validate().is_ok());
+        endpoint_status.request_id = Some("status-1".to_string());
+        assert!(endpoint_status.validate().is_err());
 
         let mut execution = execution_message("tool.invoke.response");
         execution.request_id = None;

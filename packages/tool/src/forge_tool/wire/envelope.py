@@ -17,6 +17,7 @@ type ToolMessageType = Literal[
     "endpoint.register",
     "endpoint.unregister",
     "endpoint.heartbeat",
+    "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
     "tool.invoke.response",
@@ -35,6 +36,7 @@ TOOL_MESSAGE_TYPES: frozenset[str] = frozenset(
         "endpoint.register",
         "endpoint.unregister",
         "endpoint.heartbeat",
+        "endpoint.registry.response",
         "endpoint.status",
         "tool.invoke.request",
         "tool.invoke.response",
@@ -53,7 +55,16 @@ _MANAGEMENT_MESSAGES = frozenset(
         "endpoint.register",
         "endpoint.unregister",
         "endpoint.heartbeat",
+        "endpoint.registry.response",
         "endpoint.status",
+    )
+)
+_MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID = frozenset(
+    (
+        "endpoint.register",
+        "endpoint.unregister",
+        "endpoint.heartbeat",
+        "endpoint.registry.response",
     )
 )
 _TOOL_MESSAGES = TOOL_MESSAGE_TYPES - _MANAGEMENT_MESSAGES
@@ -206,6 +217,14 @@ class ToolEnvelope:
             else:
                 _require_nonempty(self.request_id, "request_id")
         else:
+            if self.message_type in _MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID:
+                _require_nonempty(self.request_id, "request_id")
+            elif self.message_type == "endpoint.status" and self.request_id is not None:
+                raise _error(
+                    "FORGE_PROTOCOL_INVALID_MESSAGE",
+                    "must be omitted for unsolicited endpoint.status",
+                    path="request_id",
+                )
             for field_name in ("invocation_id", "attempt_id", "operation", "sequence"):
                 if getattr(self, field_name) is not None:
                     raise _error(

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from ..endpoint import (
+    EndpointRegistryResponse,
     EndpointStatus,
     ToolAccepted,
     ToolContext,
@@ -454,6 +455,54 @@ def event_from_payload(value: Any) -> ToolEvent:
     )
 
 
+def endpoint_registry_response_to_payload(
+    response: EndpointRegistryResponse,
+) -> dict[str, Any]:
+    """Encode a Registry decision without duplicating endpoint identity."""
+    if not isinstance(response, EndpointRegistryResponse):
+        raise TypeError("response must be an EndpointRegistryResponse")
+    value: dict[str, Any] = {
+        "operation": response.operation,
+        "status": response.status,
+        "registry_revision": response.registry_revision,
+    }
+    if response.lease_ttl_ms is not None:
+        value["lease_ttl_ms"] = response.lease_ttl_ms
+    if response.error is not None:
+        value["error"] = tool_error_to_payload(response.error)
+    return value
+
+
+def endpoint_registry_response_from_payload(value: Any) -> EndpointRegistryResponse:
+    """Decode a strict endpoint Registry response payload."""
+    payload = _object(value, "payload")
+    _fields(
+        payload,
+        required=frozenset(("operation", "status", "registry_revision")),
+        optional=frozenset(("lease_ttl_ms", "error")),
+        path="payload",
+    )
+    lease_ttl_ms = None
+    if "lease_ttl_ms" in payload:
+        if payload["lease_ttl_ms"] is None:
+            raise _error("must be omitted rather than null", "payload.lease_ttl_ms")
+        lease_ttl_ms = payload["lease_ttl_ms"]
+    error = None
+    if "error" in payload:
+        if payload["error"] is None:
+            raise _error("must be omitted rather than null", "payload.error")
+        error = tool_error_from_payload(payload["error"], "payload.error")
+    return _construct(
+        EndpointRegistryResponse,
+        "payload",
+        operation=payload["operation"],
+        status=payload["status"],
+        registry_revision=payload["registry_revision"],
+        lease_ttl_ms=lease_ttl_ms,
+        error=error,
+    )
+
+
 def endpoint_status_to_payload(status: EndpointStatus) -> dict[str, Any]:
     """Encode an endpoint health snapshot without duplicating endpoint identity."""
     if not isinstance(status, EndpointStatus):
@@ -497,6 +546,8 @@ def validate_message_envelope(envelope: ToolEnvelope) -> None:
     elif message_type in ("endpoint.unregister", "endpoint.heartbeat"):
         payload = _object(envelope.payload, "payload")
         _fields(payload, required=frozenset(), path="payload")
+    elif message_type == "endpoint.registry.response":
+        endpoint_registry_response_from_payload(envelope.payload)
     elif message_type == "endpoint.status":
         endpoint_status_from_envelope(envelope)
     elif message_type == "tool.invoke.request":

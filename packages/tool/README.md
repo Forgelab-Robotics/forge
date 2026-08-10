@@ -12,6 +12,12 @@ session are descriptor semantics, not separate wire routes. A concrete Dora busi
 node implements the SPI and embeds these components; concrete node wiring remains
 future work.
 
+This is the first tagged/public Tool protocol contract for
+`forge.tool.endpoint/v1alpha1`. Earlier untagged prototypes are not compatible and no
+backward compatibility is claimed for them. `forge-tool`, Python/Rust/C++
+`forge_msgs.ToolMessage` bindings, and Gateway/provider implementations must deploy
+this contract atomically; mixed prototype/current deployments are unsupported.
+
 ## Runtime API versus endpoint SPI/Wire
 
 The caller-facing Tool Runtime API is the Web/Dora caller surface for discovery,
@@ -151,7 +157,9 @@ payload_json             utf8, non-null
 There are no carrier columns for `tool_id` or `implementation_id`; those fields stay
 inside the invoke context encoded in `payload_json`. There is no observation timestamp
 or request-fingerprint column, and Wire v1alpha1 defines no Wire/Arrow fingerprint.
-For `tool.event`, the logical envelope omits `request_id` and the carrier value is null.
+For `tool.event` and unsolicited `endpoint.status`, the logical envelope omits
+`request_id` and the carrier value must be null. Registration, heartbeat, unregister,
+and `endpoint.registry.response` require a non-null carrier value.
 
 Python↔C++ Arrow IPC read/write interop is covered. Rust coverage validates the exact
 schema, model, and RecordBatch conversion; Python↔Rust IPC coverage is not claimed.
@@ -164,26 +172,31 @@ Dora router.
 Payload codecs are strict: required fields must be present and unknown fields are
 rejected. Mapping fields shown as `{}` are object-valued.
 
-| Message | Exact payload shape |
+| Message variant | Valid payload example |
 | --- | --- |
-| `endpoint.register` | `{"descriptor":{"protocol_version":"forge.tool.endpoint/v1alpha1","endpoint_id":"...","operations":[...]}}` |
+| `endpoint.register` | `{"descriptor":{"protocol_version":"forge.tool.endpoint/v1alpha1","endpoint_id":"vision.yolo","operations":[{"name":"detect","semantics":"query","cancellable":false,"stoppable":false,"status_supported":false,"max_concurrency":1}]}}` |
 | `endpoint.unregister` | `{}` |
 | `endpoint.heartbeat` | `{}` |
-| `endpoint.status` | `{"status":{"state":"ready|busy|degraded|unavailable","active_invocations":0,"details":{}}}` |
-| `tool.invoke.request` | `{"arguments":{},"context":{"tool_id":"...","implementation_id":"...","metadata":{},"caller_id":"...","deadline_ms":0}}`; `caller_id` and `deadline_ms` are optional |
-| `tool.invoke.response` completed | `{"outcome":"completed","result":<ToolResult>}` |
-| `tool.invoke.response` accepted | `{"outcome":"accepted","accepted":{"details":{}}}` |
-| `tool.invoke.response` rejected | `{"outcome":"rejected","error":<ToolError>}` |
+| Registry accepted register | `{"operation":"register","status":"accepted","registry_revision":1,"lease_ttl_ms":30000}` |
+| Registry accepted heartbeat | `{"operation":"heartbeat","status":"accepted","registry_revision":1,"lease_ttl_ms":30000}` |
+| Registry accepted unregister | `{"operation":"unregister","status":"accepted","registry_revision":2}` |
+| Registry rejected | `{"operation":"heartbeat","status":"rejected","registry_revision":2,"error":{"code":"STALE_ENDPOINT_INSTANCE","message":"endpoint instance is not current","retryable":false,"details":{}}}` |
+| `endpoint.status` | `{"status":{"state":"ready","active_invocations":0,"details":{}}}` |
+| `tool.invoke.request` | `{"arguments":{},"context":{"tool_id":"forge.tool.detect","implementation_id":"yolo","metadata":{}}}` |
+| Invoke completed | `{"outcome":"completed","result":{"status":"succeeded","outputs":{}}}` |
+| Invoke accepted | `{"outcome":"accepted","accepted":{"details":{}}}` |
+| Invoke rejected | `{"outcome":"rejected","error":{"code":"INVOKE_REJECTED","message":"execution was not accepted","retryable":false,"details":{}}}` |
 | `tool.status.request` | `{}` |
-| `tool.status.response` | `{"status":{"phase":"...","details":{},"error":<ToolError>}}`; `error` is conditional |
+| `tool.status.response` | `{"status":{"phase":"running","details":{}}}` |
 | `tool.result.request` | `{}` |
-| `tool.result.response` pending | `{"status":"pending"}` |
-| `tool.result.response` available | `{"status":"available","result":<ToolResult>}` |
-| `tool.result.response` not found | `{"status":"not_found"}` |
-| `tool.control.request` | `{"command":"cancel|stop","reason":"..."}`; `reason` is optional |
-| `tool.control.response` | `{"response":{"command":"cancel|stop","status":"...","details":{},"error":<ToolError>}}`; `error` is conditional |
-| `tool.event` | `{"type":"...","data":{}}`; `sequence` is in the envelope |
-| `tool.error` | `{"error":<ToolError>}` |
+| Result pending | `{"status":"pending"}` |
+| Result available | `{"status":"available","result":{"status":"succeeded","outputs":{}}}` |
+| Result not found | `{"status":"not_found"}` |
+| Control cancel request | `{"command":"cancel"}` |
+| Control stop request | `{"command":"stop","reason":"operator requested stop"}` |
+| Control accepted response | `{"response":{"command":"cancel","status":"accepted","details":{}}}` |
+| `tool.event` | `{"type":"progress","data":{}}` |
+| `tool.error` | `{"error":{"code":"TRANSPORT_FAILURE","message":"request exchange failed","retryable":true,"details":{}}}` |
 
 `ToolError` always contains non-empty `code` and `message`, boolean `retryable`, and
 object `details`.
@@ -196,6 +209,14 @@ Execution phase is `accepted`, `running`, `stopping`, `completed`, `failed`,
 `cancelled`, `stopped`, or `unknown`. `failed` and `unknown` require `error`; all
 other phases forbid it. A control response status is `accepted`, `rejected`,
 `terminal`, or `unsupported`; only `rejected` requires and permits `error`.
+
+`EndpointRegistryResponse` has operation `register`, `heartbeat`, or `unregister`,
+status `accepted` or `rejected`, and a required non-negative interoperable
+`registry_revision`. Accepted register/heartbeat responses require a positive
+`lease_ttl_ms` duration; accepted unregister responses forbid it. Accepted responses
+forbid `error`; rejected responses forbid the lease and require a `ToolError`.
+Forbidden conditional members must be absent: explicit `lease_ttl_ms: null` and
+`error: null` are invalid. The lease is a duration, not an observation timestamp.
 
 Event type is `progress`, `heartbeat`, `executor_completed`, `executor_failed`,
 `cancelled`, or `stopped`. The outer event schema is frozen; type-specific `data`
@@ -257,12 +278,16 @@ envelope and copy its correlation identity, so an embedded endpoint handler does
 need to retain a complete invoke context merely to construct a response.
 `make_error_response_envelope` uses the same request-based pattern even when the
 request's typed payload failed to decode. Factories also cover registration,
-heartbeat, unregister, and endpoint status; management factories expose their optional
-`request_id`. A logical `tool.event` omits `request_id`; its Arrow carrier
-representation uses null.
+heartbeat, unregister, Registry response, and endpoint status. Registration, heartbeat,
+and unregister require `request_id`; unsolicited endpoint status always omits it.
+`make_endpoint_registry_response_envelope` copies request and endpoint identities from
+the originating management request. A logical `tool.event` omits `request_id`; its
+Arrow carrier representation uses null.
 
 Raw payload adapters remain public for transport integration and advanced use.
-`validate_response_correlation(request, response)` verifies response type and matching
+`validate_management_response_correlation(request, response)` verifies Registry
+response type, `request_id`, endpoint identities, and operation.
+`validate_response_correlation(request, response)` verifies execution response type and matching
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
 `endpoint_instance_id`, and `operation`; normal control responses must also echo the
 request command. A correlated `tool.error` may answer any execution request.
@@ -276,7 +301,7 @@ compare by IEEE-754 binary64 value, so `1 == 1.0` and `-0 == 0`. Member presence
 participates, so omission differs from explicit `null`. Raw JSON bytes and codec output
 are never canonical identity, and no serialization fingerprint is introduced.
 
-Exchange dedup uses `endpoint_instance_id + request_id`. Its request identity excludes
+Execution exchange dedup uses `endpoint_instance_id + request_id`. Its request identity excludes
 `protocol`, `request_id`, and `endpoint_instance_id`, but includes `message_type`, all
 other route fields, and the complete payload. The same key/identity replays the prior
 response; a different identity is `FORGE_PROTOCOL_DEDUP_CONFLICT`.
@@ -287,11 +312,37 @@ request ID, and endpoint instance. Every arguments/context field participates. T
 same key/identity replays Accepted or a terminal result without restarting side
 effects; a different identity conflicts.
 
-Management idempotency remains Registry current-instance/source semantics. A Registry
-has one current instance per `endpoint_id`; replacement requires a trusted transport
-generation/lease, and an opaque instance ID cannot order racing registrations.
-Heartbeat, status, and unregister only affect the accepted current instance/source.
-The package does not implement an asynchronous dedup cache or Registry state.
+Management `request_id` is correlation only, not deduplication. Registry lookup
+precedence is `current > tombstone > absent`, and operations are effect-idempotent by
+trusted source/current or tombstoned identity. A Registry has at most one current
+instance per `endpoint_id`; replacement remains governed by trusted source binding and
+generation authority.
+
+One last tombstone per `endpoint_id` stores endpoint/instance identity, the accepted
+trusted source binding/generation, historical removal revision, and reason `unregister`
+or `expired`. It is retained until a new registration for that endpoint is accepted or
+the Gateway restarts, and is not persisted across restart. A matching unregister replay
+returns the tombstone's historical removal/expiry revision even if unrelated endpoints
+have advanced the process-global revision. Accepting a new registration clears the old
+tombstone, which can no longer be replayed.
+
+With a current instance, idempotent register renewal requires the same accepted
+source/generation/instance and exact descriptor equality; descriptor changes are
+rejected. With an explicit-unregister tombstone, exact same
+source+generation+instance registration is rejected non-retryably as tombstoned, while
+a different instance or newer trusted generation may register when authorized and
+clears the tombstone. A registration matching an expiry tombstone is allowed, clears
+the tombstone, and creates a new lease/revision.
+
+The Gateway adapter captures trusted monotonic receive time before validation. If an
+operation is accepted, Registry acceptance and lease start are anchored to that
+observation; accepted register replays and heartbeats renew from it. No receive or lease
+timestamp appears on the wire. Current-instance register renewal and heartbeat do not
+increment `registry_revision`; unregister removal and expiry increment it once, while
+rejections do not. The revision is Gateway-process-global and monotonic for state
+changes, but tombstone unregister replay returns its stored historical revision rather
+than the later global value. The package does not implement the stateful Registry
+itself.
 
 ## Endpoint sequence contract
 

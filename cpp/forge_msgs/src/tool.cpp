@@ -647,7 +647,9 @@ arrow::Status ValidateOptionalNonempty(
 
 bool IsSupportedMessageType(const std::string& value) {
   return value == "endpoint.register" || value == "endpoint.unregister" ||
-         value == "endpoint.heartbeat" || value == "endpoint.status" ||
+         value == "endpoint.heartbeat" ||
+         value == "endpoint.registry.response" ||
+         value == "endpoint.status" ||
          value == "tool.invoke.request" || value == "tool.invoke.response" ||
          value == "tool.status.request" || value == "tool.status.response" ||
          value == "tool.result.request" || value == "tool.result.response" ||
@@ -657,7 +659,14 @@ bool IsSupportedMessageType(const std::string& value) {
 
 bool IsManagementMessage(const std::string& value) {
   return value == "endpoint.register" || value == "endpoint.unregister" ||
-         value == "endpoint.heartbeat" || value == "endpoint.status";
+         value == "endpoint.heartbeat" ||
+         value == "endpoint.registry.response" || value == "endpoint.status";
+}
+
+bool ManagementMessageRequiresRequestId(const std::string& value) {
+  return value == "endpoint.register" || value == "endpoint.unregister" ||
+         value == "endpoint.heartbeat" ||
+         value == "endpoint.registry.response";
 }
 
 }  // namespace
@@ -680,6 +689,14 @@ arrow::Status ToolMessage::Validate() const {
   ARROW_RETURN_NOT_OK(ValidateOptionalNonempty("operation", operation));
 
   if (IsManagementMessage(message_type)) {
+    if (ManagementMessageRequiresRequestId(message_type) && !request_id) {
+      return arrow::Status::Invalid(
+          "request_id must be non-null for endpoint management exchanges");
+    }
+    if (message_type == "endpoint.status" && request_id) {
+      return arrow::Status::Invalid(
+          "request_id must be null for unsolicited endpoint.status");
+    }
     if (invocation_id || attempt_id || operation || sequence) {
       return arrow::Status::Invalid(
           "endpoint management messages require null "

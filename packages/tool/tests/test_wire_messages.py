@@ -4,6 +4,7 @@ import pytest
 
 from forge_tool import (
     TOOL_ENDPOINT_PROTOCOL,
+    EndpointRegistryResponse,
     EndpointStatus,
     ToolAccepted,
     ToolContext,
@@ -23,6 +24,8 @@ from forge_tool import (
     control_response_to_payload,
     decode_envelope,
     encode_envelope,
+    endpoint_registry_response_from_payload,
+    endpoint_registry_response_to_payload,
     endpoint_status_from_envelope,
     endpoint_status_to_payload,
     error_from_payload,
@@ -161,6 +164,105 @@ def test_event_and_error_round_trip() -> None:
     assert error_from_payload(decoded_error.payload) == error
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        EndpointRegistryResponse(
+            operation="register",
+            status="accepted",
+            registry_revision=4,
+            lease_ttl_ms=30_000,
+        ),
+        EndpointRegistryResponse(
+            operation="heartbeat",
+            status="rejected",
+            registry_revision=5,
+            error=ToolError(code="STALE_INSTANCE", message="not current"),
+        ),
+        EndpointRegistryResponse(
+            operation="unregister",
+            status="accepted",
+            registry_revision=6,
+        ),
+    ],
+)
+def test_endpoint_registry_response_payload_round_trip(
+    response: EndpointRegistryResponse,
+) -> None:
+    payload = endpoint_registry_response_to_payload(response)
+    envelope = ToolEnvelope(
+        protocol=TOOL_ENDPOINT_PROTOCOL,
+        message_type="endpoint.registry.response",
+        request_id="management-1",
+        endpoint_id="vision.yolo",
+        endpoint_instance_id="instance-1",
+        payload=payload,
+    )
+
+    decoded = decode_envelope(encode_envelope(envelope))
+
+    assert endpoint_registry_response_from_payload(decoded.payload) == response
+
+
+def test_endpoint_registry_response_payload_is_strict() -> None:
+    with pytest.raises(ToolProtocolError, match="unknown fields"):
+        endpoint_registry_response_from_payload(
+            {
+                "operation": "unregister",
+                "status": "accepted",
+                "registry_revision": 1,
+                "observed_at_ms": 1,
+            }
+        )
+    with pytest.raises(ToolProtocolError, match="lease_ttl_ms"):
+        endpoint_registry_response_from_payload(
+            {
+                "operation": "register",
+                "status": "accepted",
+                "registry_revision": 1,
+            }
+        )
+
+    null_cases = [
+        (
+            "lease_ttl_ms",
+            {
+                "operation": "unregister",
+                "status": "accepted",
+                "registry_revision": 1,
+                "lease_ttl_ms": None,
+            },
+        ),
+        (
+            "error",
+            {
+                "operation": "register",
+                "status": "accepted",
+                "registry_revision": 1,
+                "lease_ttl_ms": 30_000,
+                "error": None,
+            },
+        ),
+    ]
+    for field_name, payload in null_cases:
+        with pytest.raises(
+            ToolProtocolError, match="omitted rather than null"
+        ) as captured:
+            endpoint_registry_response_from_payload(payload)
+        assert captured.value.path == f"payload.{field_name}"
+
+        envelope = ToolEnvelope(
+            protocol=TOOL_ENDPOINT_PROTOCOL,
+            message_type="endpoint.registry.response",
+            request_id="management-1",
+            endpoint_id="vision.yolo",
+            endpoint_instance_id="instance-1",
+            payload=payload,
+        )
+        with pytest.raises(ToolProtocolError, match="omitted rather than null"):
+            encode_envelope(envelope)
+
+
 def test_endpoint_status_round_trip_uses_envelope_endpoint_identity() -> None:
     status = EndpointStatus(
         endpoint_id="vision.yolo",
@@ -243,6 +345,7 @@ def test_empty_request_and_management_payloads_are_strict() -> None:
     heartbeat = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
         message_type="endpoint.heartbeat",
+        request_id="heartbeat-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
         payload={},
@@ -252,6 +355,7 @@ def test_empty_request_and_management_payloads_are_strict() -> None:
     invalid = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
         message_type="endpoint.heartbeat",
+        request_id="heartbeat-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
         payload={"unexpected": True},
