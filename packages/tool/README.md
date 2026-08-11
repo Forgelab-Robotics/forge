@@ -148,7 +148,7 @@ request_id              utf8, nullable
 invocation_id           utf8, nullable
 attempt_id              utf8, nullable
 endpoint_id             utf8, non-null
-endpoint_instance_id    utf8, non-null
+endpoint_instance_id    utf8, nullable
 operation               utf8, nullable
 sequence                int64, nullable
 payload_json             utf8, non-null
@@ -158,8 +158,10 @@ There are no carrier columns for `tool_id` or `implementation_id`; those fields 
 inside the invoke context encoded in `payload_json`. There is no observation timestamp
 or request-fingerprint column, and Wire v1alpha1 defines no Wire/Arrow fingerprint.
 For `tool.event` and unsolicited `endpoint.status`, the logical envelope omits
-`request_id` and the carrier value must be null. Registration, heartbeat, unregister,
-and `endpoint.registry.response` require a non-null carrier value.
+`request_id` and the carrier value must be null. Registration, unregister, and
+`endpoint.registry.response` require a non-null carrier value. `endpoint_instance_id`
+may be null on any `tool.*` message before provider routing; every `endpoint.*` message,
+including `endpoint.status`, requires it.
 
 Python↔C++ Arrow IPC read/write interop is covered. Rust coverage validates the exact
 schema, model, and RecordBatch conversion; Python↔Rust IPC coverage is not claimed.
@@ -176,11 +178,9 @@ rejected. Mapping fields shown as `{}` are object-valued.
 | --- | --- |
 | `endpoint.register` | `{"descriptor":{"protocol_version":"forge.tool.endpoint/v1alpha1","endpoint_id":"vision.yolo","operations":[{"name":"detect","semantics":"query","cancellable":false,"stoppable":false,"status_supported":false,"max_concurrency":1}]}}` |
 | `endpoint.unregister` | `{}` |
-| `endpoint.heartbeat` | `{}` |
 | Registry accepted register | `{"operation":"register","status":"accepted","registry_revision":1,"lease_ttl_ms":30000}` |
-| Registry accepted heartbeat | `{"operation":"heartbeat","status":"accepted","registry_revision":1,"lease_ttl_ms":30000}` |
 | Registry accepted unregister | `{"operation":"unregister","status":"accepted","registry_revision":2}` |
-| Registry rejected | `{"operation":"heartbeat","status":"rejected","registry_revision":2,"error":{"code":"STALE_ENDPOINT_INSTANCE","message":"endpoint instance is not current","retryable":false,"details":{}}}` |
+| Registry rejected | `{"operation":"register","status":"rejected","registry_revision":2,"error":{"code":"STALE_ENDPOINT_INSTANCE","message":"endpoint instance is not current","retryable":false,"details":{}}}` |
 | `endpoint.status` | `{"status":{"state":"ready","active_invocations":0,"details":{}}}` |
 | `tool.invoke.request` | `{"arguments":{},"context":{"tool_id":"forge.tool.detect","implementation_id":"yolo","metadata":{}}}` |
 | Invoke completed | `{"outcome":"completed","result":{"status":"succeeded","outputs":{}}}` |
@@ -210,10 +210,10 @@ Execution phase is `accepted`, `running`, `stopping`, `completed`, `failed`,
 other phases forbid it. A control response status is `accepted`, `rejected`,
 `terminal`, or `unsupported`; only `rejected` requires and permits `error`.
 
-`EndpointRegistryResponse` has operation `register`, `heartbeat`, or `unregister`,
-status `accepted` or `rejected`, and a required non-negative interoperable
-`registry_revision`. Accepted register/heartbeat responses require a positive
-`lease_ttl_ms` duration; accepted unregister responses forbid it. Accepted responses
+`EndpointRegistryResponse` has operation `register` or `unregister`, status `accepted`
+or `rejected`, and a required non-negative interoperable `registry_revision`. Accepted
+register responses require a positive `lease_ttl_ms` duration; accepted unregister
+responses forbid it. Accepted responses
 forbid `error`; rejected responses forbid the lease and require a `ToolError`.
 Forbidden conditional members must be absent: explicit `lease_ttl_ms: null` and
 `error: null` are invalid. The lease is a duration, not an observation timestamp.
@@ -278,11 +278,15 @@ envelope and copy its correlation identity, so an embedded endpoint handler does
 need to retain a complete invoke context merely to construct a response.
 `make_error_response_envelope` uses the same request-based pattern even when the
 request's typed payload failed to decode. Factories also cover registration,
-heartbeat, unregister, Registry response, and endpoint status. Registration, heartbeat,
-and unregister require `request_id`; unsolicited endpoint status always omits it.
+unregister, Registry response, and endpoint status. Registration and unregister require
+`request_id`; unsolicited endpoint status always omits it.
 `make_endpoint_registry_response_envelope` copies request and endpoint identities from
-the originating management request. A logical `tool.event` omits `request_id`; its
-Arrow carrier representation uses null.
+the originating management request. `make_invoke_request_envelope` accepts
+`endpoint_instance_id=None` so a logical caller can request Gateway resolution. Invoke
+response and error factories copy an unresolved identity unchanged, preserving exact
+`None` correlation; non-P0 status/result/control request factory APIs remain concrete.
+Provider-routed requests and responses carry concrete instance IDs. A logical
+`tool.event` omits `request_id`; its Arrow carrier representation uses null.
 
 Raw payload adapters remain public for transport integration and advanced use.
 `validate_management_response_correlation(request, response)` verifies Registry
@@ -301,9 +305,12 @@ compare by IEEE-754 binary64 value, so `1 == 1.0` and `-0 == 0`. Member presence
 participates, so omission differs from explicit `null`. Raw JSON bytes and codec output
 are never canonical identity, and no serialization fingerprint is introduced.
 
-Execution exchange dedup uses `endpoint_instance_id + request_id`. Its request identity excludes
-`protocol`, `request_id`, and `endpoint_instance_id`, but includes `message_type`, all
-other route fields, and the complete payload. The same key/identity replays the prior
+After provider routing supplies a concrete instance, execution exchange dedup uses
+`endpoint_instance_id + request_id`. A pre-provider unresolved failure does not enter
+endpoint-local exchange dedup and remains correlated by exact fields, including `None`
+instance identity. Routed request identity excludes `protocol`, `request_id`, and
+`endpoint_instance_id`, but includes `message_type`, all other route fields, and the
+complete payload. The same key/identity replays the prior
 response; a different identity is `FORGE_PROTOCOL_DEDUP_CONFLICT`.
 
 Execution dedup uses `invocation_id + attempt_id`. For `tool.invoke.request`, invoke
@@ -326,9 +333,9 @@ returns the tombstone's historical removal/expiry revision even if unrelated end
 have advanced the process-global revision. Accepting a new registration clears the old
 tombstone, which can no longer be replayed.
 
-With a current instance, idempotent register renewal requires the same accepted
-source/generation/instance and exact descriptor equality; descriptor changes are
-rejected. With an explicit-unregister tombstone, exact same
+`endpoint.register` is the idempotent announce/upsert/lease-renewal operation. With a
+current instance, renewal requires the same accepted source/generation/instance and
+exact descriptor equality; descriptor changes are rejected. With an explicit-unregister tombstone, exact same
 source+generation+instance registration is rejected non-retryably as tombstoned, while
 a different instance or newer trusted generation may register when authorized and
 clears the tombstone. A registration matching an expiry tombstone is allowed, clears
@@ -336,9 +343,9 @@ the tombstone, and creates a new lease/revision.
 
 The Gateway adapter captures trusted monotonic receive time before validation. If an
 operation is accepted, Registry acceptance and lease start are anchored to that
-observation; accepted register replays and heartbeats renew from it. No receive or lease
-timestamp appears on the wire. Current-instance register renewal and heartbeat do not
-increment `registry_revision`; unregister removal and expiry increment it once, while
+observation; accepted register replays renew from it. No receive or lease timestamp
+appears on the wire. Current-instance register renewal does not increment
+`registry_revision`; unregister removal and expiry increment it once, while
 rejections do not. The revision is Gateway-process-global and monotonic for state
 changes, but tombstone unregister replay returns its stored historical revision rather
 than the later global value. The package does not implement the stateful Registry

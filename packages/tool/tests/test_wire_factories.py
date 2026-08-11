@@ -29,7 +29,6 @@ from forge_tool import (
     make_error_envelope,
     make_error_response_envelope,
     make_event_envelope,
-    make_heartbeat_envelope,
     make_invoke_request_envelope,
     make_invoke_response_envelope,
     make_registration_envelope,
@@ -70,6 +69,33 @@ def test_invoke_factory_derives_all_execution_identity_from_context() -> None:
     assert envelope.endpoint_id == "vision.yolo"
     assert envelope.operation == "detect"
     assert "invocation_id" not in envelope.payload["context"]
+
+
+def test_unresolved_invoke_response_and_error_preserve_none_correlation() -> None:
+    request = make_invoke_request_envelope(
+        ToolRequest(arguments={}),
+        _context(),
+        request_id="request-1",
+        endpoint_instance_id=None,
+    )
+    response = make_invoke_response_envelope(ToolAccepted(), request)
+    error = make_error_response_envelope(
+        ToolError(code="GATEWAY_RESOLUTION_FAILED", message="no provider available"),
+        request,
+    )
+
+    assert request.endpoint_instance_id is None
+    assert response.endpoint_instance_id is None
+    assert error.endpoint_instance_id is None
+    validate_response_correlation(request, response)
+    validate_response_correlation(request, error)
+
+    with pytest.raises(ToolProtocolError) as captured:
+        validate_response_correlation(
+            request,
+            replace(response, endpoint_instance_id="instance-1"),
+        )
+    assert captured.value.path == "endpoint_instance_id"
 
 
 def test_request_response_factories_preserve_correlation() -> None:
@@ -184,11 +210,6 @@ def test_event_error_and_management_factories_are_complete() -> None:
         request_id="request-1",
         endpoint_instance_id="instance-1",
     )
-    heartbeat = make_heartbeat_envelope(
-        endpoint_id="vision.yolo",
-        endpoint_instance_id="instance-1",
-        request_id="heartbeat-1",
-    )
     unregister = make_unregister_envelope(
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
@@ -210,7 +231,6 @@ def test_event_error_and_management_factories_are_complete() -> None:
 
     assert event.sequence == 0
     assert error.request_id == "request-1"
-    assert heartbeat.request_id == "heartbeat-1"
     assert unregister.request_id == "unregister-1"
     assert endpoint_status.request_id is None
     assert registration.message_type == "endpoint.register"
@@ -229,11 +249,6 @@ def test_registry_response_factory_copies_request_identity_and_correlates_operat
         endpoint_instance_id="instance-1",
         request_id="register-1",
     )
-    heartbeat = make_heartbeat_envelope(
-        endpoint_id="vision.yolo",
-        endpoint_instance_id="instance-1",
-        request_id="heartbeat-1",
-    )
     unregister = make_unregister_envelope(
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
@@ -246,15 +261,6 @@ def test_registry_response_factory_copies_request_identity_and_correlates_operat
                 operation="register",
                 status="accepted",
                 registry_revision=7,
-                lease_ttl_ms=30_000,
-            ),
-        ),
-        (
-            heartbeat,
-            EndpointRegistryResponse(
-                operation="heartbeat",
-                status="accepted",
-                registry_revision=8,
                 lease_ttl_ms=30_000,
             ),
         ),
@@ -308,7 +314,7 @@ def test_registry_response_correlation_rejects_retargeting_and_wrong_operation()
     wrong_operation = replace(
         response,
         payload={
-            "operation": "heartbeat",
+            "operation": "register",
             "status": "accepted",
             "registry_revision": 8,
             "lease_ttl_ms": 30_000,

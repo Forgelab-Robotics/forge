@@ -139,20 +139,19 @@ def test_tool_result_terminal_error_invariants() -> None:
 def test_endpoint_registry_response_invariants() -> None:
     error = ToolError(code="REGISTRY_REJECTED", message="stale endpoint instance")
 
-    for operation in ("register", "heartbeat"):
-        accepted = EndpointRegistryResponse(
-            operation=operation,  # type: ignore[arg-type]
+    accepted = EndpointRegistryResponse(
+        operation="register",
+        status="accepted",
+        registry_revision=0,
+        lease_ttl_ms=30_000,
+    )
+    assert accepted.lease_ttl_ms == 30_000
+    with pytest.raises(ValueError, match="must contain lease_ttl_ms"):
+        EndpointRegistryResponse(
+            operation="register",
             status="accepted",
             registry_revision=0,
-            lease_ttl_ms=30_000,
         )
-        assert accepted.lease_ttl_ms == 30_000
-        with pytest.raises(ValueError, match="must contain lease_ttl_ms"):
-            EndpointRegistryResponse(
-                operation=operation,  # type: ignore[arg-type]
-                status="accepted",
-                registry_revision=0,
-            )
 
     assert (
         EndpointRegistryResponse(
@@ -171,7 +170,7 @@ def test_endpoint_registry_response_invariants() -> None:
         )
 
     rejected = EndpointRegistryResponse(
-        operation="heartbeat",
+        operation="unregister",
         status="rejected",
         registry_revision=2,
         error=error,
@@ -179,17 +178,25 @@ def test_endpoint_registry_response_invariants() -> None:
     assert rejected.error is error
     with pytest.raises(ValueError, match="must contain an error"):
         EndpointRegistryResponse(
-            operation="heartbeat",
+            operation="unregister",
             status="rejected",
             registry_revision=2,
         )
     with pytest.raises(ValueError, match="must not contain lease_ttl_ms"):
         EndpointRegistryResponse(
-            operation="heartbeat",
+            operation="unregister",
             status="rejected",
             registry_revision=2,
             lease_ttl_ms=1,
             error=error,
+        )
+
+    with pytest.raises(ValueError, match="unsupported endpoint registry operation"):
+        EndpointRegistryResponse(
+            operation="heartbeat",  # type: ignore[arg-type]
+            status="accepted",
+            registry_revision=2,
+            lease_ttl_ms=30_000,
         )
 
     for revision in (-1, MAX_SAFE_JSON_INTEGER + 1, True):

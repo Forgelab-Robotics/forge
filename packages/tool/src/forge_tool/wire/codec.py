@@ -30,12 +30,18 @@ _REQUIRED_FIELDS = frozenset(
         "protocol",
         "message_type",
         "endpoint_id",
-        "endpoint_instance_id",
         "payload",
     )
 )
 _OPTIONAL_FIELDS = frozenset(
-    ("request_id", "invocation_id", "attempt_id", "operation", "sequence")
+    (
+        "request_id",
+        "invocation_id",
+        "attempt_id",
+        "endpoint_instance_id",
+        "operation",
+        "sequence",
+    )
 )
 
 
@@ -199,7 +205,11 @@ def decode_envelope(
             "FORGE_PROTOCOL_INVALID_MESSAGE",
             f"unknown envelope fields: {', '.join(unknown)}",
         )
-    missing = sorted(_REQUIRED_FIELDS - set(value))
+    required_fields = _REQUIRED_FIELDS
+    message_type = value.get("message_type")
+    if not isinstance(message_type, str) or not message_type.startswith("tool."):
+        required_fields = required_fields | {"endpoint_instance_id"}
+    missing = sorted(required_fields - set(value))
     if missing:
         raise ToolProtocolError(
             "FORGE_PROTOCOL_INVALID_MESSAGE",
@@ -222,7 +232,7 @@ def decode_envelope(
             invocation_id=value.get("invocation_id"),
             attempt_id=value.get("attempt_id"),
             endpoint_id=value["endpoint_id"],
-            endpoint_instance_id=value["endpoint_instance_id"],
+            endpoint_instance_id=value.get("endpoint_instance_id"),
             operation=value.get("operation"),
             sequence=value.get("sequence"),
             payload=value["payload"],

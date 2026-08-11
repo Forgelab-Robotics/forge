@@ -20,7 +20,6 @@ messages:
         allowed_values:
           - endpoint.register
           - endpoint.unregister
-          - endpoint.heartbeat
           - endpoint.registry.response
           - endpoint.status
           - tool.invoke.request
@@ -54,7 +53,8 @@ messages:
         empty_allowed: false
       endpoint_instance_id:
         arrow: utf8
-        required: true
+        required: false
+        nullable: true
         empty_allowed: false
       operation:
         arrow: utf8
@@ -76,10 +76,11 @@ messages:
       - The RecordBatch must contain exactly one row and every listed column.
       - protocol must equal forge.tool.endpoint/v1alpha1.
       - message_type must be one of the listed v1alpha1 message types.
-      - endpoint_id and endpoint_instance_id must contain valid Unicode and be non-empty after Unicode whitespace trimming.
+      - endpoint_id must contain valid Unicode and be non-empty after Unicode whitespace trimming.
+      - endpoint_instance_id may be null for any Tool execution message; every endpoint-management message, including endpoint.status, requires it.
       - Non-null optional string fields must contain valid Unicode and be non-empty after Unicode whitespace trimming.
       - Endpoint-management messages require null invocation_id, attempt_id, operation, and sequence.
-      - endpoint.register, endpoint.heartbeat, endpoint.unregister, and endpoint.registry.response require a non-null request_id; unsolicited endpoint.status requires null request_id.
+      - endpoint.register, endpoint.unregister, and endpoint.registry.response require a non-null request_id; unsolicited endpoint.status requires null request_id.
       - Tool execution messages require non-null invocation_id, attempt_id, and operation.
       - Every Tool execution message except tool.event requires a non-null request_id.
       - tool.event requires null request_id and a non-negative sequence no greater than 2^53-1.

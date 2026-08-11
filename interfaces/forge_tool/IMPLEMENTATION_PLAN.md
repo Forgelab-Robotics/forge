@@ -81,7 +81,6 @@ Execution
 Endpoint management
 ├── endpoint.register
 ├── endpoint.unregister
-├── endpoint.heartbeat
 ├── endpoint.registry.response
 └── endpoint.status
 ```
@@ -210,7 +209,7 @@ PolicyCommandStatus.done -> Tool execution completed
 forge_msgs.ToolMessage
 ```
 
-其 schema 固定为 10 列：`protocol/message_type/request_id/invocation_id/attempt_id/endpoint_id/endpoint_instance_id/operation/sequence/payload_json`。`endpoint_id` 和 `endpoint_instance_id` 非 null；没有顶层 `tool_id`、`implementation_id`、观测 timestamp 或 request fingerprint 列；Wire v1alpha1 不定义 Wire/Arrow fingerprint。`tool.event` 的 logical `request_id` 被省略，在 carrier 中为 null。
+其 schema 固定为 10 列：`protocol/message_type/request_id/invocation_id/attempt_id/endpoint_id/endpoint_instance_id/operation/sequence/payload_json`。`endpoint_id` 非 null；所有 `tool.*` logical message 的 `endpoint_instance_id` 可为 null，所有 `endpoint.*` message（含 `endpoint.status`）必须非 null；没有顶层 `tool_id`、`implementation_id`、观测 timestamp 或 request fingerprint 列；Wire v1alpha1 不定义 Wire/Arrow fingerprint。`tool.event` 的 logical `request_id` 被省略，在 carrier 中为 null。
 
 Python、Rust、C++ carrier 均已实现。Python↔C++ Arrow IPC interop 已覆盖；Rust 当前覆盖 schema/model/RecordBatch 行为，不在此声称 Python↔Rust IPC coverage。
 
@@ -254,7 +253,7 @@ Embedded binding/handler 负责：
 - 将 Dora Arrow carrier 转换为 logical message；
 - 校验 descriptor，并把 operation 显式绑定到该 node 的 endpoint SPI；
 - 处理 logical request，调用 Query/Action/Session SPI；
-- 构造 correlated response/event/status/heartbeat Arrow value，并交给具体业务 node 发布；
+- 构造 correlated response、`tool.event`（其 event type 可为 `heartbeat`）、`endpoint.status` 与 `endpoint.register` lease-renewal Arrow value，并交给具体业务 node 发布；
 - 后续按真实需求执行 admission、Accepted/Event ordering 和 private bounded duplicate suppression。
 
 业务 endpoint 实现负责 executor 的权威状态，以及必要的 `ToolExecutionKey` 到私有 executor handle 映射；通用 binding 不维护第二份业务状态所有权，也不解释 Runtime CompletionSpec。
@@ -476,7 +475,7 @@ execution dedup key
     invocation_id + attempt_id
 ```
 
-execution exchange 的 request identity 排除 `protocol`、`request_id`、`endpoint_instance_id`，包含 `message_type`、其余 route fields 和完整 decoded payload。相同 key/identity replay 已建立 response；不同 identity 返回 `FORGE_PROTOCOL_DEDUP_CONFLICT`。
+execution exchange dedup 只适用于 provider routing 已填入 concrete instance 的 exchange；pre-provider unresolved failure 不进入 endpoint-local dedup，仅按完整 correlation fields（含 `None` instance）关联 response。routed execution exchange 的 request identity 排除 `protocol`、`request_id`、`endpoint_instance_id`，包含 `message_type`、其余 route fields 和完整 decoded payload。相同 key/identity replay 已建立 response；不同 identity 返回 `FORGE_PROTOCOL_DEDUP_CONFLICT`。
 
 `tool.invoke.request` 的 invoke identity 精确为 `endpoint_id + operation + payload`，排除 execution key、`request_id` 和 `endpoint_instance_id`。`arguments`、`context` 的全部字段及 optional member presence 都参与，因此 omitted 与 explicit `null` 不相同。相同 execution key/identity replay accepted response 或 terminal result，不重启 side effect；不同 identity 为 conflict。
 
@@ -576,24 +575,23 @@ Event 携带 execution key 和 endpoint sequence；其 logical `request_id` 必�
 ```text
 endpoint.register
 endpoint.unregister
-endpoint.heartbeat
 endpoint.registry.response
 endpoint.status
 ```
 
-P0 保留 opaque `endpoint_instance_id`。`endpoint.register`、`endpoint.heartbeat`、`endpoint.unregister` 及其 correlated `endpoint.registry.response` 必须携带 `request_id`；unsolicited `endpoint.status` 必须省略。Registry response 的 operation 为 `register|heartbeat|unregister`，status 为 `accepted|rejected`，携带 non-negative interoperable `registry_revision`。accepted register/heartbeat 必须携带 positive `lease_ttl_ms` duration；accepted unregister 不携带 lease；rejected 不携带 lease 且必须携带 `ToolError`。conditional field 的 presence 有语义，显式 `lease_ttl_ms: null` 与 `error: null` 均非法。没有 observation timestamp，`endpoint.status` 仍是 unsolicited health snapshot 而不是 ACK。
+P0 保留 opaque `endpoint_instance_id`。所有 `tool.*` logical envelope 都可在 provider selection 前省略它；所有 `endpoint.*` message（含 `endpoint.status`）必须携带。Gateway 成功选定 provider 后必须填入 concrete instance，provider handler 仍执行 strict route validation；若 selection 前失败，correlated invoke response/error 保持 `None`。`endpoint.register`、`endpoint.unregister` 及其 correlated `endpoint.registry.response` 必须携带 `request_id`；unsolicited `endpoint.status` 必须省略。Registry response 的 operation 为 `register|unregister`，status 为 `accepted|rejected`，携带 non-negative interoperable `registry_revision`。accepted register 必须携带 positive `lease_ttl_ms` duration；accepted unregister 不携带 lease；rejected 不携带 lease 且必须携带 `ToolError`。conditional field 的 presence 有语义，显式 `lease_ttl_ms: null` 与 `error: null` 均非法。没有 observation timestamp，`endpoint.status` 仍是 unsolicited health snapshot 而不是 ACK。
 
 Management `request_id` 只用于 correlation。Registry 对每个 `endpoint_id` 最多只接受一个 current instance，新 registration 替换 current instance 必须由 trusted transport generation/lease 或等价 source binding 授权；instance ID 本身不能排序 racing registration。lookup precedence 固定为 `current > tombstone > absent`，accepted new registration 清除 old tombstone，因此新 registration 之后旧 tombstone 不可 replay。
 
 每个 `endpoint_id` 最多保留最后一个 tombstone，内容为 `endpoint_id`、`endpoint_instance_id`、accepted trusted source binding/generation、historical removal revision 和 reason `unregister|expired`。它保留到该 endpoint 的新 registration 被 accepted 或 Gateway restart；不跨 restart persistence。无 current 时，matching unregister replay 返回 tombstone 保存的 historical removal/expiry revision，即使 unrelated endpoint 已推进当前 process-global revision，也不返回新的 global revision。
 
-register 按 precedence 处理：有 current 时，只有 same accepted source/generation/instance 且 descriptor exact equality 才是 idempotent renewal；descriptor change 被拒绝，其他 replacement 继续遵循 source/generation authority。无 current 且命中 explicit-unregister tombstone 时，exact same source+generation+instance registration non-retryable rejected as tombstoned；different instance 或 newer trusted source generation 可在 authority 允许时 registration，accept 后清 tombstone、创建新 lease 并增加 revision。命中 expiry tombstone 的 matching registration 可 recovery，accept 后同样清 tombstone、创建新 lease/revision。rejected registration 不清 tombstone。
+`endpoint.register` 是显式 idempotent announce/upsert/lease renewal。register 按 precedence 处理：有 current 时，只有 same accepted source/generation/instance 且 descriptor exact equality 才是 idempotent renewal；descriptor change 被拒绝，其他 replacement 继续遵循 source/generation authority。无 current 且命中 explicit-unregister tombstone 时，exact same source+generation+instance registration non-retryable rejected as tombstoned；different instance 或 newer trusted source generation 可在 authority 允许时 registration，accept 后清 tombstone、创建新 lease 并增加 revision。命中 expiry tombstone 的 matching registration 可 recovery，accept 后同样清 tombstone、创建新 lease/revision。rejected registration 不清 tombstone。
 
-Gateway adapter 在 validation 前捕获 trusted monotonic receive observation；operation accepted 时，Registry acceptance 和 lease start 逻辑上锚定该 observation。new register、register replay 与 heartbeat 都从该 observation 开始/续租，不携带 wire timestamp。accepted unregister 首次移除和 expiry 各增加 revision 一次并写 tombstone；rejection 不增加 revision。`registry_revision` 是 Gateway-process-global monotonic state-change revision，不是 timestamp 或跨进程持久 version。current register renewal/heartbeat 返回 decision 时的 global revision；matching unregister tombstone replay 是例外，返回 tombstone historical revision。heartbeat/status/unregister 只能影响 accepted current instance 及其 accepted source；这些规则不放宽 cardinality/source-authority contract。生产 Registry/Gateway 实现仍属于后续 slice。
+Gateway adapter 在 validation 前捕获 trusted monotonic receive observation；operation accepted 时，Registry acceptance 和 lease start 逻辑上锚定该 observation。new register 与 register replay 从该 observation 开始/续租，不携带 wire timestamp。accepted unregister 首次移除和 expiry 各增加 revision 一次并写 tombstone；rejection 不增加 revision。`registry_revision` 是 Gateway-process-global monotonic state-change revision，不是 timestamp 或跨进程持久 version。current register renewal 返回 decision 时的 global revision；matching unregister tombstone replay 是例外，返回 tombstone historical revision。status/unregister 只能影响 accepted current instance 及其 accepted source；这些规则不放宽 cardinality/source-authority contract。生产 Registry/Gateway 实现仍属于后续 slice。
 
 ### 7.6 Complete envelope factory 和 correlation（已实现）
 
-完整 `make_*_envelope` factory 是推荐的 public construction path，覆盖 invoke/status/result/control/event/error/register/heartbeat/unregister/registry response/endpoint status。Execution request 和 event factory 从 `ToolContext` 派生 route identity；invoke/status/result/control response factory 直接从原始 request envelope 复制 correlation identity，不要求 endpoint node 为构造响应保留完整 invoke context。`make_endpoint_registry_response_envelope` 同样从原始 management request 复制 `request_id` 与 endpoint identities，并校验 operation 配对。
+完整 `make_*_envelope` factory 是推荐的 public construction path，覆盖 invoke/status/result/control/event/error/register/unregister/registry response/endpoint status。`make_invoke_request_envelope` 接受 `endpoint_instance_id=None` 供 Gateway resolution；invoke response/error factory 原样复制 unresolved identity，保持 `None` correlation；non-P0 status/result/control request factory API 可继续要求 concrete instance。Execution request 和 event factory 从 `ToolContext` 派生 route identity；invoke/status/result/control response factory 直接从原始 request envelope 复制 correlation identity，不要求 endpoint node 为构造响应保留完整 invoke context。`make_endpoint_registry_response_envelope` 同样从原始 management request 复制 `request_id` 与 endpoint identities，并校验 operation 配对。
 
 `validate_response_correlation(request, response)` 校验 execution response type 以及 `request_id`、`invocation_id`、`attempt_id`、`endpoint_id`、`endpoint_instance_id`、`operation`；control response 还必须匹配 request command。`validate_management_response_correlation(request, response)` 校验 Registry response type、`request_id`、两项 endpoint identity 和 operation。Raw payload adapter 继续保持 public，供 transport integration 和高级用法使用；完整 message 默认使用 factory。Model mapping 在构造时已经执行 bounded JSON validation 和 defensive copy。
 
@@ -727,13 +725,13 @@ ToolMessage
 ├── invocation_id: nullable utf8
 ├── attempt_id: nullable utf8
 ├── endpoint_id: utf8 non-null
-├── endpoint_instance_id: utf8 non-null
+├── endpoint_instance_id: nullable utf8
 ├── operation: nullable utf8
 ├── sequence: nullable int64
 └── payload_json: utf8 non-null
 ```
 
-carrier 没有 `tool_id` 或 `implementation_id` 列；它们作为 invoke payload context 的字段保留在 `payload_json` 中。carrier 也没有观测 timestamp。`tool.event` 与 unsolicited `endpoint.status` 在 logical envelope 中省略 `request_id`，在 Arrow carrier 中该列必须为 null；register/heartbeat/unregister/registry response 的 carrier `request_id` 必须 non-null。
+carrier 没有 `tool_id` 或 `implementation_id` 列；它们作为 invoke payload context 的字段保留在 `payload_json` 中。carrier 也没有观测 timestamp。`endpoint_instance_id` 可在任意 pre-provider `tool.*` logical message 中为 null，但所有 `endpoint.*` message 必须 non-null。`tool.event` 与 unsolicited `endpoint.status` 在 logical envelope 中省略 `request_id`，在 Arrow carrier 中该列必须为 null；register/unregister/registry response 的 carrier `request_id` 必须 non-null。
 
 现有 carrier 校验 exact schema、单行约束、protocol/message type、message-class identity/sequence 规则和 object-valued `payload_json`。未来 Gateway 与具体 endpoint node 内嵌的 binding/handler 仍需提供 trusted binding 和 role-specific validation。继续只维护一个通用 Tool carrier。
 

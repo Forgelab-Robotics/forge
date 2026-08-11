@@ -37,7 +37,7 @@ type ToolResultStatus = Literal[
 ]
 type ToolResultResponseStatus = Literal["pending", "available", "not_found"]
 type ToolControlCommand = Literal["cancel", "stop"]
-type EndpointRegistryOperation = Literal["register", "heartbeat", "unregister"]
+type EndpointRegistryOperation = Literal["register", "unregister"]
 type EndpointRegistryResponseStatus = Literal["accepted", "rejected"]
 type ToolControlStatus = Literal[
     "accepted",
@@ -75,7 +75,7 @@ _TOOL_RESULT_STATUSES = frozenset(
 )
 _TOOL_RESULT_RESPONSE_STATUSES = frozenset(("pending", "available", "not_found"))
 _TOOL_CONTROL_COMMANDS = frozenset(("cancel", "stop"))
-_ENDPOINT_REGISTRY_OPERATIONS = frozenset(("register", "heartbeat", "unregister"))
+_ENDPOINT_REGISTRY_OPERATIONS = frozenset(("register", "unregister"))
 _ENDPOINT_REGISTRY_RESPONSE_STATUSES = frozenset(("accepted", "rejected"))
 _TOOL_CONTROL_STATUSES = frozenset(("accepted", "rejected", "terminal", "unsupported"))
 _TERMINAL_PHASE_RESULTS = {
@@ -367,10 +367,10 @@ class EndpointRegistryResponse:
                 raise ValueError(
                     "an accepted registry response must not contain an error"
                 )
-            if self.operation in ("register", "heartbeat"):
+            if self.operation == "register":
                 if self.lease_ttl_ms is None:
                     raise ValueError(
-                        f"an accepted {self.operation} response must contain lease_ttl_ms"
+                        "an accepted register response must contain lease_ttl_ms"
                     )
             elif self.lease_ttl_ms is not None:
                 raise ValueError(

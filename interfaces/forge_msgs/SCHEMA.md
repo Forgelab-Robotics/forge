@@ -377,13 +377,15 @@ Cross-language carrier for one Forge ToolEndpoint v1alpha1 logical message.
 4. `invocation_id: utf8` (nullable)
 5. `attempt_id: utf8` (nullable)
 6. `endpoint_id: utf8` (non-null)
-7. `endpoint_instance_id: utf8` (non-null)
+7. `endpoint_instance_id: utf8` (nullable for `tool.*`; required for `endpoint.*`)
 8. `operation: utf8` (nullable)
 9. `sequence: int64` (nullable)
 10. `payload_json: utf8` (non-null)
 
 The nullable logical-envelope fields are always present as columns and use Arrow
-null when omitted; empty strings are not null sentinels. `payload_json` is the
+null when omitted; empty strings are not null sentinels. `endpoint_instance_id` may be
+omitted on any `tool.*` logical message before provider routing, but every `endpoint.*`
+message requires it. `payload_json` is the
 JSON encoding of the logical message payload object, not the full carrier
 envelope. It is a bounded strict JSON object: keys are unique, strings and keys
 contain valid Unicode scalar values, numbers are finite, integers fit

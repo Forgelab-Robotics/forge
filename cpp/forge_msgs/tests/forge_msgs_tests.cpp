@@ -221,6 +221,20 @@ int main() {
           "ToolMessage emits null optional sequence");
   }
 
+  ToolMessage unresolved_tool_response = tool_request;
+  unresolved_tool_response.message_type = "tool.invoke.response";
+  unresolved_tool_response.endpoint_instance_id = std::nullopt;
+  CheckRoundTrip(unresolved_tool_response,
+                 "ToolMessage unresolved invoke response");
+  auto unresolved_batch = unresolved_tool_response.ToRecordBatch();
+  Check(unresolved_batch.ok(), "ToolMessage unresolved response batch");
+  if (unresolved_batch.ok()) {
+    Check((*unresolved_batch)
+              ->GetColumnByName("endpoint_instance_id")
+              ->IsNull(0),
+          "ToolMessage unresolved response emits null endpoint_instance_id");
+  }
+
   ToolMessage tool_event = tool_request;
   tool_event.message_type = "tool.event";
   tool_event.request_id = std::nullopt;
@@ -235,16 +249,23 @@ int main() {
     execution_message.message_type = message_type;
     Check(execution_message.Validate().ok(),
           std::string("ToolMessage accepts execution type ") + message_type);
+    execution_message.endpoint_instance_id = std::nullopt;
+    CheckRoundTrip(execution_message,
+                   std::string("ToolMessage unresolved execution type ") +
+                       message_type);
   }
+  ToolMessage unresolved_event = tool_event;
+  unresolved_event.endpoint_instance_id = std::nullopt;
+  CheckRoundTrip(unresolved_event, "ToolMessage unresolved event");
 
   ToolMessage management_message;
-  management_message.message_type = "endpoint.heartbeat";
+  management_message.message_type = "endpoint.register";
   management_message.request_id = "management-request-1";
   management_message.endpoint_id = "vision.yolo";
   management_message.endpoint_instance_id = "endpoint-instance-1";
   CheckRoundTrip(management_message, "ToolMessage management");
   for (const auto& message_type :
-       {"endpoint.register", "endpoint.unregister", "endpoint.heartbeat",
+       {"endpoint.register", "endpoint.unregister",
         "endpoint.registry.response"}) {
     ToolMessage typed_management_message = management_message;
     typed_management_message.message_type = message_type;
@@ -275,6 +296,9 @@ int main() {
   bad_tool_message.message_type = "tool.unknown";
   Check(!bad_tool_message.Validate().ok(),
         "ToolMessage rejects unsupported message type");
+  bad_tool_message.message_type = "endpoint.heartbeat";
+  Check(!bad_tool_message.Validate().ok(),
+        "ToolMessage rejects removed endpoint heartbeat type");
   bad_tool_message = tool_request;
   bad_tool_message.request_id = std::nullopt;
   Check(!bad_tool_message.Validate().ok(),
@@ -288,7 +312,7 @@ int main() {
   Check(!bad_tool_message.Validate().ok(),
         "ToolMessage management rejects execution correlation");
   for (const auto& message_type :
-       {"endpoint.register", "endpoint.unregister", "endpoint.heartbeat",
+       {"endpoint.register", "endpoint.unregister",
         "endpoint.registry.response"}) {
     bad_tool_message = management_message;
     bad_tool_message.message_type = message_type;
@@ -304,6 +328,20 @@ int main() {
   bad_tool_message.request_id = std::nullopt;
   Check(bad_tool_message.Validate().ok(),
         "ToolMessage endpoint status requires null request_id");
+  for (const auto& message_type :
+       {"endpoint.register", "endpoint.unregister",
+        "endpoint.registry.response"}) {
+    bad_tool_message = management_message;
+    bad_tool_message.message_type = message_type;
+    bad_tool_message.endpoint_instance_id = std::nullopt;
+    Check(!bad_tool_message.Validate().ok(),
+          std::string("ToolMessage endpoint type requires instance: ") +
+              message_type);
+  }
+  bad_tool_message = endpoint_status;
+  bad_tool_message.endpoint_instance_id = std::nullopt;
+  Check(!bad_tool_message.Validate().ok(),
+        "ToolMessage endpoint status requires endpoint_instance_id");
   bad_tool_message = tool_event;
   bad_tool_message.request_id = "request-1";
   Check(!bad_tool_message.Validate().ok(),
@@ -422,7 +460,7 @@ int main() {
       arrow::field("invocation_id", arrow::utf8(), true),
       arrow::field("attempt_id", arrow::utf8(), true),
       arrow::field("endpoint_id", arrow::utf8(), false),
-      arrow::field("endpoint_instance_id", arrow::utf8(), false),
+      arrow::field("endpoint_instance_id", arrow::utf8(), true),
       arrow::field("operation", arrow::utf8(), true),
       arrow::field("sequence", arrow::int64(), true),
       arrow::field("payload_json", arrow::utf8(), false)};

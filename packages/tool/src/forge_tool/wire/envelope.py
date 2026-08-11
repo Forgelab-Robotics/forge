@@ -16,7 +16,6 @@ MAX_JSON_DEPTH = 64
 type ToolMessageType = Literal[
     "endpoint.register",
     "endpoint.unregister",
-    "endpoint.heartbeat",
     "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
@@ -35,7 +34,6 @@ TOOL_MESSAGE_TYPES: frozenset[str] = frozenset(
     (
         "endpoint.register",
         "endpoint.unregister",
-        "endpoint.heartbeat",
         "endpoint.registry.response",
         "endpoint.status",
         "tool.invoke.request",
@@ -54,7 +52,6 @@ _MANAGEMENT_MESSAGES = frozenset(
     (
         "endpoint.register",
         "endpoint.unregister",
-        "endpoint.heartbeat",
         "endpoint.registry.response",
         "endpoint.status",
     )
@@ -63,7 +60,6 @@ _MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID = frozenset(
     (
         "endpoint.register",
         "endpoint.unregister",
-        "endpoint.heartbeat",
         "endpoint.registry.response",
     )
 )
@@ -201,7 +197,15 @@ class ToolEnvelope:
             )
 
         _require_nonempty(self.endpoint_id, "endpoint_id")
-        _require_nonempty(self.endpoint_instance_id, "endpoint_instance_id")
+        if self.endpoint_instance_id is None:
+            if self.message_type in _MANAGEMENT_MESSAGES:
+                raise _error(
+                    "FORGE_PROTOCOL_INVALID_MESSAGE",
+                    "must be present for endpoint management messages",
+                    path="endpoint_instance_id",
+                )
+        else:
+            _require_nonempty(self.endpoint_instance_id, "endpoint_instance_id")
 
         if self.message_type in _TOOL_MESSAGES:
             _require_nonempty(self.invocation_id, "invocation_id")
@@ -261,11 +265,11 @@ class ToolEnvelope:
             "protocol": self.protocol,
             "message_type": self.message_type,
             "endpoint_id": self.endpoint_id,
-            "endpoint_instance_id": self.endpoint_instance_id,
             "payload": dict(self.payload),
         }
         for field_name in (
             "request_id",
+            "endpoint_instance_id",
             "invocation_id",
             "attempt_id",
             "operation",

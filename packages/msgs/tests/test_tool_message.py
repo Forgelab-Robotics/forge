@@ -74,9 +74,9 @@ def test_tool_message_from_payload_uses_deterministic_strict_json() -> None:
 
 
 def test_management_and_event_correlation_rules() -> None:
-    heartbeat = ToolMessage(
-        message_type="endpoint.heartbeat",
-        request_id="heartbeat-1",
+    registration = ToolMessage(
+        message_type="endpoint.register",
+        request_id="register-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
     )
@@ -91,21 +91,20 @@ def test_management_and_event_correlation_rules() -> None:
         payload_json='{"data":{},"type":"progress"}',
     )
 
-    assert heartbeat.request_id == "heartbeat-1"
+    assert registration.request_id == "register-1"
     assert event.request_id is None
     assert event.sequence == 0
 
     with pytest.raises(ValidationError, match="must be null"):
         ToolMessage(
-            message_type="endpoint.heartbeat",
-            request_id="heartbeat-1",
+            message_type="endpoint.register",
+            request_id="register-1",
             invocation_id="invocation-1",
             endpoint_id="vision.yolo",
             endpoint_instance_id="instance-1",
         )
     for message_type in (
         "endpoint.register",
-        "endpoint.heartbeat",
         "endpoint.unregister",
         "endpoint.registry.response",
     ):
@@ -133,22 +132,68 @@ def test_management_and_event_correlation_rules() -> None:
 
     registry_response = ToolMessage.from_payload(
         message_type="endpoint.registry.response",
-        request_id="heartbeat-1",
+        request_id="register-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
         payload={
-            "operation": "heartbeat",
+            "operation": "register",
             "status": "accepted",
             "registry_revision": 1,
             "lease_ttl_ms": 30_000,
         },
     )
-    assert registry_response.payload()["operation"] == "heartbeat"
+    assert registry_response.payload()["operation"] == "register"
 
     with pytest.raises(ValidationError, match="sequence must be non-null"):
         _invoke_message(message_type="tool.event", request_id=None)
     with pytest.raises(ValidationError, match="request_id must be null"):
         _invoke_message(message_type="tool.event", sequence=0)
+
+
+def test_tool_messages_may_omit_endpoint_instance_id() -> None:
+    messages = [
+        _invoke_message(message_type=message_type, endpoint_instance_id=None)
+        for message_type in (
+            "tool.invoke.request",
+            "tool.invoke.response",
+            "tool.status.request",
+            "tool.status.response",
+            "tool.result.request",
+            "tool.result.response",
+            "tool.control.request",
+            "tool.control.response",
+            "tool.error",
+        )
+    ]
+    messages.append(
+        _invoke_message(
+            message_type="tool.event",
+            request_id=None,
+            endpoint_instance_id=None,
+            sequence=0,
+        )
+    )
+
+    for message in messages:
+        batch = message.to_arrow()
+        assert batch.column(6).null_count == 1
+        assert ToolMessage.from_arrow(batch) == message
+
+
+def test_endpoint_messages_require_endpoint_instance_id() -> None:
+    for message_type in (
+        "endpoint.register",
+        "endpoint.unregister",
+        "endpoint.registry.response",
+        "endpoint.status",
+    ):
+        with pytest.raises(ValidationError, match="endpoint_instance_id"):
+            _invoke_message(message_type=message_type, endpoint_instance_id=None)
+
+
+def test_endpoint_heartbeat_is_not_a_supported_message_type() -> None:
+    with pytest.raises(ValidationError):
+        _invoke_message(message_type="endpoint.heartbeat")
 
 
 def test_tool_message_rejects_invalid_identity_and_sequence() -> None:

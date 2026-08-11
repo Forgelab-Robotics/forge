@@ -162,7 +162,7 @@ def _context(
 def _invoke_request(
     *,
     endpoint_id: str = "vision.yolo",
-    endpoint_instance_id: str = "instance-1",
+    endpoint_instance_id: str | None = "instance-1",
     operation: str = "detect",
 ) -> ToolEnvelope:
     return make_invoke_request_envelope(
@@ -372,6 +372,7 @@ def test_query_handler_rejects_an_invalid_endpoint_result() -> None:
     [
         (_invoke_request(endpoint_id="vision.other"), "endpoint_id"),
         (_invoke_request(endpoint_instance_id="instance-old"), "endpoint_instance_id"),
+        (_invoke_request(endpoint_instance_id=None), "endpoint_instance_id"),
     ],
 )
 def test_query_handler_rejects_retargeted_requests(envelope: object, path: str) -> None:

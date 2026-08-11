@@ -61,16 +61,24 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  if (command == "write-tool-message") {
+  if (command == "write-tool-message" ||
+      command == "write-unresolved-tool-message") {
     forge_msgs::ToolMessage value;
-    value.message_type = "tool.invoke.request";
+    value.message_type = command == "write-tool-message"
+                             ? "tool.invoke.request"
+                             : "tool.invoke.response";
     value.request_id = "cpp-request-1";
     value.invocation_id = "cpp-invocation-1";
     value.attempt_id = "cpp-attempt-1";
     value.endpoint_id = "vision.yolo";
-    value.endpoint_instance_id = "cpp-instance-1";
+    if (command == "write-tool-message") {
+      value.endpoint_instance_id = "cpp-instance-1";
+      value.payload_json = "{\"arguments\":{\"class\":\"cube\"}}";
+    } else {
+      value.payload_json =
+          "{\"accepted\":{\"details\":{}},\"outcome\":\"accepted\"}";
+    }
     value.operation = "detect";
-    value.payload_json = "{\"arguments\":{\"class\":\"cube\"}}";
     auto batch = value.ToRecordBatch();
     if (!batch.ok()) {
       std::cerr << batch.status().ToString() << "\n";
@@ -94,8 +102,10 @@ int main(int argc, char** argv) {
               << (value->request_id ? *value->request_id : "null") << " "
               << (value->invocation_id ? *value->invocation_id : "null") << " "
               << (value->attempt_id ? *value->attempt_id : "null") << " "
-              << value->endpoint_id << " " << value->endpoint_instance_id << " "
-              << (value->operation ? *value->operation : "null") << " ";
+              << value->endpoint_id << " "
+              << (value->endpoint_instance_id ? *value->endpoint_instance_id
+                                              : "null")
+              << " " << (value->operation ? *value->operation : "null") << " ";
     if (value->sequence) {
       std::cout << *value->sequence;
     } else {

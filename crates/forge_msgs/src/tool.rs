@@ -7,10 +7,9 @@ use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 pub const TOOL_ENDPOINT_PROTOCOL: &str = "forge.tool.endpoint/v1alpha1";
 pub const MAX_SAFE_JSON_INTEGER: i64 = 9_007_199_254_740_991;
 const MAX_JSON_NESTING_DEPTH: usize = 64;
-pub const TOOL_MESSAGE_TYPES: [&str; 15] = [
+pub const TOOL_MESSAGE_TYPES: [&str; 14] = [
     "endpoint.register",
     "endpoint.unregister",
-    "endpoint.heartbeat",
     "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
@@ -25,17 +24,15 @@ pub const TOOL_MESSAGE_TYPES: [&str; 15] = [
     "tool.error",
 ];
 
-const MANAGEMENT_MESSAGE_TYPES: [&str; 5] = [
+const MANAGEMENT_MESSAGE_TYPES: [&str; 4] = [
     "endpoint.register",
     "endpoint.unregister",
-    "endpoint.heartbeat",
     "endpoint.registry.response",
     "endpoint.status",
 ];
-const MANAGEMENT_MESSAGE_TYPES_REQUIRING_REQUEST_ID: [&str; 4] = [
+const MANAGEMENT_MESSAGE_TYPES_REQUIRING_REQUEST_ID: [&str; 3] = [
     "endpoint.register",
     "endpoint.unregister",
-    "endpoint.heartbeat",
     "endpoint.registry.response",
 ];
 const EVENT_MESSAGE_TYPE: &str = "tool.event";
@@ -49,7 +46,7 @@ pub struct ToolMessage {
     pub invocation_id: Option<String>,
     pub attempt_id: Option<String>,
     pub endpoint_id: String,
-    pub endpoint_instance_id: String,
+    pub endpoint_instance_id: Option<String>,
     pub operation: Option<String>,
     pub sequence: Option<i64>,
     pub payload_json: String,
@@ -63,7 +60,7 @@ impl ToolMessage {
         invocation_id: Option<String>,
         attempt_id: Option<String>,
         endpoint_id: impl Into<String>,
-        endpoint_instance_id: impl Into<String>,
+        endpoint_instance_id: Option<String>,
         operation: Option<String>,
         sequence: Option<i64>,
         payload_json: impl Into<String>,
@@ -75,7 +72,7 @@ impl ToolMessage {
             invocation_id,
             attempt_id,
             endpoint_id: endpoint_id.into(),
-            endpoint_instance_id: endpoint_instance_id.into(),
+            endpoint_instance_id,
             operation,
             sequence,
             payload_json: payload_json.into(),
@@ -98,7 +95,14 @@ impl ToolMessage {
         }
 
         validate_required_string("endpoint_id", &self.endpoint_id)?;
-        validate_required_string("endpoint_instance_id", &self.endpoint_instance_id)?;
+        validate_optional_string("endpoint_instance_id", self.endpoint_instance_id.as_deref())?;
+        if self.endpoint_instance_id.is_none()
+            && MANAGEMENT_MESSAGE_TYPES.contains(&self.message_type.as_str())
+        {
+            return invalid(
+                "endpoint_instance_id must be non-null for endpoint management messages",
+            );
+        }
         validate_optional_string("request_id", self.request_id.as_deref())?;
         validate_optional_string("invocation_id", self.invocation_id.as_deref())?;
         validate_optional_string("attempt_id", self.attempt_id.as_deref())?;
@@ -173,7 +177,9 @@ impl ToolMessage {
             Arc::new(StringArray::from(vec![self.invocation_id.as_deref()])),
             Arc::new(StringArray::from(vec![self.attempt_id.as_deref()])),
             Arc::new(StringArray::from(vec![self.endpoint_id.as_str()])),
-            Arc::new(StringArray::from(vec![self.endpoint_instance_id.as_str()])),
+            Arc::new(StringArray::from(vec![
+                self.endpoint_instance_id.as_deref(),
+            ])),
             Arc::new(StringArray::from(vec![self.operation.as_deref()])),
             Arc::new(Int64Array::from(vec![self.sequence])),
             Arc::new(StringArray::from(vec![self.payload_json.as_str()])),
@@ -193,7 +199,7 @@ impl ToolMessage {
             invocation_id: read_optional_string(batch, 3, "invocation_id")?,
             attempt_id: read_optional_string(batch, 4, "attempt_id")?,
             endpoint_id: read_required_string(batch, 5, "endpoint_id")?,
-            endpoint_instance_id: read_required_string(batch, 6, "endpoint_instance_id")?,
+            endpoint_instance_id: read_optional_string(batch, 6, "endpoint_instance_id")?,
             operation: read_optional_string(batch, 7, "operation")?,
             sequence: read_optional_i64(batch, 8, "sequence")?,
             payload_json: read_required_string(batch, 9, "payload_json")?,
@@ -211,7 +217,7 @@ pub fn tool_message_schema() -> Schema {
         Field::new("invocation_id", DataType::Utf8, true),
         Field::new("attempt_id", DataType::Utf8, true),
         Field::new("endpoint_id", DataType::Utf8, false),
-        Field::new("endpoint_instance_id", DataType::Utf8, false),
+        Field::new("endpoint_instance_id", DataType::Utf8, true),
         Field::new("operation", DataType::Utf8, true),
         Field::new("sequence", DataType::Int64, true),
         Field::new("payload_json", DataType::Utf8, false),
@@ -468,7 +474,7 @@ mod tests {
             Some("invocation-1".to_string()),
             Some("attempt-1".to_string()),
             "endpoint-1",
-            "instance-1",
+            Some("instance-1".to_string()),
             Some("move".to_string()),
             None,
             r#"{"speed":0.5}"#,
@@ -483,7 +489,7 @@ mod tests {
             Some("invocation-1".to_string()),
             Some("attempt-1".to_string()),
             "endpoint-1",
-            "instance-1",
+            Some("instance-1".to_string()),
             Some("move".to_string()),
             Some(sequence),
             r#"{"kind":"progress"}"#,
@@ -498,7 +504,7 @@ mod tests {
             None,
             None,
             "endpoint-1",
-            "instance-1",
+            Some("instance-1".to_string()),
             None,
             None,
             "{}",
@@ -513,7 +519,7 @@ mod tests {
             None,
             None,
             "endpoint-1",
-            "instance-1",
+            Some("instance-1".to_string()),
             None,
             None,
             "{}",
@@ -552,6 +558,30 @@ mod tests {
     }
 
     #[test]
+    fn tool_messages_without_instance_roundtrip_as_null() {
+        for message_type in TOOL_MESSAGE_TYPES {
+            if !message_type.starts_with("tool.") {
+                continue;
+            }
+            let mut message = if message_type == "tool.event" {
+                event_message(1)
+            } else {
+                execution_message(message_type)
+            };
+            message.endpoint_instance_id = None;
+
+            let batch = message.to_record_batch().unwrap();
+
+            assert!(batch.column(6).is_null(0), "{message_type}");
+            assert_eq!(
+                ToolMessage::from_record_batch(&batch).unwrap(),
+                message,
+                "{message_type}"
+            );
+        }
+    }
+
+    #[test]
     fn event_requires_null_request_and_safe_sequence_and_roundtrips() {
         for sequence in [0, MAX_SAFE_JSON_INTEGER] {
             let message = event_message(sequence);
@@ -576,7 +606,6 @@ mod tests {
         for message_type in [
             "endpoint.register",
             "endpoint.unregister",
-            "endpoint.heartbeat",
             "endpoint.registry.response",
         ] {
             let message = management_message(message_type);
@@ -606,7 +635,6 @@ mod tests {
             [
                 "endpoint.register",
                 "endpoint.unregister",
-                "endpoint.heartbeat",
                 "endpoint.registry.response",
                 "endpoint.status",
                 "tool.invoke.request",
@@ -645,7 +673,7 @@ mod tests {
                 Some("invocation-1".to_string()),
                 Some("attempt-1".to_string()),
                 "endpoint-1",
-                "instance-1",
+                Some("instance-1".to_string()),
                 Some("move".to_string()),
                 None,
                 "{}",
@@ -663,7 +691,6 @@ mod tests {
         for message_type in [
             "endpoint.register",
             "endpoint.unregister",
-            "endpoint.heartbeat",
             "endpoint.registry.response",
         ] {
             let mut management_without_request = management_message(message_type);
@@ -715,7 +742,7 @@ mod tests {
                     Some("invocation-1".to_string()),
                     Some("attempt-1".to_string()),
                     "endpoint-1",
-                    "instance-1",
+                    Some("instance-1".to_string()),
                     Some("move".to_string()),
                     Some(sequence),
                     "{}",
@@ -734,8 +761,21 @@ mod tests {
         }
 
         let mut message = execution_message("tool.invoke.request");
-        message.endpoint_instance_id.clear();
+        message.endpoint_instance_id = Some(String::new());
         assert!(message.validate().is_err());
+
+        for message_type in TOOL_MESSAGE_TYPES {
+            if !message_type.starts_with("endpoint.") {
+                continue;
+            }
+            let mut message = if message_type == "endpoint.status" {
+                endpoint_status_message()
+            } else {
+                management_message(message_type)
+            };
+            message.endpoint_instance_id = None;
+            assert!(message.validate().is_err(), "{message_type}");
+        }
 
         let mut message = execution_message("tool.invoke.request");
         message.request_id = Some(String::new());
@@ -823,7 +863,7 @@ mod tests {
             ("invocation_id", DataType::Utf8, true),
             ("attempt_id", DataType::Utf8, true),
             ("endpoint_id", DataType::Utf8, false),
-            ("endpoint_instance_id", DataType::Utf8, false),
+            ("endpoint_instance_id", DataType::Utf8, true),
             ("operation", DataType::Utf8, true),
             ("sequence", DataType::Int64, true),
             ("payload_json", DataType::Utf8, false),
@@ -866,7 +906,7 @@ mod tests {
 
     #[test]
     fn optional_strings_encode_none_as_null_not_empty() {
-        let message = management_message("endpoint.heartbeat");
+        let message = management_message("endpoint.register");
         let batch = message.to_record_batch().unwrap();
 
         for index in [3, 4, 7] {

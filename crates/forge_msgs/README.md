@@ -31,11 +31,13 @@ and C++ as an exact ten-column carrier ordered as `protocol`, `message_type`,
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
 `endpoint_instance_id`, `operation`, `sequence`, and `payload_json`. All columns
 are `utf8` except nullable `sequence: int64`; optional values use Arrow null.
+`endpoint_instance_id` may be null on any `tool.*` message; every `endpoint.*` message,
+including `endpoint.status`, requires it.
 `payload_json` is a bounded strict JSON object with unique keys, valid Unicode,
 finite numbers, interoperable integers, and at most 64 levels. Message-specific
 validation remains in `forge-tool`. The known management types include
-`endpoint.registry.response`; register, heartbeat, unregister, and Registry response
-require `request_id`, while unsolicited endpoint status requires null. Transport
+`endpoint.registry.response`; register, unregister, and Registry response require
+`request_id`, while unsolicited endpoint status requires null. Transport
 observation time is not a carrier column. The repository's bidirectional IPC
 compatibility coverage for this carrier
 is between Python and C++.

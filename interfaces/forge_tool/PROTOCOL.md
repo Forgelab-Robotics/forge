@@ -97,16 +97,20 @@ request_id             required for request/response exchanges; forbidden for en
 invocation_id          Tool execution messages only
 attempt_id             Tool execution messages only
 endpoint_id
-endpoint_instance_id
+endpoint_instance_id    optional on Tool execution messages; required on endpoint management
 operation               Tool execution messages only
 sequence                tool.event only
 payload
 ```
 
 Absent optional fields are omitted, not encoded as `null`. Every message requires
-`protocol`, `message_type`, `endpoint_id`, `endpoint_instance_id`, and an object-valued
-`payload`. Logical `tool.event` and unsolicited `endpoint.status` messages omit
-`request_id`; their nullable Arrow carrier column is null.
+`protocol`, `message_type`, `endpoint_id`, and an object-valued `payload`.
+`endpoint_instance_id` is optional on every `tool.*` logical envelope and required on
+every `endpoint.*` envelope, including `endpoint.status`. A caller may omit it on an
+invoke to ask the Gateway to resolve a current instance; correlated pre-provider
+responses and errors may remain unresolved if selection fails. Logical
+`tool.event` and unsolicited `endpoint.status` messages omit `request_id`; their
+nullable Arrow carrier column is null.
 
 The logical envelope has no observation timestamp. In particular, it has no
 `timestamp_ms`, receive-time, or observed-at field. Observation time comes from the
@@ -133,22 +137,23 @@ order, types, and nullability are frozen:
 | `invocation_id` | `utf8` | yes |
 | `attempt_id` | `utf8` | yes |
 | `endpoint_id` | `utf8` | no |
-| `endpoint_instance_id` | `utf8` | no |
+| `endpoint_instance_id` | `utf8` | yes |
 | `operation` | `utf8` | yes |
 | `sequence` | `int64` | yes |
 | `payload_json` | `utf8` | no |
 
-This is exactly 10 columns. Endpoint identities are non-null for every carrier row.
-There are no top-level `tool_id` or `implementation_id` columns; those invocation
+This is exactly 10 columns. `endpoint_instance_id` may be null on any `tool.*` carrier
+row and is required on every `endpoint.*` carrier row. There are no top-level
+`tool_id` or `implementation_id` columns; those invocation
 context fields remain inside the JSON object encoded by `payload_json`. There is no
 observation timestamp or request-fingerprint column, and Wire v1alpha1 defines no
 Wire or Arrow fingerprint.
 
 For `tool.event` and unsolicited `endpoint.status`, the logical envelope omits
 `request_id` and the carrier stores null in that column. `endpoint.register`,
-`endpoint.heartbeat`, `endpoint.unregister`, and `endpoint.registry.response` require
-a non-null value. The other nullable columns follow the required/forbidden identity matrix for their
-message class. `payload_json` encodes exactly the logical `payload`
+`endpoint.unregister`, and `endpoint.registry.response` require a non-null value. The
+other nullable columns follow the required/forbidden identity matrix for their message
+class. `payload_json` encodes exactly the logical `payload`
 object, not the complete logical envelope.
 
 Python, Rust, and C++ carrier implementations exist. Python↔C++ Arrow IPC interop is
@@ -177,16 +182,21 @@ endpoint node's stateful Dora binding/handler or router exists.
   logical correlation header.
 
 All Tool execution messages require non-empty `invocation_id`, `attempt_id`,
-`endpoint_id`, `endpoint_instance_id`, and `operation`. All require a non-empty
-`request_id` except `tool.event`, which forbids it: the logical field is omitted and
-the Arrow carrier value is null. Invoke and event processing preserve
-`ToolExecutionKey`; control, status, and result use it to locate execution state.
+`endpoint_id`, and `operation`. Any `tool.*` logical envelope may omit
+`endpoint_instance_id` before provider selection. If selection succeeds, the Gateway
+must populate a concrete instance before forwarding the request to a provider, and
+provider-side route validation still requires an exact instance match. If selection
+fails first, the correlated `tool.invoke.response` or `tool.error` may also omit the
+instance. All execution messages require a non-empty `request_id` except `tool.event`,
+which forbids it: the logical field is omitted and the Arrow carrier value is null. Invoke and event
+processing preserve `ToolExecutionKey`; control, status, and result use it to locate
+execution state.
 
 Every endpoint-management message requires non-empty `endpoint_id` and
-`endpoint_instance_id`. `endpoint.register`, `endpoint.heartbeat`,
-`endpoint.unregister`, and `endpoint.registry.response` require a non-empty
-`request_id`; unsolicited `endpoint.status` forbids it. Endpoint-management messages forbid
-`invocation_id`, `attempt_id`, `operation`, and `sequence`.
+`endpoint_instance_id`. `endpoint.register`, `endpoint.unregister`, and
+`endpoint.registry.response` require a non-empty `request_id`; unsolicited
+`endpoint.status` forbids it. Endpoint-management messages forbid `invocation_id`,
+`attempt_id`, `operation`, and `sequence`.
 
 `tool.event` requires a top-level `sequence` integer in `[0, 2^53-1]`. `sequence` is
 forbidden on every other message. Its endpoint ordering scope is:
@@ -213,7 +223,6 @@ Endpoint management:
 
 - `endpoint.register`
 - `endpoint.unregister`
-- `endpoint.heartbeat`
 - `endpoint.registry.response`
 - `endpoint.status`
 
@@ -347,9 +356,13 @@ The descriptor reports what the endpoint can execute; it does not replace the
 Runtime ToolSpec. The Runtime separately owns ToolSpec loading, implementation
 selection, input/output schemas, retry policy, and CompletionSpec.
 
-### Unregister and heartbeat
+`endpoint.register` is an idempotent announce/upsert/lease-renewal operation. Repeating
+an accepted descriptor-equal registration for the current trusted instance renews its
+lease; there is no separate endpoint heartbeat management message.
 
-`endpoint.unregister` and `endpoint.heartbeat` both require an empty payload:
+### Unregister
+
+`endpoint.unregister` requires an empty payload:
 
 ```json
 {}
@@ -357,9 +370,8 @@ selection, input/output schemas, retry policy, and CompletionSpec.
 
 ### Registry response
 
-`endpoint.registry.response` is the correlated response to an
-`endpoint.register`, `endpoint.heartbeat`, or `endpoint.unregister` request. An
-accepted registration or heartbeat has this exact payload:
+`endpoint.registry.response` is the correlated response to an `endpoint.register` or
+`endpoint.unregister` request. An accepted registration has this exact payload:
 
 ```json
 {
@@ -384,7 +396,7 @@ A rejected operation omits the lease duration and requires a `ToolError`:
 
 ```json
 {
-  "operation": "heartbeat",
+  "operation": "register",
   "status": "rejected",
   "registry_revision": 13,
   "error": {
@@ -396,11 +408,10 @@ A rejected operation omits the lease duration and requires a `ToolError`:
 }
 ```
 
-`operation` is `register`, `heartbeat`, or `unregister` and must match the
-originating request type. `status` is `accepted` or `rejected`.
-`registry_revision` is required and is an integer in `[0, 2^53-1]`. For an accepted
-`register` or `heartbeat`, `lease_ttl_ms` is required, is an integer in
-`[1, 2^53-1]`, and `error` is forbidden. For an accepted `unregister`, both
+`operation` is `register` or `unregister` and must match the originating request type.
+`status` is `accepted` or `rejected`. `registry_revision` is required and is an integer
+in `[0, 2^53-1]`. For an accepted `register`, `lease_ttl_ms` is required, is an integer
+in `[1, 2^53-1]`, and `error` is forbidden. For an accepted `unregister`, both
 `lease_ttl_ms` and `error` are forbidden. A rejected response forbids
 `lease_ttl_ms` and requires `error`. Conditional members are presence-sensitive:
 when forbidden they must be absent; explicit `lease_ttl_ms: null` and `error: null`
@@ -430,8 +441,8 @@ are not duplicated in the payload.
 `active_invocations` is a non-negative integer and `details` is an object. Endpoint
 identity comes from the envelope and is not duplicated in the payload.
 `endpoint.status` is an unsolicited health snapshot and always omits `request_id`.
-It is not an acknowledgement of registration, heartbeat, or unregister;
-acknowledgements use `endpoint.registry.response`.
+It is not an acknowledgement of registration or unregister; acknowledgements use
+`endpoint.registry.response`.
 
 ### Registry cardinality, source authority, and lookup precedence
 
@@ -439,9 +450,9 @@ The following is the frozen stateful Registry contract. The Registry has at most
 current `endpoint_instance_id` for each `endpoint_id`. Replacing a current registration
 with a new instance must be authorized by a trusted transport generation, lease, or
 equivalent source binding. The opaque instance ID alone cannot order racing
-registrations. Heartbeat, status, and unregister messages only affect the accepted
-current instance from its accepted source; stale or untrusted instances cannot
-refresh, mutate, or remove the current registration.
+registrations. Status and unregister messages only affect the accepted current
+instance from its accepted source; stale or untrusted instances cannot mutate or
+remove the current registration.
 
 For any `endpoint_id`, Registry lookup precedence is exactly:
 
@@ -496,7 +507,7 @@ Registration decisions use current state first, then tombstone state, then absen
   creates a new current lease, and increments the process-global revision once.
 - With an expiry tombstone and no current instance, a matching registration is allowed.
   Acceptance clears the tombstone, creates a new current lease, and increments the
-  process-global revision once, allowing recovery after missed heartbeats.
+  process-global revision once, allowing recovery after lease expiry.
 - With no current instance and no tombstone, an authorized accepted registration creates
   current state and increments the process-global revision once.
 
@@ -508,8 +519,8 @@ The Gateway transport adapter captures a trusted monotonic receive observation b
 validating each management message. If the operation is accepted, Registry acceptance
 and lease start are logically anchored to that captured observation, not to the later
 validation-completion or response-send time. New/replacement/recovery registrations
-start their lease there. Every accepted idempotent register replay and heartbeat renews
-its lease from that captured receive observation. No receive observation, lease start,
+start their lease there. Every accepted idempotent register replay renews its lease from
+that captured receive observation. No receive observation, lease start,
 lease deadline, expiry time, or other timestamp appears on the wire.
 
 An accepted unregister against current state removes it, creates a reason `unregister`
@@ -519,8 +530,8 @@ it.
 
 `registry_revision` is a Gateway-process-global monotonically increasing state-change
 revision. Each authoritative Registry state change increments it exactly once. Accepted
-current-instance register renewals and heartbeats do not increment it and report the
-process-global revision in effect for their decision. Rejections likewise report the
+current-instance register renewals do not increment it and report the process-global
+revision in effect for their decision. Rejections likewise report the
 process-global revision without incrementing it. The matching unregister tombstone
 replay is the explicit exception: it reports the tombstone's stored historical removal
 or expiry revision, even when unrelated endpoints have advanced the process-global
@@ -832,8 +843,7 @@ make_result_request_envelope      make_result_response_envelope
 make_control_request_envelope     make_control_response_envelope
 make_event_envelope               make_error_envelope
 make_error_response_envelope      make_registration_envelope
-make_heartbeat_envelope           make_unregister_envelope
-make_endpoint_registry_response_envelope
+make_unregister_envelope          make_endpoint_registry_response_envelope
 make_endpoint_status_envelope
 ```
 
@@ -843,13 +853,16 @@ response factories instead accept the originating request envelope and copy its
 correlation identity directly; an embedded endpoint handler therefore does not need to
 retain the complete invoke context just to answer a later request.
 `make_error_response_envelope` follows the same request-based pattern, including when
-the request's typed payload cannot be decoded. Registration, heartbeat, and unregister
-factories require `request_id`; the unsolicited endpoint-status factory always omits it.
+the request's typed payload cannot be decoded. Registration and unregister factories
+require `request_id`; the unsolicited endpoint-status factory always omits it.
 `make_endpoint_registry_response_envelope` accepts the originating management request,
 copies its exchange and endpoint identities, and requires the response operation to
-match that request. Raw payload adapters remain public for transport integration
-and advanced use, but callers assembling a complete message should prefer the
-factories.
+match that request. `make_invoke_request_envelope` accepts
+`endpoint_instance_id=None` for Gateway resolution. Invoke response and error factories
+copy that unresolved identity unchanged; non-P0 status/result/control request factory
+APIs may continue requiring a concrete instance. Raw payload adapters remain public for transport
+integration and advanced use, but callers assembling a complete message should prefer
+the factories.
 
 `validate_management_response_correlation(request, response)` validates
 `endpoint.registry.response` type, matching `request_id`, `endpoint_id`, and
@@ -857,8 +870,9 @@ factories.
 
 `validate_response_correlation(request, response)` validates the execution response message
 type and equality of `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
-`endpoint_instance_id`, and `operation`. For a normal control response it also
-requires the response command to match the request command. A correlated
+`endpoint_instance_id`, and `operation`, including exact `None`-to-`None` correlation.
+For a normal control response it also requires the response command to match the request
+command. A correlated
 `tool.error` is accepted as the error response for invoke, status, result, or control.
 
 ## Lifecycle, ordering, and terminal consistency
@@ -931,13 +945,16 @@ Raw envelope bytes, raw `payload_json` bytes, and codec output are never canonic
 request identity. No canonical serialization, digest, or cross-language fingerprint is
 required, and no fingerprint field is added to the logical Wire or Arrow carrier.
 
-Execution exchange deduplication uses:
+After provider routing has supplied a concrete instance, execution exchange
+deduplication uses:
 
 ```text
 endpoint_instance_id + request_id
 ```
 
-Its request identity excludes `protocol`, `request_id`, and `endpoint_instance_id`,
+A pre-provider unresolved failure does not enter endpoint-local exchange deduplication;
+it remains correlated by the exact request/response fields, including `None` instance
+identity. The routed exchange request identity excludes `protocol`, `request_id`, and `endpoint_instance_id`,
 but includes `message_type`, every other route field, and the complete decoded
 `payload`. The same key and identity replays the established response; reuse with a
 different identity fails with `FORGE_PROTOCOL_DEDUP_CONFLICT`.

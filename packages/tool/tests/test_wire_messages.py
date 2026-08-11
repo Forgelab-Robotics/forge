@@ -174,12 +174,6 @@ def test_event_and_error_round_trip() -> None:
             lease_ttl_ms=30_000,
         ),
         EndpointRegistryResponse(
-            operation="heartbeat",
-            status="rejected",
-            registry_revision=5,
-            error=ToolError(code="STALE_INSTANCE", message="not current"),
-        ),
-        EndpointRegistryResponse(
             operation="unregister",
             status="accepted",
             registry_revision=6,
@@ -342,20 +336,20 @@ def test_empty_request_and_management_payloads_are_strict() -> None:
         envelope = _envelope(message_type, {})
         assert decode_envelope(encode_envelope(envelope)) == envelope
 
-    heartbeat = ToolEnvelope(
+    unregister = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
-        message_type="endpoint.heartbeat",
-        request_id="heartbeat-1",
+        message_type="endpoint.unregister",
+        request_id="unregister-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
         payload={},
     )
-    assert decode_envelope(encode_envelope(heartbeat)) == heartbeat
+    assert decode_envelope(encode_envelope(unregister)) == unregister
 
     invalid = ToolEnvelope(
         protocol=TOOL_ENDPOINT_PROTOCOL,
-        message_type="endpoint.heartbeat",
-        request_id="heartbeat-1",
+        message_type="endpoint.unregister",
+        request_id="unregister-1",
         endpoint_id="vision.yolo",
         endpoint_instance_id="instance-1",
         payload={"unexpected": True},

@@ -24,7 +24,6 @@ from forge_tool import (
     error_from_payload,
     invoke_response_from_payload,
     make_event_envelope,
-    make_heartbeat_envelope,
     make_invoke_request_envelope,
     validate_response_correlation,
 )
@@ -135,10 +134,11 @@ def _handler(query: object | None = None) -> ToolEndpointHandler:
             endpoint_instance_id="instance-1",
             sequence=0,
         ),
-        make_heartbeat_envelope(
-            endpoint_id="vision.yolo",
-            endpoint_instance_id="instance-1",
-            request_id="heartbeat-1",
+        make_invoke_request_envelope(
+            ToolRequest(arguments={}),
+            _context(),
+            request_id="unresolved-1",
+            endpoint_instance_id=None,
         ),
     ],
 )

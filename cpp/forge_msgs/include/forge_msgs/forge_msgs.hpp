@@ -128,7 +128,7 @@ struct ToolMessage {
   std::optional<std::string> invocation_id;
   std::optional<std::string> attempt_id;
   std::string endpoint_id;
-  std::string endpoint_instance_id;
+  std::optional<std::string> endpoint_instance_id;
   std::optional<std::string> operation;
   std::optional<std::int64_t> sequence;
   std::string payload_json = "{}";

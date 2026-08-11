@@ -42,7 +42,6 @@ from .messages import (
 
 _REGISTRY_REQUEST_OPERATIONS = {
     "endpoint.register": "register",
-    "endpoint.heartbeat": "heartbeat",
     "endpoint.unregister": "unregister",
 }
 
@@ -56,7 +55,7 @@ def _execution_envelope(
     message_type: ToolMessageType,
     *,
     context: ToolContext,
-    endpoint_instance_id: str,
+    endpoint_instance_id: str | None,
     payload: dict[str, Any],
     request_id: str | None,
     sequence: int | None = None,
@@ -84,9 +83,9 @@ def make_invoke_request_envelope(
     context: ToolContext,
     *,
     request_id: str,
-    endpoint_instance_id: str,
+    endpoint_instance_id: str | None,
 ) -> ToolEnvelope:
-    """Construct a complete generic invoke request from one Runtime context."""
+    """Construct an invoke request, optionally leaving instance resolution to Gateway."""
     return _execution_envelope(
         "tool.invoke.request",
         context=context,
@@ -293,7 +292,7 @@ def make_registration_envelope(
     endpoint_instance_id: str,
     request_id: str,
 ) -> ToolEnvelope:
-    """Construct a complete endpoint registration message."""
+    """Construct an idempotent endpoint announce/upsert/lease-renewal message."""
     if not isinstance(descriptor, ToolEndpointDescriptor):
         raise TypeError("descriptor must be a ToolEndpointDescriptor")
     return _validated(
@@ -304,25 +303,6 @@ def make_registration_envelope(
             endpoint_id=descriptor.endpoint_id,
             endpoint_instance_id=endpoint_instance_id,
             payload=endpoint_descriptor_to_payload(descriptor),
-        )
-    )
-
-
-def make_heartbeat_envelope(
-    *,
-    endpoint_id: str,
-    endpoint_instance_id: str,
-    request_id: str,
-) -> ToolEnvelope:
-    """Construct a complete endpoint heartbeat message."""
-    return _validated(
-        ToolEnvelope(
-            protocol=TOOL_ENDPOINT_PROTOCOL,
-            message_type="endpoint.heartbeat",
-            request_id=request_id,
-            endpoint_id=endpoint_id,
-            endpoint_instance_id=endpoint_instance_id,
-            payload={},
         )
     )
 

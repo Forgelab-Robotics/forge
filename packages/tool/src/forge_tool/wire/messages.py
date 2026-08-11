@@ -543,7 +543,7 @@ def validate_message_envelope(envelope: ToolEnvelope) -> None:
     message_type = envelope.message_type
     if message_type == "endpoint.register":
         validate_registration_envelope(envelope)
-    elif message_type in ("endpoint.unregister", "endpoint.heartbeat"):
+    elif message_type == "endpoint.unregister":
         payload = _object(envelope.payload, "payload")
         _fields(payload, required=frozenset(), path="payload")
     elif message_type == "endpoint.registry.response":

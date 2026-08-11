@@ -26,7 +26,6 @@ class ToolMessageSizeError(ValueError):
 ToolMessageType = Literal[
     "endpoint.register",
     "endpoint.unregister",
-    "endpoint.heartbeat",
     "endpoint.registry.response",
     "endpoint.status",
     "tool.invoke.request",
@@ -45,7 +44,6 @@ _MANAGEMENT_MESSAGES = frozenset(
     (
         "endpoint.register",
         "endpoint.unregister",
-        "endpoint.heartbeat",
         "endpoint.registry.response",
         "endpoint.status",
     )
@@ -54,7 +52,6 @@ _MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID = frozenset(
     (
         "endpoint.register",
         "endpoint.unregister",
-        "endpoint.heartbeat",
         "endpoint.registry.response",
     )
 )
@@ -68,7 +65,7 @@ TOOL_MESSAGE_SCHEMA = pa.schema(
         pa.field("invocation_id", pa.string(), nullable=True),
         pa.field("attempt_id", pa.string(), nullable=True),
         pa.field("endpoint_id", pa.string(), nullable=False),
-        pa.field("endpoint_instance_id", pa.string(), nullable=False),
+        pa.field("endpoint_instance_id", pa.string(), nullable=True),
         pa.field("operation", pa.string(), nullable=True),
         pa.field("sequence", pa.int64(), nullable=True),
         pa.field("payload_json", pa.string(), nullable=False),
@@ -188,7 +185,7 @@ class ToolMessage(BaseModel):
     invocation_id: str | None = None
     attempt_id: str | None = None
     endpoint_id: str
-    endpoint_instance_id: str
+    endpoint_instance_id: str | None = None
     operation: str | None = None
     sequence: int | None = None
     payload_json: str = "{}"
@@ -206,6 +203,13 @@ class ToolMessage(BaseModel):
             "operation",
         ):
             _require_nonempty(getattr(self, field_name), field_name)
+        if (
+            self.endpoint_instance_id is None
+            and self.message_type in _MANAGEMENT_MESSAGES
+        ):
+            raise ValueError(
+                "endpoint_instance_id must be non-null for endpoint management messages"
+            )
         if self.message_type in _MANAGEMENT_MESSAGES:
             if (
                 self.message_type in _MANAGEMENT_MESSAGES_REQUIRING_REQUEST_ID
@@ -255,7 +259,7 @@ class ToolMessage(BaseModel):
         *,
         message_type: ToolMessageType,
         endpoint_id: str,
-        endpoint_instance_id: str,
+        endpoint_instance_id: str | None,
         payload: Mapping[str, Any],
         request_id: str | None = None,
         invocation_id: str | None = None,

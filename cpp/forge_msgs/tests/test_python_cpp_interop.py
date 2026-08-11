@@ -108,6 +108,18 @@ def main() -> int:
         assert tool_message.sequence is None
         assert tool_message.payload() == {"arguments": {"class": "cube"}}
 
+        cpp_unresolved = tmp_path / "cpp_unresolved_tool_message.arrow"
+        subprocess.run(
+            [driver, "write-unresolved-tool-message", cpp_unresolved], check=True
+        )
+        unresolved = ToolMessage.from_arrow(cpp_unresolved.read_bytes())
+        assert unresolved.message_type == "tool.invoke.response"
+        assert unresolved.endpoint_instance_id is None
+        assert unresolved.payload() == {
+            "outcome": "accepted",
+            "accepted": {"details": {}},
+        }
+
         py_tool_message = tmp_path / "py_tool_message.arrow"
         _to_ipc_file(
             ToolMessage.from_payload(
@@ -128,6 +140,37 @@ def main() -> int:
         assert out == (
             "tool.event null py-invocation-1 py-attempt-1 policy.lerobot "
             'py-instance-1 execute 7 {"data":{"fraction":0.5},"type":"progress"}'
+        )
+
+        py_unresolved = tmp_path / "py_unresolved_tool_message.arrow"
+        _to_ipc_file(
+            ToolMessage.from_payload(
+                message_type="tool.error",
+                request_id="py-request-1",
+                invocation_id="py-invocation-1",
+                attempt_id="py-attempt-1",
+                endpoint_id="vision.yolo",
+                endpoint_instance_id=None,
+                operation="detect",
+                payload={
+                    "error": {
+                        "code": "GATEWAY_RESOLUTION_FAILED",
+                        "message": "no provider available",
+                        "retryable": False,
+                        "details": {},
+                    }
+                },
+            ).to_arrow(),
+            py_unresolved,
+        )
+        out = subprocess.check_output(
+            [driver, "read-tool-message", py_unresolved], text=True
+        ).strip()
+        assert out == (
+            "tool.error py-request-1 py-invocation-1 py-attempt-1 "
+            "vision.yolo null detect null "
+            '{"error":{"code":"GATEWAY_RESOLUTION_FAILED",'
+            '"details":{},"message":"no provider available","retryable":false}}'
         )
 
         cpp_audio = tmp_path / "cpp_audio.arrow"

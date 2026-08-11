@@ -547,7 +547,7 @@ std::vector<std::shared_ptr<arrow::Field>> ToolMessageFields() {
           arrow::field("invocation_id", arrow::utf8(), true),
           arrow::field("attempt_id", arrow::utf8(), true),
           arrow::field("endpoint_id", arrow::utf8(), false),
-          arrow::field("endpoint_instance_id", arrow::utf8(), false),
+          arrow::field("endpoint_instance_id", arrow::utf8(), true),
           arrow::field("operation", arrow::utf8(), true),
           arrow::field("sequence", arrow::int64(), true),
           arrow::field("payload_json", arrow::utf8(), false)};
@@ -647,7 +647,6 @@ arrow::Status ValidateOptionalNonempty(
 
 bool IsSupportedMessageType(const std::string& value) {
   return value == "endpoint.register" || value == "endpoint.unregister" ||
-         value == "endpoint.heartbeat" ||
          value == "endpoint.registry.response" ||
          value == "endpoint.status" ||
          value == "tool.invoke.request" || value == "tool.invoke.response" ||
@@ -659,13 +658,11 @@ bool IsSupportedMessageType(const std::string& value) {
 
 bool IsManagementMessage(const std::string& value) {
   return value == "endpoint.register" || value == "endpoint.unregister" ||
-         value == "endpoint.heartbeat" ||
          value == "endpoint.registry.response" || value == "endpoint.status";
 }
 
 bool ManagementMessageRequiresRequestId(const std::string& value) {
   return value == "endpoint.register" || value == "endpoint.unregister" ||
-         value == "endpoint.heartbeat" ||
          value == "endpoint.registry.response";
 }
 
@@ -685,7 +682,11 @@ arrow::Status ToolMessage::Validate() const {
   ARROW_RETURN_NOT_OK(ValidateOptionalNonempty("attempt_id", attempt_id));
   ARROW_RETURN_NOT_OK(ValidateNonempty("endpoint_id", endpoint_id));
   ARROW_RETURN_NOT_OK(
-      ValidateNonempty("endpoint_instance_id", endpoint_instance_id));
+      ValidateOptionalNonempty("endpoint_instance_id", endpoint_instance_id));
+  if (!endpoint_instance_id && IsManagementMessage(message_type)) {
+    return arrow::Status::Invalid(
+        "endpoint_instance_id must be non-null for endpoint management messages");
+  }
   ARROW_RETURN_NOT_OK(ValidateOptionalNonempty("operation", operation));
 
   if (IsManagementMessage(message_type)) {
@@ -743,7 +744,7 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToolMessage::ToRecordBatch()
   ARROW_ASSIGN_OR_RAISE(auto attempt_id_array, OptionalString(attempt_id));
   ARROW_ASSIGN_OR_RAISE(auto endpoint_id_array, ScalarString(endpoint_id));
   ARROW_ASSIGN_OR_RAISE(auto endpoint_instance_id_array,
-                        ScalarString(endpoint_instance_id));
+                        OptionalString(endpoint_instance_id));
   ARROW_ASSIGN_OR_RAISE(auto operation_array, OptionalString(operation));
   ARROW_ASSIGN_OR_RAISE(auto sequence_array, OptionalI64(sequence));
   ARROW_ASSIGN_OR_RAISE(auto payload_json_array, ScalarString(payload_json));
@@ -769,7 +770,7 @@ arrow::Result<ToolMessage> ToolMessage::FromRecordBatch(
                         ReadOptionalString(batch, "attempt_id"));
   ARROW_ASSIGN_OR_RAISE(value.endpoint_id, ReadString(batch, "endpoint_id"));
   ARROW_ASSIGN_OR_RAISE(value.endpoint_instance_id,
-                        ReadString(batch, "endpoint_instance_id"));
+                        ReadOptionalString(batch, "endpoint_instance_id"));
   ARROW_ASSIGN_OR_RAISE(value.operation,
                         ReadOptionalString(batch, "operation"));
   ARROW_ASSIGN_OR_RAISE(value.sequence, ReadOptionalI64(batch, "sequence"));
