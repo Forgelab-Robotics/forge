@@ -4,9 +4,14 @@ Status: implemented alpha endpoint models, logical contract, complete factories,
 Query-first operation handling, exact Arrow/Dora carrier schema, and an optional Python
 Arrow carrier binding. `DoraToolEndpointBinding` converts one Arrow input through the
 logical Query handler into an Arrow response without owning a Dora node, event loop,
-metadata, or execution state. Concrete Dora node embedding, Action/Session handling,
-Registry/Gateway, Web, and Tool Runtime remain future work; no public
-identity/state/sequence primitives are claimed.
+metadata, or execution state. Outside this package, the current Query-only Gateway
+implements the configured-route Registry, invoke routing with terminal response/error
+correlation, a simple experimental HTTP Query discovery/invoke bridge, and a Dora
+logical caller vertical bridge. It does not accept or route `endpoint.status` or
+`tool.event`. The first concrete YOLO Dora provider-node embedding and real Query
+vertical are implemented. Additional providers, a general runner, the complete
+caller-facing Tool Runtime API, a stable Dora caller contract, Action/Session, SSE, and
+MCP remain future work; no public identity/state/sequence primitives are claimed.
 
 This contract defines low-rate endpoint registration and Tool execution lifecycle
 messages. It does not carry images, joint state, joint commands, trajectory feedback,
@@ -14,17 +19,19 @@ or other high-rate Dora data.
 
 ## Boundary: Runtime API, endpoint SPI, and Wire
 
-This is the endpoint SPI/Wire contract, not the caller-facing Tool Runtime API. Web and
-Dora callers use the Runtime's discovery/invoke/status/result/control/events API; they
-do not supply internal attempt or endpoint routing identities and do not call endpoint
-SPI directly.
+This is the endpoint SPI/Wire contract, not the caller-facing Tool Runtime API. The
+target Runtime API provides discovery/invoke/status/result/control/events while hiding
+attempt and endpoint routing identities. The current Gateway exposes only a simple
+experimental HTTP Query discovery/invoke bridge and a Dora logical caller vertical
+bridge; neither is the complete or stable caller-facing Runtime contract.
 
 On the provider side, a concrete Dora business node implements the Query/Action/Session
 endpoint SPI and embeds a ToolEndpoint binding/handler. Runtime/Gateway endpoint routing
 uses this Wire contract to communicate with that embedded handler, which binds the
-selected operation to the node's SPI implementation. A future optional runner may wrap
-this integration for convenience, but it is not the only implementation path. The
-location of Dora integration dependencies is intentionally left to the vertical spike.
+selected operation to the node's SPI implementation. The YOLO provider is the first
+completed concrete direct embedding and real Query vertical. Additional providers may
+embed the same boundary directly; a future general runner may wrap this integration for
+convenience but cannot become the only implementation path.
 
 ## Version and logical encoding
 
@@ -59,8 +66,11 @@ its identities or semantics. The optional Python Arrow carrier binding is implem
 logical encoded-message limit, reserves bounded correlated-error headroom before
 accepting requests, and applies separate pre-parse raw payload and in-memory Arrow
 carrier limits. IPC bytes must be decoded by the upstream transport under bounded
-framing and decompression limits before entering the binding; concrete Dora node I/O
-wiring and Web framing remain future work.
+framing and decompression limits before entering the binding. Concrete YOLO
+provider-node Dora I/O wiring is implemented outside this package; additional provider
+integrations and stable caller framing remain future work. The current Gateway's simple
+HTTP Query discovery/invoke and Dora logical caller vertical bridges are experimental
+integration paths outside this package, not frozen caller contracts.
 
 ## Logical envelope
 
@@ -164,13 +174,14 @@ endpoint node's stateful Dora binding/handler or router exists.
 
 ## Identity and correlation
 
-- `request_id` correlates one request/response exchange. An exchange retry preserves
-  it, but management Registry effects and replay decisions never use it as a dedup key.
+- `request_id` is the correlation identity for one request/response exchange. A
+  response copies it from its request. Reusing it does not request cached response
+  replay, duplicate suppression, or retry.
 - `invocation_id` identifies one Runtime-owned logical Tool invocation.
 - `attempt_id` identifies one Runtime-owned implementation attempt within an
   invocation.
-- The flat pair `invocation_id` + `attempt_id` is the `ToolExecutionKey`; it is not a
-  nested envelope object.
+- The flat pair `invocation_id` + `attempt_id` is the execution identity and the
+  `ToolExecutionKey`; it is not a nested envelope object.
 - `endpoint_id` is the stable logical endpoint identity advertised by the
   descriptor.
 - `endpoint_instance_id` is an opaque process-start identity. Each restart creates a
@@ -188,9 +199,11 @@ must populate a concrete instance before forwarding the request to a provider, a
 provider-side route validation still requires an exact instance match. If selection
 fails first, the correlated `tool.invoke.response` or `tool.error` may also omit the
 instance. All execution messages require a non-empty `request_id` except `tool.event`,
-which forbids it: the logical field is omitted and the Arrow carrier value is null. Invoke and event
-processing preserve `ToolExecutionKey`; control, status, and result use it to locate
-execution state.
+which forbids it: the logical field is omitted and the Arrow carrier value is null. The
+messages preserve `ToolExecutionKey`; control, status, and result use it to identify
+execution state in implementations that support those paths. The current Query-only
+Gateway routes invoke and correlates only its terminal response or `tool.error`; it does
+not accept or route `tool.event` and performs no event correlation.
 
 Every endpoint-management message requires non-empty `endpoint_id` and
 `endpoint_instance_id`. `endpoint.register`, `endpoint.unregister`, and
@@ -205,17 +218,13 @@ forbidden on every other message. Its endpoint ordering scope is:
 endpoint_instance_id + invocation_id + attempt_id
 ```
 
-Within each scope, the endpoint node's embedded handler assigns the first event
-sequence `0` and increments strictly by `1`. A retained sequence paired with the same
-structurally equal event is a duplicate; the same retained sequence paired with a
-different event is a conflict. A sequence higher than the next expected value is a gap
-and requires recovery from retained history or authoritative status/result; missing
-events are never invented. A lower sequence no longer present in retained history is
-expired/stale and is not processed as new. Sequence never wraps: after `2^53-1`,
-another assignment fails with an exhaustion error. These are normative Wire semantics;
-the contract does not define a public sequencing API or claim implemented production
-retention/routing. The Runtime may assign a separate invocation-scoped sequence when it
-exposes events to callers; that caller-facing sequence is not this endpoint sequence.
+Within each scope, an endpoint event producer assigns the first sequence `0` and
+increments strictly by `1`; sequence never wraps, so no event may be assigned after
+`2^53-1`. The value communicates producer order only. P0 provides no retained event
+history, duplicate suppression, gap recovery, or event replay guarantee, and consumers
+must not infer any of them from `sequence`. The Runtime may assign a separate
+invocation-scoped sequence when it exposes events to callers; that caller-facing
+sequence is not this endpoint sequence.
 
 ## Message types
 
@@ -353,12 +362,13 @@ Capabilities are constrained by `semantics`:
 | `session` | `false` | `true` or `false` | `true` |
 
 The descriptor reports what the endpoint can execute; it does not replace the
-Runtime ToolSpec. The Runtime separately owns ToolSpec loading, implementation
-selection, input/output schemas, retry policy, and CompletionSpec.
+Runtime ToolSpec. A future Runtime separately owns ToolSpec loading, implementation
+selection, input/output schemas, CompletionSpec, and any requirement-specific retry
+policy.
 
-`endpoint.register` is an idempotent announce/upsert/lease-renewal operation. Repeating
-an accepted descriptor-equal registration for the current trusted instance renews its
-lease; there is no separate endpoint heartbeat management message.
+`endpoint.register` is the announce/upsert/lease-renewal operation. An endpoint sends
+it periodically. An accepted descriptor-equal registration for the current instance on
+its configured route renews the lease without changing Registry revision.
 
 ### Unregister
 
@@ -396,7 +406,7 @@ A rejected operation omits the lease duration and requires a `ToolError`:
 
 ```json
 {
-  "operation": "register",
+  "operation": "unregister",
   "status": "rejected",
   "registry_revision": 13,
   "error": {
@@ -418,8 +428,8 @@ when forbidden they must be absent; explicit `lease_ttl_ms: null` and `error: nu
 are invalid.
 
 `lease_ttl_ms` is a duration measured from the trusted Gateway monotonic receive
-observation that anchors Registry acceptance and lease start, as defined below. It is
-not an observation timestamp or absolute time. The response copies `request_id`,
+observation that anchors an accepted registration and its lease start, as defined
+below. It is not an observation timestamp or absolute time. The response copies `request_id`,
 `endpoint_id`, and `endpoint_instance_id` from the originating request; those identities
 are not duplicated in the payload.
 
@@ -442,105 +452,65 @@ are not duplicated in the payload.
 identity comes from the envelope and is not duplicated in the payload.
 `endpoint.status` is an unsolicited health snapshot and always omits `request_id`.
 It is not an acknowledgement of registration or unregister; acknowledgements use
-`endpoint.registry.response`.
+`endpoint.registry.response`. The message and its model remain part of Wire v1alpha1,
+but the current Query-only Gateway does not accept, route, or perform current-instance
+validation for it. Gateway handling is deferred until an availability/health use case
+requires it.
 
-### Registry cardinality, source authority, and lookup precedence
+### Configured route authority and current state
 
-The following is the frozen stateful Registry contract. The Registry has at most one
-current `endpoint_instance_id` for each `endpoint_id`. Replacing a current registration
-with a new instance must be authorized by a trusted transport generation, lease, or
-equivalent source binding. The opaque instance ID alone cannot order racing
-registrations. Status and unregister messages only affect the accepted current
-instance from its accepted source; stale or untrusted instances cannot mutate or
-remove the current registration.
+Each statically configured, trusted management route authorizes its configured
+`endpoint_id`. The Gateway validates the envelope `endpoint_id` and, for registration,
+the descriptor `endpoint_id` against that route. Message identity alone grants no
+registration authority.
 
-For any `endpoint_id`, Registry lookup precedence is exactly:
+The Registry holds at most one current availability record for each configured
+`endpoint_id`. That record contains the current `endpoint_instance_id`, exact endpoint
+descriptor, and lease deadline. The configured route is the authority for replacing
+that record; the opaque instance ID is an identity, not an ordering value.
 
-```text
-current instance > last tombstone > absent
-```
+### Registration, unregister, and lease effects
 
-An operation is evaluated against the first state that exists in this order. Accepting
-a new registration clears that endpoint's tombstone before the new current state is
-exposed. The cleared tombstone is no longer replayable; an old unregister cannot match
-it after the new registration has been accepted.
+Management `request_id` is correlation only and is never a Registry deduplication key.
+Operations are evaluated against the current availability record:
 
-### Tombstone contract
+- An accepted register with no current instance announces the instance, descriptor, and
+  lease, and increments `registry_revision` once.
+- An accepted register from the same configured route with the same current instance and
+  exactly equal descriptor renews its lease without incrementing the revision.
+- A register for the same current instance with a different descriptor is rejected. It
+  does not replace the descriptor, renew the lease, or increment the revision.
+- An accepted register from the same configured route with a different instance
+  atomically replaces the current record and increments the revision exactly once.
+  There is no transient absent state.
+- An unregister from the configured route that exactly matches the current instance
+  removes it and increments the revision once.
+- When no current instance exists, an authorized unregister is accepted
+  effect-idempotently, changes no state, and does not increment the revision.
+- When a different current instance exists, an unregister from an older instance is
+  rejected as stale and cannot remove or otherwise mutate the current record.
 
-The Registry retains at most the last tombstone for each `endpoint_id`. A tombstone
-stores exactly the identity and authority needed for replay decisions:
+A route/`endpoint_id` mismatch for a supported Registry operation is rejected and
+changes no state. The current Registry path has no `endpoint.status` operation. The
+Gateway uses its trusted monotonic receive observation to start or renew a lease only
+after accepting a registration. No receive
+observation, lease deadline, expiry time, or other liveness timestamp appears on the
+wire. Lease expiry removes the current record and increments the revision once.
 
-- `endpoint_id`;
-- `endpoint_instance_id`;
-- the accepted trusted source binding and source generation;
-- the historical removal revision;
-- reason `unregister` or `expired`.
+### Availability revision and Gateway restart
 
-The tombstone is retained until a new registration for that `endpoint_id` is accepted
-or the Gateway process restarts. It is process-memory state and is not persisted across
-Gateway restart.
+`registry_revision` is a process-local availability-state revision. Within one Gateway
+process it increases exactly once for an accepted absent-to-current registration, an
+atomic current-instance replacement, a matching unregister removal, or lease expiry.
+Descriptor-equal renewal, accepted absent unregister, and rejected operations do not
+increment it. Every Registry response reports the process-local revision in
+effect after its decision.
 
-When no current instance exists, an unregister matching the tombstone's endpoint
-identity and accepted trusted source binding/generation returns accepted with the
-historical removal or expiry revision stored in that tombstone. It does not increment
-the process-global revision. This remains true if unrelated endpoint changes have
-advanced the current process-global `registry_revision`. A non-matching unregister is
-not a tombstone replay and follows the normal authority/rejection rules.
-
-### Registration precedence and replay
-
-Management `request_id` is correlation only and is never a Registry dedup key.
-Registration decisions use current state first, then tombstone state, then absence:
-
-- With a current instance, an idempotent register renewal requires the same accepted
-  trusted source binding/generation, the same `endpoint_instance_id`, and exact endpoint
-  descriptor equality. It renews the lease without incrementing the revision.
-  A descriptor change for that current identity is rejected. Replacement by another
-  instance or source generation remains subject to the existing trusted source/current
-  instance authority rules.
-- With an explicit-unregister tombstone and no current instance, a registration with the
-  exact same trusted source binding, source generation, and `endpoint_instance_id` is
-  rejected non-retryably as tombstoned. This prevents a delayed registration from
-  resurrecting an explicitly removed instance.
-- With that explicit-unregister tombstone, a different instance or a newer trusted
-  source generation may register when authorized. Acceptance clears the tombstone,
-  creates a new current lease, and increments the process-global revision once.
-- With an expiry tombstone and no current instance, a matching registration is allowed.
-  Acceptance clears the tombstone, creates a new current lease, and increments the
-  process-global revision once, allowing recovery after lease expiry.
-- With no current instance and no tombstone, an authorized accepted registration creates
-  current state and increments the process-global revision once.
-
-A rejected registration leaves any tombstone intact. Only acceptance clears it.
-
-### Lease receive observation and revision responses
-
-The Gateway transport adapter captures a trusted monotonic receive observation before
-validating each management message. If the operation is accepted, Registry acceptance
-and lease start are logically anchored to that captured observation, not to the later
-validation-completion or response-send time. New/replacement/recovery registrations
-start their lease there. Every accepted idempotent register replay renews its lease from
-that captured receive observation. No receive observation, lease start,
-lease deadline, expiry time, or other timestamp appears on the wire.
-
-An accepted unregister against current state removes it, creates a reason `unregister`
-tombstone, and increments `registry_revision` once. Expiry removes current state,
-creates a reason `expired` tombstone, and increments it once. Rejections never increment
-it.
-
-`registry_revision` is a Gateway-process-global monotonically increasing state-change
-revision. Each authoritative Registry state change increments it exactly once. Accepted
-current-instance register renewals do not increment it and report the process-global
-revision in effect for their decision. Rejections likewise report the
-process-global revision without incrementing it. The matching unregister tombstone
-replay is the explicit exception: it reports the tombstone's stored historical removal
-or expiry revision, even when unrelated endpoints have advanced the process-global
-revision.
-
-The revision orders Registry state changes within one Gateway process; it is not a
-wall-clock value, observation timestamp, lease deadline, or cross-process persistent
-version. These revision and lease rules do not weaken the cardinality or trusted
-source-authority contract.
+The revision is not a wall-clock value, observation timestamp, lease deadline,
+persistent version, or cross-process ordering token. Gateway restart begins with empty
+current availability state and a fresh process-local revision. Endpoints restore
+availability by their periodic `endpoint.register`; no removal history is required for
+recovery.
 
 ## Tool execution payloads
 
@@ -772,7 +742,10 @@ payload shape:
 
 `type` is one of `progress`, `heartbeat`, `executor_completed`, `executor_failed`,
 `cancelled`, or `stopped`. `data` is a required object. The allowed event types and
-outer payload shape are frozen; type-specific `data` schemas remain future work.
+outer payload shape are frozen; type-specific `data` schemas remain future work. The
+current Query-only Gateway does not accept or route this message and does not implement
+event correlation; it currently handles only the invoke terminal response or correlated
+`tool.error`.
 
 ### Tool error message
 
@@ -888,7 +861,7 @@ stateful embedded request handler, dispatcher, or execution store.
 | `accepted` | `running`, `stopping`, or terminal |
 | `running` | `stopping` or terminal |
 | `stopping` | terminal |
-| Any phase | the same phase as an idempotent replay |
+| Any phase | the same phase as a repeated observation |
 | Terminal | no different phase |
 
 Here terminal means `completed`, `failed`, `cancelled`, `stopped`, or `unknown`.
@@ -928,60 +901,31 @@ endpoint ToolResult records endpoint execution state. The future Tool Runtime wi
 apply its CompletionSpec before deciding the caller-facing Tool outcome; Gateway and
 the endpoint node's embedded handler must not interpret CompletionSpec.
 
-## Deduplication keys and structural request identity
+## Execution identity, correlation, and P0 delivery scope
 
-Wire v1alpha1 defines structural request identity without defining a fingerprint
-format. Identity is equality of validated, decoded structural JSON:
+`request_id` identifies one request/response exchange and is copied into the correlated
+response. `invocation_id` + `attempt_id` identifies one execution attempt and is carried
+by invoke, status, result, control, and event messages for that attempt. These are
+identity and correlation definitions only.
 
-- object member order is ignored, while member presence and names participate;
-- array order participates;
-- strings compare as exact Unicode scalar sequences with no Unicode normalization;
-- `null` and booleans retain their JSON types and are distinct from strings and
-  numbers;
-- numbers compare by finite IEEE-754 binary64 value, so `1` equals `1.0` and `-0`
-  equals `0`.
+P0 defines no response replay cache, duplicate suppression, stateful execution
+deduplication, retention window, or exactly-once guarantee. Reusing either identity does
+not require a provider to return an earlier response and does not prevent repeated
+execution. Wire v1alpha1 therefore freezes no deduplication fingerprint, decoded
+structural-identity comparison, or deduplication-conflict behavior. Raw envelope bytes,
+raw `payload_json` bytes, and codec output are not canonical identities, and no
+fingerprint field is added to the logical Wire or Arrow carrier.
 
-Raw envelope bytes, raw `payload_json` bytes, and codec output are never canonical
-request identity. No canonical serialization, digest, or cross-language fingerprint is
-required, and no fingerprint field is added to the logical Wire or Arrow carrier.
+P0 does not automatically retry Query execution. `ToolError.retryable` is descriptive
+error metadata and does not itself trigger a retry. Action handling and any retry policy
+remain future, requirement-specific design work; if duplicate delivery proves relevant,
+that design may add private, bounded, stateful deduplication with an explicit retention
+policy. If a side effect may have occurred but its outcome cannot be recovered, the
+terminal result is `unknown` rather than a blind success or retry.
 
-After provider routing has supplied a concrete instance, execution exchange
-deduplication uses:
-
-```text
-endpoint_instance_id + request_id
-```
-
-A pre-provider unresolved failure does not enter endpoint-local exchange deduplication;
-it remains correlated by the exact request/response fields, including `None` instance
-identity. The routed exchange request identity excludes `protocol`, `request_id`, and `endpoint_instance_id`,
-but includes `message_type`, every other route field, and the complete decoded
-`payload`. The same key and identity replays the established response; reuse with a
-different identity fails with `FORGE_PROTOCOL_DEDUP_CONFLICT`.
-
-Execution deduplication uses:
-
-```text
-invocation_id + attempt_id
-```
-
-For `tool.invoke.request`, invoke identity is exactly `endpoint_id` + `operation` +
-the complete decoded `payload`. It excludes the execution key, `request_id`, and
-`endpoint_instance_id`. Every `arguments` and `context` field participates, including
-optional-field presence, so omission and explicit `null` are structurally different.
-The same execution key and invoke identity replays the established accepted response
-or terminal result without restarting the side effect; a different invoke identity is
-a conflict.
-
-Management `request_id` is correlation only, not deduplication. Management effects
-follow the trusted-source/current-identity Registry rules above, including lease renewal,
-unregister tombstone replay, and state-change revision behavior. Current models and
-carriers do not themselves provide the stateful Registry implementation, asynchronous
-execution deduplication cache, execution store, or retention window. Eventual
-execution guarantees remain scoped to one endpoint process epoch and its configured
-retention window; the protocol does not promise cross-process exactly-once execution.
-If a side effect may have occurred but its outcome cannot be recovered, the terminal
-result is `unknown` rather than a blind success or retry.
+Management operations follow the configured-route/current-state effects above. Their
+effect-idempotent renewal and absent-unregister behavior does not imply request or
+response replay.
 
 ## Implementation scope
 
@@ -991,15 +935,20 @@ typed payload codecs, and complete factories are implemented in `forge-tool`. Th
 Arrow IPC interop coverage; no Python↔Rust IPC coverage is claimed.
 
 No independent endpoint execution service is part of the design, and this scope does
-not claim implemented or public structural-identity, lifecycle-state, or sequence
-primitives.
-The previous `forge_tool.host` surface and its public primitives have been removed.
-Python `ToolEndpointHandler` now implements exact operation mapping validation,
+not claim implemented or public lifecycle-state, sequence, replay, or deduplication
+primitives. The previous `forge_tool.host` surface and its public primitives have been
+removed. Python `ToolEndpointHandler` now implements exact operation mapping validation,
 endpoint/instance route validation, and the Query invoke/result/rejection path. The
 optional `forge_tool.dora` module converts `forge_msgs.ToolMessage` Arrow values to and
-from that logical path without owning a Dora node or event loop. Embedding the binding
-in a concrete endpoint node, the first real Query, Action/Session handling, and only
-then private bounded dedup as needed remain implementation work. Registry/Gateway
-services, caller-facing Web/Dora Runtime bindings, and Tool Runtime behavior also
-remain future work. `PolicyCommand` remains
-retained unchanged; migration or deprecation is not in the current scope.
+from that logical path without owning a Dora node or event loop. The first concrete YOLO
+provider-node embedding and real Query vertical are implemented outside this package.
+Additional providers, a general runner, Action/Session handling, and private bounded
+stateful deduplication if real delivery behavior requires it remain implementation work.
+
+Outside this package, the current Query-only Gateway implements
+the configured-route Registry, invoke terminal response/error correlation, a simple
+experimental HTTP Query discovery/invoke bridge, and a Dora logical caller vertical
+bridge. `endpoint.status` handling, `tool.event` correlation, the complete caller-facing
+Tool Runtime API, a stable Dora caller contract, Action/Session, SSE, and MCP remain
+future work. `PolicyCommand` remains retained
+unchanged; migration or deprecation is not in the current scope.

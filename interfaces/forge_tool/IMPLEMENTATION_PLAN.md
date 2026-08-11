@@ -1,13 +1,13 @@
 # Forge Tool 实现计划
 
-状态：`forge-tool` Endpoint models、logical Wire、complete factories、Query-first `ToolEndpointHandler` 和 optional `forge_tool.dora` Arrow carrier binding，以及 `forge_msgs.ToolMessage` 的 10 列 Arrow/Dora carrier schema 已实现。独立 Endpoint Host 概念已经取消，`packages/tool/src/forge_tool/host` 及其 public P1 identity/state/sequence primitives 已删除。`DoraToolEndpointBinding` 已完成单个 Arrow input 到 logical Query handler 再到 Arrow response 的转换，但不拥有 Dora `Node`、event loop 或 metadata；下一步把它嵌入第一个具体 Dora 业务 node。Action/Session、stateful buffering、Registry/Gateway、Web binding 和 Tool Runtime 仍属于后续阶段。
+状态：`forge-tool` Endpoint models、logical Wire、complete factories、Query-first `ToolEndpointHandler` 和 optional `forge_tool.dora` Arrow carrier binding，以及 `forge_msgs.ToolMessage` 的 10 列 Arrow/Dora carrier schema 已实现。独立 Endpoint Host 概念已经取消，`packages/tool/src/forge_tool/host` 及其 public P1 identity/state/sequence primitives 已删除。`DoraToolEndpointBinding` 已完成单个 Arrow input 到 logical Query handler 再到 Arrow response 的转换，但不拥有 Dora `Node`、event loop 或 metadata；第一个 YOLO concrete Dora provider-node embedding 和 first real Query vertical 已完成。当前 Query-only Gateway 已采用 static configured/trusted route、单 current instance 和周期 `endpoint.register` lease，并已有 simple experimental HTTP Query discovery/invoke bridge 与 Dora logical caller vertical bridge；Gateway 当前只关联 invoke terminal response/`tool.error`，不接收或路由 `endpoint.status`/`tool.event`。完整 caller-facing Tool Runtime API、stable Dora caller contract、Action/Session、SSE 和 MCP 仍属于后续阶段。
 
 `forge.tool.endpoint/v1alpha1` 尚无 tagged/public Tool release；本文冻结的是该 identifier 的第一次 atomic release。此前 untagged prototype 不兼容且不声明 backward compatibility。`forge-tool`、Python/Rust/C++ `ToolMessage` binding、Gateway 和 provider 必须作为同一个 coordinated version set 部署，不支持 prototype/current mixed deployment。
 
 本文描述 Forge Tool 通用调用能力，并与现有 `PolicyCommand` 并存。初期目标是建立清晰分层、可扩展的 Runtime API 与 endpoint SPI/Wire，同时支持或冻结：
 
 - Forge/Dora 内部调用所需的 Arrow carrier contract；
-- Gateway 对外 Web 调用的未来 binding；
+- 当前 simple experimental HTTP Query discovery/invoke bridge，以及未来完整稳定 Web binding；
 - Query、Action、Session 三种 operation semantics；
 - Endpoint registration 和 endpoint execution lifecycle contract；
 - 现有 `PolicyCommand` 原样保留，当前不迁移、不弃用。
@@ -18,7 +18,7 @@ P0 不引入 MCP、A2A、Temporal 等外部协议或运行时依赖。它们只�
 
 ### 1.1 只维护一套 caller-facing Runtime 语义
 
-初期只定义一套 caller-facing Runtime API：
+目标架构只定义一套完整 caller-facing Runtime API：
 
 ```text
 Caller-facing Forge Tool Runtime API
@@ -43,9 +43,9 @@ Query、Action、Session 不设计三套不同的调用协议。operation 的 `s
 目标架构有两个不同边界，不能把它们统称为同一个调用 API：
 
 ```text
-Web caller  ── HTTP JSON/SSE binding ──┐
+Web caller  ── target stable HTTP JSON/SSE binding ──┐
                                        ├── caller-facing Tool Runtime API
-Dora caller ── future caller binding ──┘
+Dora caller ── target stable caller binding ──┘
                                                    │
                                                    │ resolve + create invocation/attempt
                                                    ▼
@@ -55,7 +55,7 @@ Dora caller ── future caller binding ──┘
 具体 Dora 业务 node ── embedded binding/handler ── Query/Action/Session SPI ── 业务实现
 ```
 
-Caller-facing Runtime API 面向 Web/Dora caller，提供 discovery、invoke、status、result、control 和 events；它隐藏 `attempt_id`、endpoint identity 等内部 routing 字段。Dora caller binding 与 Web binding 都必须进入同一个 Runtime API。
+目标 caller-facing Runtime API 面向 Web/Dora caller，提供 discovery、invoke、status、result、control 和 events；它隐藏 `attempt_id`、endpoint identity 等内部 routing 字段。当前 Gateway 已有 simple experimental HTTP Query discovery/invoke bridge 和 Dora logical caller vertical bridge，但两者只验证 Query vertical，不是完整或稳定的 caller-facing Runtime contract。未来 stable Dora caller binding 与完整 Web binding 必须进入同一个 Runtime API。
 
 Endpoint SPI/Wire 面向 provider：Runtime/Gateway 使用 ToolEndpoint Wire 与具体 endpoint node 内嵌的 binding/handler 交换消息，handler 再调用该 node 实现的 Query/Action/Session SPI。Endpoint SPI 不是 caller API，当前 10 列 `forge_msgs.ToolMessage` 也不是 caller-facing Runtime carrier。
 
@@ -118,7 +118,7 @@ idempotency key
 - Runtime 生成的 `invocation_id`；
 - 受信任的 `caller_id`。
 
-未来的 Gateway/Runtime 完成 resolver 和 attempt 创建后，再补充内部 routing identity。
+当前 experimental Query bridges 只覆盖 discovery/invoke vertical 所需的最小 routing。未来完整 Gateway/Runtime 统一 resolver、attempt ownership 和其余 caller-facing API，不把内部 identity 暴露给 caller。
 
 ### 1.5 高频数据不进入 Tool control message
 
@@ -133,7 +133,7 @@ P0 不实现外部协议兼容，只参考成熟框架已经验证过的设计�
 | Tool discovery 和参数 schema | MCP、OpenAI-style tools | name、description、JSON Schema input/output |
 | 长任务 status/result/events | Agent task/resource API | invocation resource、查询、事件、terminal result |
 | Action accepted/feedback/result/cancel | ROS 2 Action、Dora Action | accepted 不等于 completed；cancel accepted 不等于 cancelled |
-| retry、dedup、crash recovery | Temporal-style execution | attempt、retry safety、ambiguous outcome |
+| retry、duplicate delivery、crash recovery | Temporal-style execution | invocation/attempt identity、ambiguous outcome；P0 不采用 replay/dedup/exactly-once 保证 |
 | Endpoint registration | lease/service registry | logical ID、process instance、receive-time liveness |
 
 P0 明确不做：
@@ -224,23 +224,23 @@ Python、Rust、C++ carrier 均已实现。Python↔C++ Arrow IPC interop 已覆
 - resolver 和 implementation selection；
 - 创建 `attempt_id`；
 - resource 和 Control Lease；
-- retry/fallback；
+- 按真实需求另行设计的 retry/fallback（P0 不自动 retry Query）；
 - invocation status/result；
 - CompletionSpec；
 - caller-facing event sequence。
 
 ### 4.4 Gateway
 
-未来的 Gateway 负责：
+当前 Query-only Gateway 的 P0 endpoint route/Registry 与 caller vertical 基线负责：
 
-- Web caller adapter 和未来 Dora caller adapter；
-- Endpoint Registry；
-- endpoint liveness；
-- routing；
-- request/response/event correlation；
-- HTTP/SSE 和 endpoint Wire routing。
+- 以 static configured/trusted route 授权 `endpoint_id`；
+- 每个 configured endpoint 维护至多一个 current instance；
+- 通过周期 `endpoint.register` 维护 lease 和 availability；
+- 路由 `tool.invoke.request`，并关联 invoke terminal response 或 `tool.error`；
+- 提供 simple experimental HTTP Query discovery/invoke bridge；
+- 提供 Dora logical caller vertical bridge。
 
-Gateway 不决定 implementation，不解释 CompletionSpec。
+`endpoint.status` 虽保留为 protocol/model message，但当前 Gateway 不接收、路由或执行 current-instance validation；该路径留到真实 availability/health 需求。`tool.event` 同样保留在 schema/message family 中，但当前 Gateway 不接收、路由或执行 event correlation。完整 caller-facing Tool Runtime API、stable Dora caller contract、Action/Session、SSE、MCP 及 production HTTP surface 仍按后续阶段推进。Gateway 不决定 implementation，不解释 CompletionSpec。
 
 未来部署中，Tool Runtime 可以与 Gateway 位于同一进程，但应保持独立 domain module 和唯一状态所有权。
 
@@ -252,17 +252,17 @@ Embedded binding/handler 负责：
 
 - 将 Dora Arrow carrier 转换为 logical message；
 - 校验 descriptor，并把 operation 显式绑定到该 node 的 endpoint SPI；
-- 处理 logical request，调用 Query/Action/Session SPI；
-- 构造 correlated response、`tool.event`（其 event type 可为 `heartbeat`）、`endpoint.status` 与 `endpoint.register` lease-renewal Arrow value，并交给具体业务 node 发布；
-- 后续按真实需求执行 admission、Accepted/Event ordering 和 private bounded duplicate suppression。
+- 当前 Query path 处理 invoke，调用 `QueryToolEndpoint.query()` 并构造 correlated terminal response 或 `tool.error`；
+- 由具体业务 node 发布周期 `endpoint.register` lease-renewal Arrow value；
+- 未来 Action/Session 与 availability/health 路径再按需求构造 `tool.event` 和 `endpoint.status`，并实现 admission、Accepted/Event ordering 和 private bounded duplicate suppression。
 
 业务 endpoint 实现负责 executor 的权威状态，以及必要的 `ToolExecutionKey` 到私有 executor handle 映射；通用 binding 不维护第二份业务状态所有权，也不解释 Runtime CompletionSpec。
 
-未来可以提供可选 runner 作为便利封装，但 runner 不能成为实现或部署 ToolEndpoint 的唯一方式。Dora integration 依赖应放在现有 package、业务 node 还是其他既有集成边界，由 vertical spike 决定；本计划不提前引入新 package 决策。
+YOLO provider 已验证具体业务 node 直接嵌入 binding/handler 的路径。未来 additional providers 可复用该模式，也可以提供可选通用 runner 作为便利封装，但 runner 不能成为实现或部署 ToolEndpoint 的唯一方式。
 
 ## 5. Caller-facing Runtime API 与 endpoint SPI
 
-本节的 discovery/invoke/get status/get result/control/events 是 caller-facing Runtime API，供 Web caller 和 Dora caller 使用。Query/Action/Session 则是具体 endpoint node 实现的 provider SPI；Endpoint Wire 在 Runtime/Gateway 与 node 内嵌 handler 之间传输请求，不直接暴露给 caller。
+本节的 discovery/invoke/get status/get result/control/events 描述目标完整 caller-facing Runtime API，供 Web caller 和 Dora caller 使用；当前 experimental HTTP 与 Dora logical caller bridges 只实现 Query discovery/invoke vertical，不冻结完整 caller contract。Query/Action/Session 则是具体 endpoint node 实现的 provider SPI；Endpoint Wire 在 Runtime/Gateway 与 node 内嵌 handler 之间传输请求，不直接暴露给 caller。
 
 ### 5.1 Discovery
 
@@ -432,7 +432,7 @@ subscribe_events(invocation_id, after_sequence=None)
 
 ```text
 idempotency_key
-    caller 重试同一逻辑调用
+    未来 caller/Runtime 概念；不是 P0 Endpoint Wire 字段或保证
 
 invocation_id
     Runtime 创建的一次逻辑 Tool 调用
@@ -463,34 +463,30 @@ ToolExecutionKey
 
 Endpoint SPI 的 control/status/result 应能够通过 `ToolExecutionKey` 定位 execution。`execution_id` 仅作为具体 endpoint node/embedded handler 的私有映射，不替代 Runtime identity。
 
-### 6.3 两种 dedup
+### 6.3 Correlation 与 execution identity
 
-Wire v1alpha1 规范冻结 key 和 decoded structural JSON identity，不定义 fingerprint：object key order 忽略但 member presence/name 参与，array 保持顺序，string 按精确 Unicode scalar sequence 比较且不做 Unicode normalization，`null`/boolean 保留类型并与 string/number 区分，number 按 finite IEEE-754 binary64 value 比较，因此 `1 == 1.0`、`-0 == 0`。raw envelope bytes、raw `payload_json` bytes 和 codec 输出从不作为 canonical identity，也不新增 Wire/Arrow fingerprint。
+P0 只冻结以下 identity/correlation 含义：
 
 ```text
-execution exchange dedup key
-    endpoint_instance_id + request_id
+exchange correlation
+    request_id
 
-execution dedup key
+execution identity
     invocation_id + attempt_id
 ```
 
-execution exchange dedup 只适用于 provider routing 已填入 concrete instance 的 exchange；pre-provider unresolved failure 不进入 endpoint-local dedup，仅按完整 correlation fields（含 `None` instance）关联 response。routed execution exchange 的 request identity 排除 `protocol`、`request_id`、`endpoint_instance_id`，包含 `message_type`、其余 route fields 和完整 decoded payload。相同 key/identity replay 已建立 response；不同 identity 返回 `FORGE_PROTOCOL_DEDUP_CONFLICT`。
+`request_id` 标识一次 request/response exchange，response 从 paired request 原样复制；它不是 response cache key，也不触发 replay、dedup 或 retry。`invocation_id + attempt_id` 是一次 execution attempt 的 identity，供 invoke/status/result/control/event 关联同一 attempt；它同样不提供 duplicate suppression。`endpoint_instance_id` 只标识并校验 concrete provider route。
 
-`tool.invoke.request` 的 invoke identity 精确为 `endpoint_id + operation + payload`，排除 execution key、`request_id` 和 `endpoint_instance_id`。`arguments`、`context` 的全部字段及 optional member presence 都参与，因此 omitted 与 explicit `null` 不相同。相同 execution key/identity replay accepted response 或 terminal result，不重启 side effect；不同 identity 为 conflict。
+P0 不提供 stateful response replay、exchange/execution dedup、retention window 或 exactly-once guarantee，也不冻结 decoded structural JSON dedup identity、fingerprint 或 conflict 行为。重复投递可能再次执行。`ToolError.retryable` 只是错误元数据，不触发自动 retry；P0 不自动 retry Query。
 
-Management `request_id` 仅用于 request/response correlation，不是 dedup key。Registry operation 按 trusted source 与 `current > tombstone > absent` precedence 实现 effect-idempotency，不套用 execution dedup。matching unregister tombstone replay 返回 tombstone 保存的 historical removal/expiry revision，即使 unrelated endpoint 已推进 process-global revision。tombstone、register resurrection/descriptor equality 和 receive-observation lease epoch 的完整规则见 7.5。当前 logical models、factories 和 carriers 不维护 async cache、execution store 或 retention window；execution guarantee 仍只覆盖一个 endpoint process epoch 和配置的 retention window，不承诺跨 restart exactly-once。
+Management `request_id` 也仅用于 correlation。Registry 的 renew、replace、unregister 和 expiry 是 7.5 定义的 configured-route/current-state effect，不是 request replay guarantee。Action 与任何 retry policy 留待真实需求出现后另行设计；若重复投递确实需要处理，再设计 private、bounded、stateful dedup 和明确 retention。
 
-### 6.4 Ambiguous outcome
+### 6.4 Ambiguous outcome 与未来 retry
 
-对于 Action/Session：
-
-- Action/Session side effect 可能已开始、但 Accepted 建立前发生异常或断连时，不伪造 Accepted，也不盲目自动 retry；
-- 无法恢复 execution outcome 时直接建立 initial terminal `unknown`；
-- 未来 Runtime 根据 operation `retry_safety` 决定是否创建新 attempt；
-- Motion 等物理动作最终需要稳定 goal/execution identity。
-
-P0 不承诺跨进程重启的 exactly-once。
+- P0 Query 只执行收到的当前 exchange，不自动 retry；调用方不得从 `retryable` 或 execution identity 推导自动重试。
+- 未来 Action/Session side effect 可能已开始、但 Accepted 建立前发生异常或断连时，不伪造 Accepted，也不盲目自动 retry；无法恢复 execution outcome 时建立 initial terminal `unknown`。
+- Action 和 retry/fallback policy 不在 P0 预先冻结，后续按真实 operation 与 transport 行为单独设计；Motion 等物理动作还需要稳定 goal/execution identity。
+- P0 不提供进程内或跨进程 exactly-once guarantee。
 
 ## 7. ToolEndpoint Wire message
 
@@ -568,7 +564,7 @@ tool.event
 tool.error
 ```
 
-Event 携带 execution key 和 endpoint sequence；其 logical `request_id` 必须省略，Arrow carrier 中对应值为 null。`tool.error` 用于无法作为正常 invoke/status/result/control response 表达的协议或 transport-level failure。
+Event 携带 execution key 和 endpoint sequence；其 logical `request_id` 必须省略，Arrow carrier 中对应值为 null。`tool.error` 用于无法作为正常 invoke/status/result/control response 表达的协议或 transport-level failure。`tool.event` 是现有 schema/message family，但当前 Query-only Gateway 不接收、路由或执行 event correlation；当前只处理 invoke terminal response/`tool.error`。
 
 ### 7.5 Endpoint management
 
@@ -579,15 +575,15 @@ endpoint.registry.response
 endpoint.status
 ```
 
-P0 保留 opaque `endpoint_instance_id`。所有 `tool.*` logical envelope 都可在 provider selection 前省略它；所有 `endpoint.*` message（含 `endpoint.status`）必须携带。Gateway 成功选定 provider 后必须填入 concrete instance，provider handler 仍执行 strict route validation；若 selection 前失败，correlated invoke response/error 保持 `None`。`endpoint.register`、`endpoint.unregister` 及其 correlated `endpoint.registry.response` 必须携带 `request_id`；unsolicited `endpoint.status` 必须省略。Registry response 的 operation 为 `register|unregister`，status 为 `accepted|rejected`，携带 non-negative interoperable `registry_revision`。accepted register 必须携带 positive `lease_ttl_ms` duration；accepted unregister 不携带 lease；rejected 不携带 lease 且必须携带 `ToolError`。conditional field 的 presence 有语义，显式 `lease_ttl_ms: null` 与 `error: null` 均非法。没有 observation timestamp，`endpoint.status` 仍是 unsolicited health snapshot 而不是 ACK。
+P0 保留 opaque `endpoint_instance_id`。所有 `tool.*` logical envelope 都可在 provider selection 前省略它；所有 `endpoint.*` message（含 `endpoint.status`）必须携带。Gateway 成功选定 provider 后必须填入 concrete instance，provider handler 仍执行 strict route validation；若 selection 前失败，correlated invoke response/error 保持 `None`。`endpoint.register`、`endpoint.unregister` 及其 correlated `endpoint.registry.response` 必须携带 `request_id`；unsolicited `endpoint.status` 必须省略。Registry response 的 operation 为 `register|unregister`，status 为 `accepted|rejected`，携带 non-negative interoperable `registry_revision`。accepted register 必须携带 positive `lease_ttl_ms` duration；accepted unregister 不携带 lease；rejected 不携带 lease 且必须携带 `ToolError`。conditional field 的 presence 有语义，显式 `lease_ttl_ms: null` 与 `error: null` 均非法。没有 observation timestamp。`endpoint.status` 的 protocol/model message 仍保留，但当前 Query-only Gateway 不接收、路由或执行 current-instance validation；留到未来 availability/health 需求。
 
-Management `request_id` 只用于 correlation。Registry 对每个 `endpoint_id` 最多只接受一个 current instance，新 registration 替换 current instance 必须由 trusted transport generation/lease 或等价 source binding 授权；instance ID 本身不能排序 racing registration。lookup precedence 固定为 `current > tombstone > absent`，accepted new registration 清除 old tombstone，因此新 registration 之后旧 tombstone 不可 replay。
+Management `request_id` 只用于 correlation。static configured/trusted route 授权其配置的 `endpoint_id`；Gateway 必须校验 route、envelope `endpoint_id` 和 register descriptor `endpoint_id` 一致。Registry 对每个 configured endpoint 最多维护一个 current instance，instance ID 只是 identity，不提供排序或授权。
 
-每个 `endpoint_id` 最多保留最后一个 tombstone，内容为 `endpoint_id`、`endpoint_instance_id`、accepted trusted source binding/generation、historical removal revision 和 reason `unregister|expired`。它保留到该 endpoint 的新 registration 被 accepted 或 Gateway restart；不跨 restart persistence。无 current 时，matching unregister replay 返回 tombstone 保存的 historical removal/expiry revision，即使 unrelated endpoint 已推进当前 process-global revision，也不返回新的 global revision。
+`endpoint.register` 是 announce/upsert/lease renewal，并由 endpoint 周期发送：无 current 时 accepted register 建立 current 并增加 revision；同 route、同 current instance、descriptor exact equality 时续租且不增加 revision；同 instance descriptor change 被拒绝且不续租；同 route 新 instance accepted 时 atomic replace current，并只增加一次 revision，不暴露中间 absent 状态。
 
-`endpoint.register` 是显式 idempotent announce/upsert/lease renewal。register 按 precedence 处理：有 current 时，只有 same accepted source/generation/instance 且 descriptor exact equality 才是 idempotent renewal；descriptor change 被拒绝，其他 replacement 继续遵循 source/generation authority。无 current 且命中 explicit-unregister tombstone 时，exact same source+generation+instance registration non-retryable rejected as tombstoned；different instance 或 newer trusted source generation 可在 authority 允许时 registration，accept 后清 tombstone、创建新 lease 并增加 revision。命中 expiry tombstone 的 matching registration 可 recovery，accept 后同样清 tombstone、创建新 lease/revision。rejected registration 不清 tombstone。
+`endpoint.unregister` 从授权 route 且匹配 current instance 时移除 current 并增加 revision；无 current 时 effect-idempotent accepted，不改变 state/revision；已有不同 current instance 时，旧 instance 是 stale，必须 rejected 且不能移除 current。route/endpoint mismatch rejected。当前 Registry path 不处理 `endpoint.status`。lease expiry 移除 current 并增加 revision。
 
-Gateway adapter 在 validation 前捕获 trusted monotonic receive observation；operation accepted 时，Registry acceptance 和 lease start 逻辑上锚定该 observation。new register 与 register replay 从该 observation 开始/续租，不携带 wire timestamp。accepted unregister 首次移除和 expiry 各增加 revision 一次并写 tombstone；rejection 不增加 revision。`registry_revision` 是 Gateway-process-global monotonic state-change revision，不是 timestamp 或跨进程持久 version。current register renewal 返回 decision 时的 global revision；matching unregister tombstone replay 是例外，返回 tombstone historical revision。status/unregister 只能影响 accepted current instance 及其 accepted source；这些规则不放宽 cardinality/source-authority contract。生产 Registry/Gateway 实现仍属于后续 slice。
+Gateway 使用 trusted monotonic receive observation 作为 accepted register 的 lease start/renewal 基准，不携带 wire timestamp。`registry_revision` 仅是 process-local availability-state revision：absent-to-current、atomic replace、matching unregister removal 和 expiry 各增加一次；descriptor-equal renewal、absent unregister 和 rejection 不增加。每个 response 返回 decision 后的 current process-local revision。Gateway restart 后 Registry/current state 和 revision 都重新开始，endpoint 依靠周期 `endpoint.register` 恢复 availability。
 
 ### 7.6 Complete envelope factory 和 correlation（已实现）
 
@@ -603,8 +599,8 @@ Gateway adapter 在 validation 前捕获 trusted monotonic receive observation�
 
 - Dora 使用 event context；
 - Web 使用 Gateway request/event context；
-- Gateway adapter 在 management validation 前捕获 trusted monotonic receive observation；accepted Registry operation 的 acceptance/lease epoch 锚定该 observation；
-- Registry liveness 使用该 Gateway monotonic receive observation，不写入 Wire。
+- Gateway 对 accepted `endpoint.register` 使用 trusted monotonic receive observation 作为 lease start/renewal 基准；
+- Registry liveness 由周期 register 和该 process-local observation 维护，不写入 Wire。
 
 `deadline_ms` 是执行语义字段，继续保留，并限制在可互操作 JSON integer 范围。
 
@@ -616,7 +612,7 @@ Endpoint sequence：
 endpoint_instance_id + invocation_id + attempt_id
 ```
 
-具体 endpoint node 内嵌的 handler 在每个 scope 从 `0` 开始分配，并严格 `+1`。同一 retained sequence 加 structurally equal event 是 duplicate；同 sequence 加不同 event 是 conflict。高于 next expected 的值是 gap，必须从 retained history 或 authoritative status/result 恢复，不得虚构缺失事件；低于 next expected 且已不在 retained history 的值是 expired/stale，不作为新事件处理。sequence 不 wrap；分配 `2^53-1` 后再次分配返回 exhaustion error。这些是 Wire v1alpha1 的 normative semantics；contract 不要求 public sequence primitive，也不宣称已实现生产 retention/router。
+具体 endpoint event producer 在每个 scope 从 `0` 开始分配并严格 `+1`，且 sequence 不 wrap；`2^53-1` 后不得再分配事件。sequence 只表达 producer order。P0 不提供 retained history、duplicate suppression、gap recovery 或 event replay guarantee，也不要求 public sequence primitive 或生产 retention/router。
 
 Invocation sequence：
 
@@ -647,7 +643,7 @@ Wire v1alpha1 normative transition table 为：
 | `accepted` | `running`、`stopping` 或 terminal |
 | `running` | `stopping` 或 terminal |
 | `stopping` | terminal |
-| 任意 state | same-state replay |
+| 任意 state | 可重复观察同一 state |
 | terminal | 不得变为不同 state |
 
 terminal 指 `completed|failed|cancelled|stopped|unknown`；terminal phase/result 一旦建立即 immutable。`validate_execution_result(status, result)` 已实现单个 pair 的 terminal mapping 检查；当前不宣称已有 stateful lifecycle handler/store。
@@ -674,7 +670,7 @@ Caller-facing `list_tools/get_tool/invoke/get_invocation/get_result/control/subs
 
 1. 删除 `packages/tool/src/forge_tool/host`；
 2. 删除其 public exports，以及把 identity/state/sequence helper 当作 public P1 foundation 的测试和文档声明；
-3. 将 identity、lifecycle、terminal barrier、dedup key 和 endpoint sequence 保留为 Wire v1alpha1 normative semantics，而不是 public state/sequence primitive；
+3. 将 identity/correlation、lifecycle、terminal barrier 和 endpoint sequence 的值语义保留在 Wire v1alpha1，同时明确 P0 不提供 stateful replay/dedup/retention guarantee；
 4. 将 invoke/status/result/control response factory 改为直接从原始 request envelope 派生 correlation identity；
 5. 保持 Query/Action/Session endpoint SPI、logical models/codecs 和 10 列 carrier contract 不变；
 6. 不创建替代执行 package，也不在 cleanup 中决定 Dora integration 的依赖位置。
@@ -763,25 +759,25 @@ Transport-independent `ToolEndpointHandler.handle_invoke()` 已打通 Query：�
 
 在现有 `forge-tool` package 中增加 optional `dora` extra 和显式 `forge_tool.dora` module，不新增 package。基础 `import forge_tool` 保持零运行时依赖且不加载 `forge_msgs`/PyArrow；只有使用该 optional module 时才加载 `forge_msgs.ToolMessage` carrier。`DoraToolEndpointBinding.handle_input()` 转换单个 Arrow value、调用 Query-first logical handler 并返回 response `RecordBatch`，但不导入或创建 Dora `Node`，也不接管 event loop、input/output ID 或 Dora metadata。
 
-### P1-C2：具体 Dora node embedding（下一步）
+### P1-C2：具体 Dora node embedding（已完成：YOLO）
 
-把 optional carrier binding 嵌入第一个具体 Dora 业务 node，完成 Dora input/output wiring 和 role-specific validation。通过最小 Dora graph 决定 topic 拆分、registration generation/lease；即使拆 topic，message type 仍需自描述。业务 node 自己拥有同步或异步 event loop，并负责 await binding 和发送返回的 Arrow value；binding 不在内部调用 `asyncio.run()`。
+YOLO 具体 Dora provider node 已嵌入 optional carrier binding，完成 Dora input/output wiring、role-specific validation、configured/trusted route 和周期 registration lease 的 vertical 验证。业务 node 自己拥有 event loop，负责 await binding 和发送返回的 Arrow value；binding 不在内部调用 `asyncio.run()`。即使 additional providers 采用不同 topic 拆分，message type 仍需自描述。
 
 未来可以提供可选 runner 作为便利入口，但具体业务 node 必须始终能够直接嵌入 binding/handler，runner 不能成为唯一实现方式。
 
-### P1-D：first real Query
+### P1-D：first real Query（已完成：YOLO）
 
-接入第一个真实 Query operation（按 adapter 顺序优先 YOLO），先在 endpoint 边界验证 Wire request 经 Dora carrier、embedded handler 到业务 SPI 并返回 terminal result 的完整路径；caller-facing Runtime API 的贯通仍按 P2 推进。高频 image 数据继续走 Dora 数据面，Tool request 只携带小型参数或引用。
+YOLO 已完成第一个真实 Query vertical：Wire request 经 Dora carrier、embedded handler 到业务 SPI，并返回 terminal result。高频 image 数据继续走 Dora 数据面，Tool request 只携带小型参数或引用。完整 caller-facing Runtime API 仍按 P2 推进。
 
 ### P1-E：Action/Session
 
 Query vertical path 稳定后，再扩展 Action/Session 的 start/status/result/control/event handling，并在 embedded handler 内满足 Accepted-before-Event、terminal result barrier、immutable terminal outcome、`unknown` 和 endpoint sequence 的 normative semantics。
 
-### P1-F：按需 private bounded dedup
+### P1-F：按需设计 private bounded dedup
 
-仅在真实重试、重复投递和并发行为表明需要时，为 embedded handler 增加 private、bounded exchange/execution dedup 和必要 retention。实现遵守已冻结 key 与 structural identity/conflict 规则，但不导出通用 public state/dedup/sequence primitive，不新增 Wire/Arrow fingerprint，也不改变 10 列 carrier。
+P0 不预设该实现。仅在真实重试、重复投递和并发行为证明有需要时，针对具体 Action/retry 路径另行设计 private、bounded、stateful dedup、conflict behavior 和明确 retention；不导出通用 public state/dedup/sequence primitive，不新增 Wire/Arrow fingerprint，也不改变 10 列 carrier。
 
-## 11. P2：Tool Runtime、Gateway 和 Web/Dora binding
+## 11. P2：完整 Tool Runtime 与稳定 caller bindings
 
 ### P2.1 Tool Runtime
 
@@ -793,13 +789,13 @@ Query vertical path 稳定后，再扩展 Action/Session 的 start/status/result
 - attempt state machine；
 - resources/Control Lease；
 - CompletionSpec；
-- retry/fallback；
+- 按真实需求另行设计的 retry/fallback（P0 不自动 retry Query）；
 - result/event retention；
 - restart 后 lost/unknown 处理。
 
-### P2.2 Web binding
+### P2.2 完整 Web binding
 
-统一调用 route：
+当前 Gateway 已有 simple experimental HTTP Query discovery/invoke bridge。它只用于 Query vertical，不是完整或稳定的 caller-facing Runtime API，也不提供 invocation status/result/control/events 或 SSE。目标统一调用 route 为：
 
 ```text
 GET  /v1alpha1/tools
@@ -820,15 +816,15 @@ GET  /v1alpha1/invocations/{invocation_id}/events
 - caller identity 来自认证 principal 或受信任部署配置；
 - body 中的内部 identity 被拒绝。
 
-### P2.3 Dora caller binding
+### P2.3 稳定 Dora caller binding
 
-内部 Dora caller 和 Web caller 进入同一个 caller-facing Tool Runtime API，不直接构造 ToolEndpoint Wire 或调用 endpoint SPI。Gateway 从静态 graph/input binding 获得 Dora caller identity。
+当前已有 Dora logical caller vertical bridge，用于验证 Query 调用链路；它是 experimental integration，不是稳定 caller contract。未来内部 Dora caller 和 Web caller 进入同一个完整 caller-facing Tool Runtime API，不直接构造 ToolEndpoint Wire 或调用 endpoint SPI。Gateway 从静态 graph/input binding 获得 Dora caller identity。
 
-当前 `forge_msgs.ToolMessage` 只承载 Gateway/Runtime endpoint route 与具体 endpoint node 内嵌 binding/handler 之间的 ToolEndpoint Wire，不是已冻结的 caller-facing Runtime carrier。P2 vertical spike 再决定 Dora caller transport binding；即使复用相同物理列布局，也必须单独冻结 caller-side identity/correlation matrix，不能改变当前 Endpoint contract。
+当前 `forge_msgs.ToolMessage` 只承载 Gateway/Runtime endpoint route 与具体 endpoint node 内嵌 binding/handler 之间的 ToolEndpoint Wire，不是已冻结的 caller-facing Runtime carrier。P2 再冻结稳定 Dora caller transport、framing 和 identity/correlation matrix；即使复用相同物理列布局，也不能改变当前 Endpoint contract。
 
-### P2.4 Idempotency 范围
+### P2.4 Retry 与 duplicate-delivery 范围
 
-内存实现只保证 Gateway epoch 和 retention window 内 idempotency。跨 restart 的强保证需要后续持久 invocation/idempotency ledger，不属于 P0。
+P0 不提供 Gateway epoch 内或跨 restart 的 replay、dedup、idempotency、exactly-once guarantee，也不自动 retry Query。Action/retry 若出现真实需求，再定义 bounded stateful dedup、retention、冲突处理和是否需要持久 ledger。
 
 ## 12. P3：`PolicyCommand` 保留与可选后续评估
 
@@ -852,7 +848,7 @@ dual_input_single_owner
 
 ## 13. P4：更多具体 Tool Adapter
 
-P1 先用 YOLO Query 建立第一条真实 endpoint-node vertical path；后续扩展顺序为：
+P1 已用 YOLO Query 完成第一条真实 endpoint-node vertical path；additional provider 扩展顺序为：
 
 1. LeRobot Session；
 2. Motion Action。
@@ -887,20 +883,22 @@ Caller adapter 扩展必须复用 caller-facing Tool Runtime API，endpoint adap
 2. 建立 operation implementation mapping（已完成）；
 3. 实现 Query-first logical request handler（已完成）；
 4. 实现 optional Dora Arrow carrier binding（已完成）；
-5. 将 binding 嵌入第一个具体 Dora 业务 node；
-6. 接入第一个真实 Query；
-7. 再实现 Action/Session lifecycle；
-8. 最后仅在真实需求下增加 private bounded dedup。
+5. 建立 simple experimental HTTP Query discovery/invoke bridge 和 Dora logical caller vertical bridge（已完成 experimental vertical）；
+6. 将 binding 嵌入 YOLO concrete Dora provider node（已完成）；
+7. 接入第一个真实 YOLO Query vertical（已完成）；
+8. 扩展 additional providers 或按需提供通用 runner；
+9. 再实现 Action/Session lifecycle；
+10. 最后仅在真实需求下增加 private bounded dedup。
 
-已冻结的 Wire v1alpha1、10 列 carrier、message family、identity fields 和 lifecycle/sequence normative semantics 在此顺序中保持不变。
+已冻结的 Wire v1alpha1、10 列 carrier、message family、identity/correlation fields 和 lifecycle/sequence 值语义在此顺序中保持不变；不由此推导 stateful replay/dedup guarantee。
 
 当前切片明确不做：
 
 - MCP/A2A/OpenAI adapter；
 - 修改或删除 `PolicyCommand`；
-- 修改现有 Gateway HTTP 行为；
+- 将现有 experimental Gateway HTTP Query bridge 扩展成完整 production API；
 - 完整生产 Registry/Resolver/Completion；
-- persistent exactly-once；
+- stateful replay/dedup/idempotency/exactly-once guarantee；
 - Policy legacy/Tool 双控制；
 - P1 首个 YOLO Query 之外的完整 LeRobot 或 Motion adapter rollout；
 - 高频数据进入 Tool message。
