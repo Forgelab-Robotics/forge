@@ -47,8 +47,8 @@ Use the tag for the exact family being consumed:
 
 ```toml
 [tool.uv.sources]
-forge-msgs = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", tag = "forge-msgs-v1.0.0", subdirectory = "packages/msgs" }
-forge-common = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", tag = "forge-common-v1.0.0", subdirectory = "packages/common" }
+forge-msgs = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-msgs-v1.0.1", subdirectory = "packages/msgs" }
+forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v1.0.1", subdirectory = "packages/common" }
 ```
 
 A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from each protected tag. Protected release tags must never be moved.
@@ -151,6 +151,46 @@ ctest --test-dir build/release/forge_robot --output-on-failure
 ```
 
 `cargo package --allow-dirty` may be used while preparing a release candidate. Final package verification and tag creation must use a clean working tree without `--allow-dirty`.
+
+## Publishing Python distributions to PyPI
+
+Publish only artifacts produced by a clean, single-family release build. Use a
+separate output directory for each family because every build cleans its output
+directory:
+
+```bash
+uv run python scripts/build_python_distributions.py \
+  --release-family common --out-dir dist/release/python/common
+uv run python scripts/build_python_distributions.py \
+  --release-family msgs --out-dir dist/release/python/msgs
+uv run python scripts/build_python_distributions.py \
+  --release-family kinematics --out-dir dist/release/python/kinematics
+uv run python scripts/build_python_distributions.py \
+  --release-family policy --out-dir dist/release/python/policy
+uv run python scripts/build_python_distributions.py \
+  --release-family robot --out-dir dist/release/python/robot
+```
+
+Pass only the wheel and source archive; `SHA256SUMS` is release metadata and
+must not be uploaded as a Python distribution. Configure authentication before
+the dry run because `uv publish --dry-run` still validates authentication
+parameters:
+
+```bash
+uv publish --dry-run \
+  dist/release/python/common/*.whl \
+  dist/release/python/common/*.tar.gz
+```
+
+Prefer a scoped PyPI token or trusted publishing. For token-based publishing,
+provide the token through the protected `UV_PUBLISH_TOKEN` environment variable;
+never store it in the repository. Publish in dependency order: `common`, `msgs`,
+`kinematics`, `policy`, then `robot`. Verify each exact version from PyPI in a
+fresh environment before continuing to dependent packages.
+
+PyPI does not permit replacing an uploaded file or reusing a released version.
+If an upload is wrong, increment that family version and create a new immutable
+tag rather than attempting to overwrite it.
 
 ## GitLab release procedure
 

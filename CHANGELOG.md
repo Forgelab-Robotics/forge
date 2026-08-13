@@ -4,13 +4,24 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
-### Release tooling
+## Package-family 1.0.1 releases - 2026-08-13
+
+| Package family | Version | Protected tag |
+|---|---:|---|
+| Common | `1.0.1` | `forge-common-v1.0.1` |
+| Msgs | `1.0.1` | `forge-msgs-v1.0.1` |
+| Robot | `1.0.1` | `forge-robot-v1.0.1` |
+| Policy | `1.0.1` | `forge-policy-v1.0.1` |
+| Kinematics | `1.0.1` | `forge-kinematics-v1.0.1` |
+
+### Packaging
 
 - Include the complete Apache-2.0 `LICENSE` in every Python wheel and source distribution.
 - Add one repository-level command to cleanly build and validate all Python distributions and generate `SHA256SUMS`.
 - Validate wheel and sdist identity, Apache-2.0 metadata, exact license layout, and unexpected output entries.
 - Add guarded, single-family release candidate builds while retaining all-family local validation.
 - Make CI validate all five Python distributions instead of only `forge-kinematics`.
+- Add repository, changelog, and issue tracker links to the published Python package metadata.
 
 ## Initial package-family 1.0 releases - 2026-08-02
 

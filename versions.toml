@@ -1,8 +1,8 @@
 schema_version = 1
 
 [packages]
-common = "1.0.0"
-msgs = "1.0.0"
-robot = "1.0.0"
-policy = "1.0.0"
-kinematics = "1.0.0"
+common = "1.0.1"
+msgs = "1.0.1"
+robot = "1.0.1"
+policy = "1.0.1"
+kinematics = "1.0.1"

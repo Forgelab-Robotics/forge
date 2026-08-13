@@ -1,7 +1,7 @@
 [project]
 name = "forge-policy"
-version = "1.0.0"
-description = "通用 policy 节点协议与 Dora runner，供算法策略节点复用。"
+version = "1.0.1"
+description = "Reusable policy node protocol and Dora runner for Forge robotics applications."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -13,6 +13,11 @@ dependencies = [
     "dora-rs==0.4.1",
     "forge-msgs>=1.0.0,<2",
 ]
+
+[project.urls]
+Repository = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge"
+Changelog = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/blob/master/CHANGELOG.md"
+Issues = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/issues"
 
 [tool.uv.sources]
 forge-msgs = { workspace = true }

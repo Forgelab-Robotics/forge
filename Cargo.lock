@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "forge_common"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -224,7 +224,7 @@ dependencies = [
 
 [[package]]
 name = "forge_msgs"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "arrow-array",
  "arrow-schema",

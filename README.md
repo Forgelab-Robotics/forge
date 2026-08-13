@@ -146,8 +146,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-msgs-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-msgs-v1.0.1
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
@@ -166,8 +166,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge_common
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-common-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-common-v1.0.1
   SOURCE_SUBDIR cpp/forge_common
 )
 FetchContent_MakeAvailable(forge_common)
@@ -186,8 +186,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge_robot
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-robot-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-robot-v1.0.1
   SOURCE_SUBDIR cpp/forge_robot
 )
 FetchContent_MakeAvailable(forge_robot)
