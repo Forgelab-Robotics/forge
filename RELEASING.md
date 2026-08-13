@@ -182,11 +182,30 @@ uv publish --dry-run \
   dist/release/python/common/*.tar.gz
 ```
 
-Prefer a scoped PyPI token or trusted publishing. For token-based publishing,
-provide the token through the protected `UV_PUBLISH_TOKEN` environment variable;
-never store it in the repository. Publish in dependency order: `common`, `msgs`,
-`kinematics`, `policy`, then `robot`. Verify each exact version from PyPI in a
-fresh environment before continuing to dependent packages.
+Prefer PyPI trusted publishing. The GitHub workflow
+`.github/workflows/publish-pypi.yml` requests a short-lived OIDC credential and
+does not require a stored PyPI token. Configure a `pypi` GitHub Environment and
+add this trusted publisher to each PyPI project (or as a pending publisher before
+the first upload):
+
+```text
+Owner: Forgelab-Robotics
+Repository: forge
+Workflow: publish-pypi.yml
+Environment: pypi
+```
+
+Existing release tags can be published with `workflow_dispatch` by entering the
+full immutable family tag. Future `forge-*-v*` tag pushes trigger the same
+workflow automatically. In both cases the workflow checks out and verifies the
+annotated tag, builds only that family, stores the artifacts for audit, and
+publishes only its wheel and source archive.
+
+For token-based local publishing, provide a scoped token through the protected
+`UV_PUBLISH_TOKEN` environment variable; never store it in the repository.
+Publish in dependency order: `common`, `msgs`, `kinematics`, `policy`, then
+`robot`. Verify each exact version from PyPI in a fresh environment before
+continuing to dependent packages.
 
 PyPI does not permit replacing an uploaded file or reusing a released version.
 If an upload is wrong, increment that family version and create a new immutable

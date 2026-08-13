@@ -1,0 +1,101 @@
+name: Publish Python package to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Immutable family tag to publish (for example, forge-common-v1.0.1)"
+        required: true
+        type: string
+  push:
+    tags:
+      - "forge-*-v*"
+
+concurrency:
+  group: pypi-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Resolve and validate release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_TAG" =~ ^forge-(common|msgs|robot|policy|kinematics)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Unsupported release tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+          family="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "family=$family" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "distribution=forge-$family" >> "$GITHUB_OUTPUT"
+
+      - name: Check out immutable release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify annotated tag and commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "$RELEASE_TAG")" = "tag"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          python scripts/check_release_versions.py --tag "$RELEASE_TAG"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install locked build dependencies
+        run: uv sync --locked --all-packages --all-extras --dev
+
+      - name: Build and validate release distributions
+        shell: bash
+        env:
+          CI_COMMIT_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_FAMILY: ${{ steps.release.outputs.family }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/build_python_distributions.py \
+            --release-family "$RELEASE_FAMILY" \
+            --out-dir "dist/release/python/$RELEASE_FAMILY"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.distribution }}-${{ steps.release.outputs.version }}
+          path: dist/release/python/${{ steps.release.outputs.family }}/*
+          if-no-files-found: error
+
+      - name: Publish wheel and source distribution to PyPI
+        shell: bash
+        env:
+          RELEASE_FAMILY: ${{ steps.release.outputs.family }}
+        run: |
+          set -euo pipefail
+          uv publish --trusted-publishing always \
+            "dist/release/python/$RELEASE_FAMILY"/*.whl \
+            "dist/release/python/$RELEASE_FAMILY"/*.tar.gz
