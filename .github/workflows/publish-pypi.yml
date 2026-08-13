@@ -16,15 +16,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve:
+     runs-on: ubuntu-latest
+
+     outputs:
+       tag: ${{ steps.release.outputs.tag }}
+       family: ${{ steps.release.outputs.family }}
+       version: ${{ steps.release.outputs.version }}
+       distribution: ${{ steps.release.outputs.distribution }}
+
+     steps:
+       - name: Resolve and validate release tag
+         id: release
+         shell: bash
+         env:
+           REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+         run: |
+           set -euo pipefail
+
+           if [[ ! "$REQUESTED_TAG" =~ ^forge-(common|msgs|robot|policy|kinematics)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+             echo "Unsupported release tag: $REQUESTED_TAG" >&2
+             exit 1
+           fi
+
+           family="${BASH_REMATCH[1]}"
+           version="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
+
+           echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+           echo "family=$family" >> "$GITHUB_OUTPUT"c
+           echo "version=$version" >> "$GITHUB_OUTPUT"
+           echo "distribution=forge-$family" >> "$GITHUB_OUTPUT"
+
   publish:
     name: Publish ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi-${{ needs.resolve.outputs.family }}
+
     permissions:
       contents: read
       id-token: write
 
     steps:
+      - name: Check out immutable release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
       - name: Resolve and validate release tag
         id: release
         shell: bash
