@@ -64,7 +64,7 @@ UV_PACKAGE_SOURCES = {
     "forge-kinematics": "packages/kinematics",
 }
 CARGO_PACKAGE_FAMILIES = {
-    "forge_common": "common",
+    "forgelab_common": "common",
     "forge_msgs": "msgs",
 }
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")

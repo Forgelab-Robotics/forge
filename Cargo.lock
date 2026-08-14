@@ -215,14 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge_common"
-version = "1.0.1"
-dependencies = [
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "forge_msgs"
 version = "1.0.1"
 dependencies = [
@@ -231,6 +223,14 @@ dependencies = [
  "bytes",
  "image",
  "ndarray",
+]
+
+[[package]]
+name = "forgelab_common"
+version = "1.0.1"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

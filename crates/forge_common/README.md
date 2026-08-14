@@ -1,6 +1,9 @@
-# forge_common
+# forgelab_common
 
 Shared Rust utilities for Forge crates.
+
+The crates.io distribution is named `forgelab_common`; its Rust library target
+remains `forge_common` so existing imports retain the family name.
 
 This crate is intentionally lightweight. It currently provides tracing
 initialization helpers and may grow to include other cross-crate utilities as
@@ -24,5 +27,5 @@ filtering when it is set.
 Run the crate tests from the workspace root:
 
 ```bash
-cargo test -p forge_common
+cargo test -p forgelab_common
 ```

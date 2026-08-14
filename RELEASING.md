@@ -152,6 +152,40 @@ ctest --test-dir build/release/forge_robot --output-on-failure
 
 `cargo package --allow-dirty` may be used while preparing a release candidate. Final package verification and tag creation must use a clean working tree without `--allow-dirty`.
 
+## Publishing Rust crates to crates.io
+
+The public distribution names and Rust library targets are:
+
+| Family | crates.io distribution | Rust library target |
+|---|---|---|
+| Common | `forgelab_common` | `forge_common` |
+| Msgs | `forge_msgs` | `forge_msgs` |
+
+The Common distribution uses the `forgelab_` prefix because the crates.io
+`forge_common`/`forge-common` namespace is owned by an unrelated project. The
+explicit `forge_common` library target preserves existing Rust imports. Each
+crate-local `LICENSE` must exactly match the repository root Apache-2.0 license
+so the published archive carries the complete license text.
+
+Validate each crate before uploading from the clean release revision:
+
+```bash
+cargo publish -p forgelab_common --locked --dry-run
+cargo publish -p forge_msgs --locked --dry-run
+```
+
+For local publishing, authenticate with `cargo login`, then publish only the
+crate belonging to the release family:
+
+```bash
+cargo publish -p forgelab_common --locked
+cargo publish -p forge_msgs --locked
+```
+
+Never store a crates.io token in the repository. crates.io does not permit
+replacing an uploaded version; increment the affected family version after an
+incorrect upload rather than attempting to reuse it.
+
 ## Publishing Python distributions to PyPI
 
 Publish only artifacts produced by a clean, single-family release build. Use a

@@ -96,6 +96,13 @@ Build the Rust workspace:
 cargo build --workspace
 ```
 
+Published package names differ only where crates.io ownership requires it:
+
+| Family | PyPI distribution | crates.io distribution | Import/library name |
+|---|---|---|---|
+| Common | `forge-common` | `forgelab_common` | `forge_common` |
+| Msgs | `forge-msgs` | `forge_msgs` | `forge_msgs` |
+
 Build the C++ `forge_msgs` library:
 
 ```bash
