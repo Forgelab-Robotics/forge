@@ -1,17 +1,20 @@
 # Forge ToolEndpoint Wire Protocol v1alpha1
 
 Status: implemented alpha endpoint models, logical contract, complete factories,
-Query-first operation handling, exact Arrow/Dora carrier schema, and an optional Python
-Arrow carrier binding. `DoraToolEndpointBinding` converts one Arrow input through the
-logical Query handler into an Arrow response without owning a Dora node, event loop,
-metadata, or execution state. Outside this package, the current Query-only Gateway
+Query and Action operation handling, exact Arrow/Dora carrier schema, and an optional
+Python Arrow carrier binding. The embedded Action handler implements bounded early-event
+buffering and execution retention, descriptor-based admission, lifecycle validation,
+terminal result barriers, and private duplicate suppression. `DoraToolEndpointBinding`
+keeps the legacy Query-only single-response API and provides ordered Action publication
+without owning a Dora node or event loop. Outside this package, the current Query-only Gateway
 implements the configured-route Registry, invoke routing with terminal response/error
 correlation, a simple experimental HTTP Query discovery/invoke bridge, and a Dora
 logical caller vertical bridge. It does not accept or route `endpoint.status` or
 `tool.event`. The first concrete YOLO Dora provider-node embedding and real Query
 vertical are implemented. Additional providers, a general runner, the complete
-caller-facing Tool Runtime API, a stable Dora caller contract, Action/Session, SSE, and
-MCP remain future work; no public identity/state/sequence primitives are claimed.
+caller-facing Tool Runtime API, a stable Dora caller contract, Session, Gateway-side
+Action routing/events, SSE, and MCP remain future work; no public identity/state/sequence
+primitives are claimed.
 
 This contract defines low-rate endpoint registration and Tool execution lifecycle
 messages. It does not carry images, joint state, joint commands, trajectory feedback,
@@ -850,9 +853,10 @@ command. A correlated
 
 ## Lifecycle, ordering, and terminal consistency
 
-Wire v1alpha1 normatively defines the following transition relation. The currently
-implemented models, codecs, factories, and carriers do not by themselves provide a
-stateful embedded request handler, dispatcher, or execution store.
+Wire v1alpha1 normatively defines the following transition relation. Models, codecs,
+factories, and carriers do not provide state by themselves. The Python embedded Action
+handler now validates this relation using a bounded private execution ledger; Session
+handling and a public/general execution store remain unimplemented.
 
 | Semantics/current phase | Allowed next phase |
 | --- | --- |
@@ -885,16 +889,19 @@ closes event progression for that attempt; a later `progress` or `heartbeat` eve
 invalid. For asynchronous invoke, related events must not be exposed before the
 `accepted` response is established. Early events therefore require a configured,
 bounded buffer; overflow must fail deterministically rather than grow without bound.
-The buffering mechanism remains private implementation work for the endpoint node's
-embedded handler.
+The Python embedded Action handler implements this as a configured bounded buffer.
+Its Dora binding uses one acknowledged asynchronous publisher for the Action response
+and events: it awaits physical response publication before opening the event gate and
+serializes event publication in endpoint-sequence order.
 
 A terminal result barrier also applies: the authoritative, matching `ToolResult` must
 be retained before a terminal phase or terminal event is exposed, so result/status
 recovery does not depend on event delivery. If an Action/Session dispatch may have
 started a side effect but raises before `accepted` can be established and the outcome
 cannot be recovered, the allowed initial terminal outcome is `unknown`; the system
-must not fabricate `accepted` or blindly retry. Retention and barrier integration
-remain private implementation work for the endpoint node's embedded handler.
+must not fabricate `accepted` or blindly retry. The Python embedded Action handler
+implements this barrier, converges a cancelled/failed `start()` to retained `unknown`,
+releases duplicate waiters, and closes event progression after terminal establishment.
 
 Executor completion and Runtime completion are separate. An endpoint event or
 endpoint ToolResult records endpoint execution state. The future Tool Runtime will
@@ -908,20 +915,20 @@ response. `invocation_id` + `attempt_id` identifies one execution attempt and is
 by invoke, status, result, control, and event messages for that attempt. These are
 identity and correlation definitions only.
 
-P0 defines no response replay cache, duplicate suppression, stateful execution
-deduplication, retention window, or exactly-once guarantee. Reusing either identity does
-not require a provider to return an earlier response and does not prevent repeated
-execution. Wire v1alpha1 therefore freezes no deduplication fingerprint, decoded
+Wire v1alpha1 defines no public response replay cache, duplicate suppression,
+stateful execution deduplication, retention window, or exactly-once guarantee. The
+Python embedded Action handler privately suppresses duplicate physical start while a key
+remains in its configured bounded ledger; eviction and process restart end that local
+protection. Wire v1alpha1 therefore freezes no deduplication fingerprint, decoded
 structural-identity comparison, or deduplication-conflict behavior. Raw envelope bytes,
 raw `payload_json` bytes, and codec output are not canonical identities, and no
 fingerprint field is added to the logical Wire or Arrow carrier.
 
-P0 does not automatically retry Query execution. `ToolError.retryable` is descriptive
-error metadata and does not itself trigger a retry. Action handling and any retry policy
-remain future, requirement-specific design work; if duplicate delivery proves relevant,
-that design may add private, bounded, stateful deduplication with an explicit retention
-policy. If a side effect may have occurred but its outcome cannot be recovered, the
-terminal result is `unknown` rather than a blind success or retry.
+P0 does not automatically retry Query or Action execution. `ToolError.retryable` is
+descriptive error metadata and does not itself trigger a retry. The private Action ledger
+does not create caller-facing replay semantics or cross-process guarantees. If a side
+effect may have occurred but its outcome cannot be recovered, the terminal result is
+`unknown` rather than a blind success or retry.
 
 Management operations follow the configured-route/current-state effects above. Their
 effect-idempotent renewal and absent-unregister behavior does not imply request or
@@ -938,17 +945,18 @@ No independent endpoint execution service is part of the design, and this scope 
 not claim implemented or public lifecycle-state, sequence, replay, or deduplication
 primitives. The previous `forge_tool.host` surface and its public primitives have been
 removed. Python `ToolEndpointHandler` now implements exact operation mapping validation,
-endpoint/instance route validation, and the Query invoke/result/rejection path. The
-optional `forge_tool.dora` module converts `forge_msgs.ToolMessage` Arrow values to and
-from that logical path without owning a Dora node or event loop. The first concrete YOLO
-provider-node embedding and real Query vertical are implemented outside this package.
-Additional providers, a general runner, Action/Session handling, and private bounded
-stateful deduplication if real delivery behavior requires it remain implementation work.
+endpoint/instance route validation, the strict legacy Query path, and private bounded
+Action invoke/status/result/control/event lifecycle handling. The optional
+`forge_tool.dora` module converts `forge_msgs.ToolMessage` Arrow values and owns the
+acknowledged Action response/event publish barrier without owning a Dora node or event
+loop. The first concrete YOLO provider-node embedding and real Query vertical are
+implemented outside this package. Additional providers, a general runner, Session
+handling, and concrete provider Action rollout remain implementation work.
 
 Outside this package, the current Query-only Gateway implements
 the configured-route Registry, invoke terminal response/error correlation, a simple
 experimental HTTP Query discovery/invoke bridge, and a Dora logical caller vertical
 bridge. `endpoint.status` handling, `tool.event` correlation, the complete caller-facing
-Tool Runtime API, a stable Dora caller contract, Action/Session, SSE, and MCP remain
-future work. `PolicyCommand` remains retained
+Tool Runtime API, a stable Dora caller contract, Gateway-side Action/Session routing,
+SSE, and MCP remain future work. `PolicyCommand` remains retained
 unchanged; migration or deprecation is not in the current scope.

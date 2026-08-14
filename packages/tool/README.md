@@ -6,7 +6,7 @@ the strict UTF-8 JSON logical wire protocol identified by
 
 It implements Query/Action/Session endpoint SPI protocols, validated models, complete
 envelope factories, response-correlation validation, registration conversion, typed
-payload codecs for every alpha message, a transport-independent Query-first
+payload codecs for every alpha message, a transport-independent Query/Action
 `ToolEndpointHandler`, and an optional Arrow/Dora carrier binding. Query, action, and
 session are descriptor semantics, not separate wire routes. A concrete Dora business
 node implements the SPI and embeds these components; the first YOLO provider-node
@@ -71,7 +71,7 @@ named, and capabilities obey this matrix:
 `max_concurrency` must be greater than zero. The endpoint descriptor reports
 capabilities; it does not replace the Runtime ToolSpec or CompletionSpec.
 
-## Query-first logical handler
+## Query and Action logical handler
 
 `ToolEndpointHandler` takes the descriptor, the concrete node process instance ID, and
 a plain operation implementation mapping:
@@ -81,6 +81,8 @@ handler = ToolEndpointHandler(
     descriptor,
     endpoint_instance_id="epinst-001",
     operations={"detect": query_endpoint},
+    max_early_events=32,
+    max_retained_executions=1024,
 )
 
 response = await handler.handle_invoke(request_envelope)
@@ -88,16 +90,26 @@ response = await handler.handle_invoke(request_envelope)
 
 Construction requires mapping keys to match descriptor operation names exactly and
 checks the callable methods required by each operation semantics. The mapping is copied
-so later caller mutation cannot retarget an operation. Query invoke handling validates
-the typed envelope, endpoint and process-instance route, and operation; it then calls
-`QueryToolEndpoint.query()` and returns a correlated completed or structured rejected
-response. `ToolEndpointError` is only a pre-acceptance rejection; Query failures after
-execution begins are terminal `ToolResult(status="failed", ...)` values. A trusted-route
-request with an invalid typed payload produces a correlated non-retryable `tool.error`.
+so later caller mutation cannot retarget an operation. The legacy `handle_invoke()` API
+remains strictly Query-only: it calls `QueryToolEndpoint.query()` and returns a correlated
+terminal result or structured rejection. Action invoke/status/result/control must use
+`dispatch()`, which calls `ActionToolEndpoint.start()` and returns a response-first tuple
+containing any events buffered during `start()`.
 
-The handler owns no Dora node, execution state, deduplication cache, or private executor
-handle. Action/Session implementations can be validated at construction, but their
-invoke/status/result/control/event paths remain future work.
+The handler's Action execution records, event sequence, early-event buffer, terminal
+barrier, and same-execution-key duplicate suppression are private transport state, not a
+public execution-store API. Provider status/result/control methods remain authoritative.
+The early-event bound defaults to 32. Execution retention defaults to 1024 records and
+evicts completed/pre-acceptance records under pressure; both bounds are configurable.
+Each operation's descriptor `max_concurrency` is enforced for newly admitted Actions,
+and its permit is released exactly once at pre-acceptance rejection or authoritative
+terminal establishment.
+Terminal events and phases are not exposed until a matching authoritative result is
+retained. If dispatch may have started a side effect but acceptance cannot be
+established, including cancellation of `start()`, the retained terminal outcome is
+`unknown`, duplicate waiters are released, and the handler does not retry. Complete
+phase transitions are checked and terminal establishment closes event progression.
+Session invocation and execution dispatch remain deferred.
 
 ## Optional embedded Arrow/Dora binding
 
@@ -118,13 +130,22 @@ binding = DoraToolEndpointBinding(
     handler,
     max_message_bytes=1_048_576,
     max_carrier_bytes=1_114_112,
+    event_sink=publish_action_message,
 )
 response_batch = await binding.handle_input(input_arrow_value)
+await binding.dispatch_input(action_input_arrow_value)
 ```
 
 `handle_input()` accepts one exact `ToolMessage` Arrow `RecordBatch`, single-batch
-`Table`, or `StructArray`, converts it to the logical envelope, awaits the Query-first
-handler, and returns a response `RecordBatch`. IPC bytes must be decoded upstream under
+`Table`, or `StructArray`, preserves the existing Query-only single-response API, and
+returns one response `RecordBatch`; it rejects Action without starting it.
+`dispatch_input()` accepts implemented execution requests. Action invoke requires the
+async `event_sink`, which is the acknowledged publisher for both its response and events:
+the binding awaits physical publication of the response before opening the event gate,
+then serializes all events in strict sequence order. It returns an empty tuple after
+publishing an Action exchange; non-Action requests retain the response-first tuple API.
+Event encoding failures propagate to the emitter and never fabricate a second correlated
+invoke error. IPC bytes must be decoded upstream under
 transport-owned framing and decompression limits; the binding rejects them to prevent a
 small compressed frame from allocating an unbounded decoded batch. The outbound logical
 encoded-message limit defaults to 1 MiB and is configurable, with a binding minimum of
@@ -171,10 +192,10 @@ including `endpoint.status`, requires it.
 
 Python↔C++ Arrow IPC read/write interop is covered. Rust coverage validates the exact
 schema, model, and RecordBatch conversion; Python↔Rust IPC coverage is not claimed.
-The optional Python binding bridges this carrier to the stateless Query-first handler;
-it does not itself own a stateful endpoint execution layer, concrete Dora node wiring,
-or Dora router. The completed YOLO provider node supplies that wiring outside the
-binding.
+The optional Python binding bridges this carrier to the embedded handler. It owns no
+concrete Dora node wiring or Dora router; Action transport execution state remains
+private to the handler. The completed YOLO provider node supplies its Query wiring
+outside the binding.
 
 ## Implemented payload schemas
 
@@ -315,13 +336,13 @@ identity (`ToolExecutionKey`) used to associate invoke, status, result, control,
 event messages with one attempt. `endpoint_instance_id` identifies the selected
 provider route. These are identity/correlation definitions, not delivery guarantees.
 
-P0 provides no stateful response replay, exchange/execution deduplication, retention
-window, idempotency, or exactly-once guarantee. Reusing an identity neither returns a
-cached response nor prevents repeated execution. No structural JSON dedup identity,
-fingerprint, or conflict behavior is frozen. P0 does not automatically retry Query, and
-`ToolError.retryable` is metadata rather than a retry trigger. Action handling and retry
-policy remain future, requirement-specific work; private bounded stateful deduplication
-may be designed with explicit retention if real delivery behavior requires it.
+Wire v1alpha1 provides no response replay, public retention window, idempotency, or exactly-once
+guarantee and freezes no structural fingerprint or public deduplication contract. The
+embedded Action handler does bounded, module-private duplicate suppression while an
+execution key remains in its configured retention ledger, so duplicate delivery does
+not restart a retained side effect. Evicted keys and process restart carry no guarantee.
+This does not add a Wire field or caller-facing replay guarantee. P0 does not
+automatically retry Query, and `ToolError.retryable` remains descriptive metadata.
 
 The current Gateway uses statically configured, trusted routes. A route authorizes its
 configured `endpoint_id`; the envelope and registration descriptor must match it. The
@@ -367,18 +388,17 @@ implemented in Python, Rust, and C++, with Python↔C++ Arrow IPC interop covera
 Python↔Rust IPC coverage is claimed.
 
 No independent endpoint execution service or public identity/state/sequence/replay/
-deduplication primitive surface is part of the supported scope. Operation implementation
-mapping, the Query-first logical request path, and the optional Arrow carrier binding
-are implemented. The first concrete YOLO provider-node embedding and real Query vertical
-are also complete. Additional providers, a general runner, and Action/Session handling
-remain future work; private bounded stateful deduplication is considered only when real
-delivery behavior requires it. A runner cannot become the only integration path.
+deduplication primitive surface is part of the supported scope. Operation mapping,
+Query handling, Action invoke/status/result/control/event handling, and the optional
+Arrow carrier binding are implemented. The first concrete YOLO provider-node embedding
+and real Query vertical are also complete. Additional providers, a general runner, and
+Session handling remain future work. A runner cannot become the only integration path.
 
 Outside this package, the current Query-only Gateway implements the configured-route Registry, invoke terminal response/error
 correlation, a simple experimental HTTP Query discovery/invoke bridge, and a Dora
 logical caller vertical bridge. `endpoint.status` handling, `tool.event` correlation,
 the complete caller-facing Tool Runtime API, a stable Dora caller contract,
-Action/Session, SSE, and MCP remain future work. `PolicyCommand` remains retained
+Gateway-side Action/Session routing, SSE, and MCP remain future work. `PolicyCommand` remains retained
 unchanged; migration or deprecation is not in scope.
 
 ## License

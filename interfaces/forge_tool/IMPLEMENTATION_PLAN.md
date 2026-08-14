@@ -1,6 +1,6 @@
 # Forge Tool 实现计划
 
-状态：`forge-tool` Endpoint models、logical Wire、complete factories、Query-first `ToolEndpointHandler` 和 optional `forge_tool.dora` Arrow carrier binding，以及 `forge_msgs.ToolMessage` 的 10 列 Arrow/Dora carrier schema 已实现。独立 Endpoint Host 概念已经取消，`packages/tool/src/forge_tool/host` 及其 public P1 identity/state/sequence primitives 已删除。`DoraToolEndpointBinding` 已完成单个 Arrow input 到 logical Query handler 再到 Arrow response 的转换，但不拥有 Dora `Node`、event loop 或 metadata；第一个 YOLO concrete Dora provider-node embedding 和 first real Query vertical 已完成。当前 Query-only Gateway 已采用 static configured/trusted route、单 current instance 和周期 `endpoint.register` lease，并已有 simple experimental HTTP Query discovery/invoke bridge 与 Dora logical caller vertical bridge；Gateway 当前只关联 invoke terminal response/`tool.error`，不接收或路由 `endpoint.status`/`tool.event`。完整 caller-facing Tool Runtime API、stable Dora caller contract、Action/Session、SSE 和 MCP 仍属于后续阶段。
+状态：`forge-tool` Endpoint models、logical Wire、complete factories、严格 Query-only legacy API、Action `dispatch()` lifecycle handler 和 optional `forge_tool.dora` Arrow carrier binding，以及 `forge_msgs.ToolMessage` 的 10 列 Arrow/Dora carrier schema 已实现。Action path 已实现 bounded retention、per-operation admission、完整 transition/terminal barrier、cancel-to-unknown、Accepted physical-publish barrier 和 strict event sequence；Session 尚未实现。独立 Endpoint Host 概念已经取消，`packages/tool/src/forge_tool/host` 及其 public P1 identity/state/sequence primitives 已删除。`DoraToolEndpointBinding` 不拥有 Dora `Node`、event loop 或 metadata；第一个 YOLO concrete Dora provider-node embedding 和 first real Query vertical 已完成。当前 Query-only Gateway 已采用 static configured/trusted route、单 current instance 和周期 `endpoint.register` lease，并已有 simple experimental HTTP Query discovery/invoke bridge 与 Dora logical caller vertical bridge；Gateway 当前只关联 invoke terminal response/`tool.error`，不接收或路由 `endpoint.status`/`tool.event`。完整 caller-facing Tool Runtime API、stable Dora caller contract、Gateway Action routing/events、Session、SSE 和 MCP 仍属于后续阶段。
 
 `forge.tool.endpoint/v1alpha1` 尚无 tagged/public Tool release；本文冻结的是该 identifier 的第一次 atomic release。此前 untagged prototype 不兼容且不声明 backward compatibility。`forge-tool`、Python/Rust/C++ `ToolMessage` binding、Gateway 和 provider 必须作为同一个 coordinated version set 部署，不支持 prototype/current mixed deployment。
 
@@ -240,7 +240,7 @@ Python、Rust、C++ carrier 均已实现。Python↔C++ Arrow IPC interop 已覆
 - 提供 simple experimental HTTP Query discovery/invoke bridge；
 - 提供 Dora logical caller vertical bridge。
 
-`endpoint.status` 虽保留为 protocol/model message，但当前 Gateway 不接收、路由或执行 current-instance validation；该路径留到真实 availability/health 需求。`tool.event` 同样保留在 schema/message family 中，但当前 Gateway 不接收、路由或执行 event correlation。完整 caller-facing Tool Runtime API、stable Dora caller contract、Action/Session、SSE、MCP 及 production HTTP surface 仍按后续阶段推进。Gateway 不决定 implementation，不解释 CompletionSpec。
+`endpoint.status` 虽保留为 protocol/model message，但当前 Gateway 不接收、路由或执行 current-instance validation；该路径留到真实 availability/health 需求。`tool.event` 同样保留在 schema/message family 中，但当前 Gateway 不接收、路由或执行 event correlation。完整 caller-facing Tool Runtime API、stable Dora caller contract、Gateway-side Action/Session routing、SSE、MCP 及 production HTTP surface 仍按后续阶段推进。Gateway 不决定 implementation，不解释 CompletionSpec。
 
 未来部署中，Tool Runtime 可以与 Gateway 位于同一进程，但应保持独立 domain module 和唯一状态所有权。
 
@@ -252,9 +252,10 @@ Embedded binding/handler 负责：
 
 - 将 Dora Arrow carrier 转换为 logical message；
 - 校验 descriptor，并把 operation 显式绑定到该 node 的 endpoint SPI；
-- 当前 Query path 处理 invoke，调用 `QueryToolEndpoint.query()` 并构造 correlated terminal response 或 `tool.error`；
+- legacy `handle_invoke()`/Dora `handle_input()` 保持严格 Query-only，调用 `QueryToolEndpoint.query()` 并构造 correlated terminal response 或 `tool.error`；
+- Action invoke/status/result/control/event 已由 `dispatch()` 和 Dora acknowledged publisher 打通，包含 per-operation admission、完整 lifecycle transition、terminal result barrier、Accepted physical-publish barrier、strict event sequence publication、cancel-to-unknown 和 bounded private duplicate suppression；
 - 由具体业务 node 发布周期 `endpoint.register` lease-renewal Arrow value；
-- 未来 Action/Session 与 availability/health 路径再按需求构造 `tool.event` 和 `endpoint.status`，并实现 admission、Accepted/Event ordering 和 private bounded duplicate suppression。
+- Session 与 availability/health 路径仍留待后续；`endpoint.status` 仍未进入当前 Gateway。
 
 业务 endpoint 实现负责 executor 的权威状态，以及必要的 `ToolExecutionKey` 到私有 executor handle 映射；通用 binding 不维护第二份业务状态所有权，也不解释 Runtime CompletionSpec。
 
@@ -646,9 +647,9 @@ Wire v1alpha1 normative transition table 为：
 | 任意 state | 可重复观察同一 state |
 | terminal | 不得变为不同 state |
 
-terminal 指 `completed|failed|cancelled|stopped|unknown`；terminal phase/result 一旦建立即 immutable。`validate_execution_result(status, result)` 已实现单个 pair 的 terminal mapping 检查；当前不宣称已有 stateful lifecycle handler/store。
+terminal 指 `completed|failed|cancelled|stopped|unknown`；terminal phase/result 一旦建立即 immutable。`validate_execution_result(status, result)` 已实现单个 pair 的 terminal mapping 检查；Python embedded Action handler 已用 bounded private ledger 实现完整 transition validation 和 immutable terminal retention，但不导出 public/general lifecycle store。
 
-异步 execution 的 Accepted 必须先于相关 event 暴露；早到 event 需要 configured bounded buffer，overflow 必须 deterministic failure，不能无限增长。terminal result barrier 要求 matching authoritative `ToolResult` 先 retained，再暴露 terminal phase/event，以便 event 丢失后通过 status/result 恢复。Action/Session 在 Accepted 前发生不可恢复的不确定异常时，可直接 initial terminal `unknown`，不得伪造 Accepted 或盲目 retry。buffer、retention 和 barrier integration 仍是 endpoint node 内 embedded handler 的后续私有实现工作。
+异步 execution 的 Accepted 必须先于相关 event 暴露；早到 event 需要 configured bounded buffer，overflow 必须 deterministic failure，不能无限增长。terminal result barrier 要求 matching authoritative `ToolResult` 先 retained，再暴露 terminal phase/event，以便 event 丢失后通过 status/result 恢复。Action/Session 在 Accepted 前发生不可恢复的不确定异常时，可直接 initial terminal `unknown`，不得伪造 Accepted 或盲目 retry。Python Action path 已实现这些规则：Dora binding 通过同一个 acknowledged async publisher 先 await Accepted 的物理发布，再开放 event gate，并按 endpoint sequence 串行发布；`start()` 取消/失败收敛为 retained `unknown` 并唤醒 duplicate。Session integration 仍未实现。
 
 ## 9. P0：冻结基线与 cleanup
 
@@ -769,13 +770,13 @@ YOLO 具体 Dora provider node 已嵌入 optional carrier binding，完成 Dora 
 
 YOLO 已完成第一个真实 Query vertical：Wire request 经 Dora carrier、embedded handler 到业务 SPI，并返回 terminal result。高频 image 数据继续走 Dora 数据面，Tool request 只携带小型参数或引用。完整 caller-facing Runtime API 仍按 P2 推进。
 
-### P1-E：Action/Session
+### P1-E：Action（已完成）/Session（待实现）
 
-Query vertical path 稳定后，再扩展 Action/Session 的 start/status/result/control/event handling，并在 embedded handler 内满足 Accepted-before-Event、terminal result barrier、immutable terminal outcome、`unknown` 和 endpoint sequence 的 normative semantics。
+Action 的 start/status/result/control/event handling 已完成，并在 embedded handler/Dora binding 内满足 Accepted physical-publish-before-Event、strict endpoint sequence、完整 phase transition、terminal result barrier、immutable terminal outcome、cancel-to-`unknown`、per-operation `max_concurrency` admission 和 terminal permit single-release。legacy `handle_invoke()`/`handle_input()` 仍严格 Query-only，Action 必须进入 `dispatch()`。Session handling 仍待实现。
 
-### P1-F：按需设计 private bounded dedup
+### P1-F：private bounded Action dedup（已完成）
 
-P0 不预设该实现。仅在真实重试、重复投递和并发行为证明有需要时，针对具体 Action/retry 路径另行设计 private、bounded、stateful dedup、conflict behavior 和明确 retention；不导出通用 public state/dedup/sequence primitive，不新增 Wire/Arrow fingerprint，也不改变 10 列 carrier。
+Action handler 已增加 configurable count-bounded execution retention（默认 1024）：同 key 在 retained 期间不会再次 physical start，completed/pre-acceptance records 在容量压力下按最旧记录淘汰，active records 不淘汰；ledger 满且全为 active 时拒绝新 admission。该行为保持 module-private，不导出通用 public state/dedup/sequence primitive，不新增 Wire/Arrow fingerprint，不提供 eviction/restart 后保证，也不改变 10 列 carrier。
 
 ## 11. P2：完整 Tool Runtime 与稳定 caller bindings
 
@@ -887,8 +888,8 @@ Caller adapter 扩展必须复用 caller-facing Tool Runtime API，endpoint adap
 6. 将 binding 嵌入 YOLO concrete Dora provider node（已完成）；
 7. 接入第一个真实 YOLO Query vertical（已完成）；
 8. 扩展 additional providers 或按需提供通用 runner；
-9. 再实现 Action/Session lifecycle；
-10. 最后仅在真实需求下增加 private bounded dedup。
+9. 实现 Action lifecycle 与 private bounded dedup（已完成）；
+10. 再实现 Session lifecycle。
 
 已冻结的 Wire v1alpha1、10 列 carrier、message family、identity/correlation fields 和 lifecycle/sequence 值语义在此顺序中保持不变；不由此推导 stateful replay/dedup guarantee。
 

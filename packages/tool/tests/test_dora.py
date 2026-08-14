@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import cast
 
 import pyarrow as pa
 import pytest
@@ -10,18 +11,24 @@ from forge_msgs.tool import TOOL_MESSAGE_SCHEMA
 
 from forge_tool import (
     TOOL_ENDPOINT_PROTOCOL,
+    ToolAccepted,
     ToolContext,
+    ToolControlResponse,
     ToolEndpointDescriptor,
     ToolEndpointHandler,
     ToolEnvelope,
     ToolEvent,
+    ToolEventEmitter,
     ToolExecutionKey,
+    ToolExecutionStatus,
     ToolOperationDescriptor,
     ToolProtocolError,
     ToolRequest,
     ToolResult,
+    ToolResultResponse,
     encode_envelope,
     error_from_payload,
+    event_from_payload,
     invoke_response_from_payload,
     make_event_envelope,
     make_invoke_request_envelope,
@@ -83,6 +90,38 @@ class FakeQuery:
         )
 
 
+class DoraAction:
+    def __init__(self, *, emit_early: bool = False) -> None:
+        self.emit_early = emit_early
+        self.emitter: ToolEventEmitter | None = None
+        self.start_calls = 0
+
+    async def start(
+        self,
+        request: ToolRequest,
+        context: ToolContext,
+        events: ToolEventEmitter,
+    ) -> ToolAccepted:
+        self.start_calls += 1
+        self.emitter = events
+        if self.emit_early:
+            await events.emit(ToolEvent(type="progress", data={"fraction": 0.5}))
+        return ToolAccepted()
+
+    async def cancel(
+        self,
+        key: ToolExecutionKey,
+        reason: str | None = None,
+    ) -> ToolControlResponse:
+        return ToolControlResponse(command="cancel", status="accepted")
+
+    async def status(self, key: ToolExecutionKey) -> ToolExecutionStatus:
+        return ToolExecutionStatus(phase="running")
+
+    async def result(self, key: ToolExecutionKey) -> ToolResultResponse:
+        return ToolResultResponse(status="pending")
+
+
 def _ipc_bytes(batch: pa.RecordBatch) -> bytes:
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, batch.schema) as writer:
@@ -121,6 +160,44 @@ def _handler(query: object | None = None) -> ToolEndpointHandler:
         ),
         endpoint_instance_id="instance-1",
         operations={"detect": query or FakeQuery()},  # type: ignore[dict-item]
+    )
+
+
+def _action_context() -> ToolContext:
+    return ToolContext(
+        execution_key=ToolExecutionKey("action-invocation-1", "attempt-1"),
+        tool_id="forge.tool.move",
+        implementation_id="arm",
+        endpoint_id="motion.arm",
+        operation="move",
+    )
+
+
+def _action_request() -> ToolEnvelope:
+    return make_invoke_request_envelope(
+        ToolRequest(arguments={"target": "home"}),
+        _action_context(),
+        request_id="action-request-1",
+        endpoint_instance_id="instance-1",
+    )
+
+
+def _action_handler(action: DoraAction) -> ToolEndpointHandler:
+    return ToolEndpointHandler(
+        ToolEndpointDescriptor(
+            protocol_version=TOOL_ENDPOINT_PROTOCOL,
+            endpoint_id="motion.arm",
+            operations=(
+                ToolOperationDescriptor(
+                    name="move",
+                    semantics="action",
+                    cancellable=True,
+                    status_supported=True,
+                ),
+            ),
+        ),
+        endpoint_instance_id="instance-1",
+        operations={"move": action},
     )
 
 
@@ -173,6 +250,222 @@ def test_dora_binding_handles_one_query_record_batch() -> None:
         outputs={"arguments": {"class": "cube"}},
     )
     assert query.calls == 1
+
+
+def test_dora_dispatch_returns_accepted_before_early_action_event() -> None:
+    action = DoraAction(emit_early=True)
+    published: list[pa.RecordBatch] = []
+
+    async def publish(batch: pa.RecordBatch) -> None:
+        published.append(batch)
+
+    binding = DoraToolEndpointBinding(_action_handler(action), event_sink=publish)
+    request = _action_request()
+
+    outputs = asyncio.run(
+        binding.dispatch_input(tool_envelope_to_message(request).to_arrow())
+    )
+    messages = [
+        tool_message_to_envelope(ToolMessage.from_arrow(output)) for output in published
+    ]
+
+    assert outputs == ()
+    assert [message.message_type for message in messages] == [
+        "tool.invoke.response",
+        "tool.event",
+    ]
+    assert isinstance(invoke_response_from_payload(messages[0].payload), ToolAccepted)
+    assert event_from_payload(messages[1].payload) == ToolEvent(
+        type="progress",
+        data={"fraction": 0.5},
+    )
+    assert messages[1].sequence == 0
+
+
+def test_dora_async_event_sink_receives_late_action_events() -> None:
+    action = DoraAction()
+    received: list[pa.RecordBatch] = []
+
+    async def scenario() -> tuple[pa.RecordBatch, ...]:
+        async def event_sink(value: pa.RecordBatch) -> None:
+            received.append(value)
+
+        binding = DoraToolEndpointBinding(
+            _action_handler(action),
+            event_sink=event_sink,
+        )
+        outputs = await binding.dispatch_input(
+            tool_envelope_to_message(_action_request()).to_arrow()
+        )
+        assert action.emitter is not None
+        await action.emitter.emit(ToolEvent(type="heartbeat"))
+        return outputs
+
+    outputs = asyncio.run(scenario())
+
+    assert outputs == ()
+    assert len(received) == 2
+    accepted = tool_message_to_envelope(ToolMessage.from_arrow(received[0]))
+    assert accepted.message_type == "tool.invoke.response"
+    event = tool_message_to_envelope(ToolMessage.from_arrow(received[1]))
+    assert event.message_type == "tool.event"
+    assert event.sequence == 0
+    assert event_from_payload(event.payload) == ToolEvent(type="heartbeat")
+
+
+def test_dora_action_publish_barrier_blocks_event_until_accepted_is_published() -> None:
+    action = DoraAction()
+
+    async def scenario() -> list[str]:
+        publish_started = asyncio.Event()
+        release_publish = asyncio.Event()
+        order: list[str] = []
+
+        async def publish(value: pa.RecordBatch) -> None:
+            message = tool_message_to_envelope(ToolMessage.from_arrow(value))
+            if message.message_type == "tool.invoke.response":
+                publish_started.set()
+                await release_publish.wait()
+                order.append("accepted")
+            else:
+                order.append(f"event-{message.sequence}")
+
+        binding = DoraToolEndpointBinding(
+            _action_handler(action),
+            event_sink=publish,
+        )
+        dispatch = asyncio.create_task(
+            binding.dispatch_input(
+                tool_envelope_to_message(_action_request()).to_arrow()
+            )
+        )
+        await publish_started.wait()
+        assert action.emitter is not None
+        event = asyncio.create_task(action.emitter.emit(ToolEvent(type="heartbeat")))
+        await asyncio.sleep(0)
+        assert order == []
+        release_publish.set()
+        assert await dispatch == ()
+        await event
+        return order
+
+    assert asyncio.run(scenario()) == ["accepted", "event-0"]
+
+
+def test_dora_event_sink_serializes_concurrent_event_sequences() -> None:
+    action = DoraAction()
+
+    async def scenario() -> list[int]:
+        sequence_zero_started = asyncio.Event()
+        release_sequence_zero = asyncio.Event()
+        published: list[int] = []
+
+        async def publish(value: pa.RecordBatch) -> None:
+            message = tool_message_to_envelope(ToolMessage.from_arrow(value))
+            if message.message_type != "tool.event":
+                return
+            if message.sequence == 0:
+                sequence_zero_started.set()
+                await release_sequence_zero.wait()
+            published.append(cast(int, message.sequence))
+
+        binding = DoraToolEndpointBinding(
+            _action_handler(action),
+            event_sink=publish,
+        )
+        await binding.dispatch_input(
+            tool_envelope_to_message(_action_request()).to_arrow()
+        )
+        assert action.emitter is not None
+        first = asyncio.create_task(action.emitter.emit(ToolEvent(type="heartbeat")))
+        await sequence_zero_started.wait()
+        second = asyncio.create_task(action.emitter.emit(ToolEvent(type="progress")))
+        await asyncio.sleep(0)
+        assert published == []
+        release_sequence_zero.set()
+        await asyncio.gather(first, second)
+        return published
+
+    assert asyncio.run(scenario()) == [0, 1]
+
+
+def test_dora_event_encoding_failure_does_not_publish_correlated_error() -> None:
+    action = DoraAction()
+    published: list[ToolEnvelope] = []
+
+    async def scenario() -> None:
+        async def publish(value: pa.RecordBatch) -> None:
+            published.append(tool_message_to_envelope(ToolMessage.from_arrow(value)))
+
+        binding = DoraToolEndpointBinding(
+            _action_handler(action),
+            max_message_bytes=1_024,
+            event_sink=publish,
+        )
+        await binding.dispatch_input(
+            tool_envelope_to_message(_action_request()).to_arrow()
+        )
+        assert action.emitter is not None
+        with pytest.raises(ToolProtocolError, match="exceeds limit"):
+            await action.emitter.emit(
+                ToolEvent(type="progress", data={"payload": "x" * 2_000})
+            )
+
+    asyncio.run(scenario())
+
+    assert [message.message_type for message in published] == ["tool.invoke.response"]
+
+
+def test_dora_early_event_encoding_failure_still_publishes_accepted_first() -> None:
+    class OversizedEarlyEventAction(DoraAction):
+        async def start(
+            self,
+            request: ToolRequest,
+            context: ToolContext,
+            events: ToolEventEmitter,
+        ) -> ToolAccepted:
+            self.start_calls += 1
+            self.emitter = events
+            await events.emit(
+                ToolEvent(type="progress", data={"payload": "x" * 2_000})
+            )
+            return ToolAccepted()
+
+    action = OversizedEarlyEventAction()
+    published: list[ToolEnvelope] = []
+
+    async def scenario() -> None:
+        async def publish(value: pa.RecordBatch) -> None:
+            published.append(tool_message_to_envelope(ToolMessage.from_arrow(value)))
+
+        binding = DoraToolEndpointBinding(
+            _action_handler(action),
+            max_message_bytes=1_024,
+            event_sink=publish,
+        )
+        with pytest.raises(ToolProtocolError, match="exceeds limit"):
+            await binding.dispatch_input(
+                tool_envelope_to_message(_action_request()).to_arrow()
+            )
+
+    asyncio.run(scenario())
+
+    assert [message.message_type for message in published] == ["tool.invoke.response"]
+    assert isinstance(invoke_response_from_payload(published[0].payload), ToolAccepted)
+
+
+def test_dora_legacy_handle_input_rejects_action_without_starting_it() -> None:
+    action = DoraAction()
+    binding = DoraToolEndpointBinding(_action_handler(action))
+
+    with pytest.raises(NotImplementedError, match="Query-only"):
+        asyncio.run(
+            binding.handle_input(
+                tool_envelope_to_message(_action_request()).to_arrow()
+            )
+        )
+
+    assert action.start_calls == 0
 
 
 def test_dora_binding_accepts_a_single_batch_table() -> None:

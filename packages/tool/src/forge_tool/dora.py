@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 import pyarrow as pa
 from forge_msgs import ToolMessage, ToolMessageSizeError
@@ -25,6 +27,7 @@ _MIN_BINDING_MESSAGE_BYTES = 1_024
 _DEFAULT_CARRIER_OVERHEAD_BYTES = 65_536
 
 type _ToolArrowValue = pa.RecordBatch | pa.Table | pa.StructArray
+type DoraEventSink = Callable[[pa.RecordBatch], Awaitable[None]]
 
 
 def _message_envelope(message: ToolMessage) -> ToolEnvelope:
@@ -148,7 +151,7 @@ def tool_envelope_to_message(
 
 
 class DoraToolEndpointBinding:
-    """Bridge one bounded Dora ToolMessage input to a logical endpoint handler.
+    """Bridge bounded Dora ToolMessage inputs to a logical endpoint handler.
 
     The binding owns no Dora ``Node`` and does not observe or rewrite Dora event
     metadata. A business node remains responsible for receiving the input, awaiting
@@ -162,6 +165,7 @@ class DoraToolEndpointBinding:
 
     __slots__ = (
         "_handler",
+        "_event_sink",
         "_max_carrier_bytes",
         "_max_message_bytes",
         "_max_request_bytes",
@@ -173,6 +177,7 @@ class DoraToolEndpointBinding:
         *,
         max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         max_carrier_bytes: int | None = None,
+        event_sink: DoraEventSink | None = None,
     ) -> None:
         if not isinstance(handler, ToolEndpointHandler):
             raise TypeError("handler must be a ToolEndpointHandler")
@@ -189,8 +194,11 @@ class DoraToolEndpointBinding:
         )
         if carrier_maximum < maximum:
             raise ValueError("max_carrier_bytes must be at least max_message_bytes")
+        if event_sink is not None and not callable(event_sink):
+            raise TypeError("event_sink must be an async callable or None")
 
         self._handler = handler
+        self._event_sink = event_sink
         self._max_message_bytes = maximum
         self._max_request_bytes = maximum - _CORRELATED_ERROR_RESERVE_BYTES
         self._max_carrier_bytes = carrier_maximum
@@ -264,8 +272,16 @@ class DoraToolEndpointBinding:
                 error,
             )
 
-    async def handle_input(self, value: _ToolArrowValue) -> pa.RecordBatch:
-        """Decode one Query invoke input and return its bounded Arrow response value."""
+    def _event_to_arrow(self, event: ToolEnvelope) -> pa.RecordBatch:
+        """Encode one event without fabricating a correlated response on failure."""
+        if event.message_type != "tool.event":
+            raise ValueError("event sink only accepts tool.event envelopes")
+        return tool_envelope_to_message(
+            event,
+            max_message_bytes=self._max_message_bytes,
+        ).to_arrow()
+
+    def _request_from_arrow(self, value: _ToolArrowValue) -> ToolEnvelope:
         if isinstance(value, bytes):
             raise TypeError(
                 "DoraToolEndpointBinding does not accept IPC bytes; decode them upstream "
@@ -286,7 +302,115 @@ class DoraToolEndpointBinding:
 
         # Do not answer a request for another endpoint route. Once the route is trusted,
         # accepted requests reserve enough headroom for later correlated failures.
+        self._handler.validate_request_route(request)
+        return request
+
+    async def dispatch_input(
+        self,
+        value: _ToolArrowValue,
+    ) -> tuple[pa.RecordBatch, ...]:
+        """Dispatch one execution request.
+
+        Action invoke requires ``event_sink``. The binding publishes its response and
+        buffered events through that same sink, awaiting the response publication before
+        opening the late-event barrier, and returns an empty tuple. Other request types
+        retain the response-first returned-tuple API.
+        """
+        request = self._request_from_arrow(value)
+        try:
+            _validate_envelope_size(request, self._max_request_bytes)
+        except ToolProtocolError as error:
+            fallback = _correlated_protocol_error(
+                error,
+                request,
+                max_message_bytes=self._max_message_bytes,
+                max_request_bytes=self._max_request_bytes,
+            )
+            return (self._fallback_to_arrow(fallback, request, error),)
+
+        operation_descriptor = next(
+            operation
+            for operation in self._handler.descriptor.operations
+            if operation.name == request.operation
+        )
+        action_invoke = (
+            request.message_type == "tool.invoke.request"
+            and operation_descriptor.semantics == "action"
+        )
+        if action_invoke and self._event_sink is None:
+            raise RuntimeError(
+                "Action dispatch requires an asynchronous event_sink publisher"
+            )
+
+        publish_ready = asyncio.Event()
+        publish_failure: list[BaseException] = []
+        publish_lock = asyncio.Lock()
+
+        async def emit_event(event: ToolEnvelope) -> None:
+            await publish_ready.wait()
+            if publish_failure:
+                raise RuntimeError(
+                    "Action response publication failed; event was not published"
+                ) from publish_failure[0]
+            if self._event_sink is None:
+                raise RuntimeError("Action event publisher is unavailable")
+            async with publish_lock:
+                await self._event_sink(self._event_to_arrow(event))
+
+        try:
+            messages = await self._handler.dispatch(
+                request,
+                event_sink=emit_event if action_invoke else None,
+            )
+        except Exception:  # noqa: BLE001 - trusted requests must receive a response.
+            logger.exception(
+                "ToolEndpoint failed request_id=%s invocation_id=%s attempt_id=%s "
+                "endpoint_id=%s endpoint_instance_id=%s operation=%s",
+                request.request_id,
+                request.invocation_id,
+                request.attempt_id,
+                request.endpoint_id,
+                request.endpoint_instance_id,
+                request.operation,
+            )
+            messages = (_correlated_internal_error(request),)
+        if not action_invoke:
+            return tuple(
+                self._event_to_arrow(message)
+                if message.message_type == "tool.event"
+                else self._response_to_arrow(message, request)
+                for message in messages
+            )
+
+        if self._event_sink is None:
+            raise RuntimeError("Action event publisher is unavailable")
+        response_batch = self._response_to_arrow(messages[0], request)
+        try:
+            async with publish_lock:
+                await self._event_sink(response_batch)
+                publish_ready.set()
+                for message in messages[1:]:
+                    await self._event_sink(self._event_to_arrow(message))
+        except BaseException as error:
+            if not publish_ready.is_set():
+                publish_failure.append(error)
+                publish_ready.set()
+            raise
+        return ()
+
+    async def handle_input(self, value: _ToolArrowValue) -> pa.RecordBatch:
+        """Handle one legacy Query input and return its single Arrow response."""
+        request = self._request_from_arrow(value)
         self._handler.validate_invoke_route(request)
+        operation_descriptor = next(
+            operation
+            for operation in self._handler.descriptor.operations
+            if operation.name == request.operation
+        )
+        if operation_descriptor.semantics != "query":
+            raise NotImplementedError(
+                "handle_input is Query-only; Action operations must use dispatch_input"
+            )
         try:
             _validate_envelope_size(request, self._max_request_bytes)
         except ToolProtocolError as error:
@@ -316,6 +440,7 @@ class DoraToolEndpointBinding:
 
 
 __all__ = [
+    "DoraEventSink",
     "DoraToolEndpointBinding",
     "tool_envelope_to_message",
     "tool_message_to_envelope",
