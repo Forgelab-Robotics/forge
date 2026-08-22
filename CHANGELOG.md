@@ -4,12 +4,14 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
-### forge-msgs
+## forge-msgs 1.1.0 - 2026-08-22
 
-- Align the Python `PointCloud` writer with the canonical non-nullable top-level Arrow schema already emitted by Rust and C++; field names, order, and physical value types are unchanged, and readers remain compatible with prior nullable schemas.
-- Harden `PointCloud` readers across Python, Rust, and C++ with exact single-row validation, stricter malformed-payload checks, duplicate-field rejection, and Python/C++ IPC coverage.
-- Document organized-cloud ordering, invalid-point, frame/time, and future packed-format semantics without changing the v1 fields.
-- Add Python `PointCloudBatch` and `PointCloudView` APIs for explicit NumPy buffer copy/borrowing policies and read-only Arrow-backed field views without changing the wire schema.
+Protected tag: `forge-msgs-v1.1.0`
+
+- Add Python `PointCloudBatch.from_numpy()` and `PointCloudView.from_arrow()` APIs with explicit NumPy copy/casting policies, read-only Arrow-backed field views, and local payload-buffer sharing for high-throughput producers and consumers.
+- Align the Python `PointCloud` writer with the canonical non-nullable top-level Arrow schema already emitted by Rust and C++; field names, order, physical value types, payload values, and the canonical v1 contract are unchanged, and readers remain compatible with prior nullable schemas.
+- Harden `PointCloud` readers across Python, Rust, and C++ with exact single-row validation, stricter malformed-payload checks, duplicate-field rejection, complete IPC stream consumption, and expanded Python/C++ interoperability coverage.
+- Document organized-cloud ordering, invalid-point, frame/time, buffer ownership, and future packed-format semantics without changing the v1 fields.
 
 ## Package-family 1.0.1 releases - 2026-08-13
 

@@ -8,11 +8,11 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 
 ```toml
 [packages]
-common = "1.0.0"
-msgs = "1.0.0"
-robot = "1.0.0"
-policy = "1.0.0"
-kinematics = "1.0.0"
+common = "1.0.1"
+msgs = "1.1.0"
+robot = "1.0.1"
+policy = "1.0.1"
+kinematics = "1.0.1"
 ```
 
 The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Python distribution. Its project version is workspace tooling metadata and is not a package-family release version.
@@ -218,15 +218,15 @@ uv publish --dry-run \
 
 Prefer PyPI trusted publishing. The GitHub workflow
 `.github/workflows/publish-pypi.yml` requests a short-lived OIDC credential and
-does not require a stored PyPI token. Configure a `pypi` GitHub Environment and
-add this trusted publisher to each PyPI project (or as a pending publisher before
-the first upload):
+does not require a stored PyPI token. Configure one `pypi-<family>` GitHub
+Environment per package family and add the matching trusted publisher to each
+PyPI project (or as a pending publisher before the first upload). For Msgs:
 
 ```text
 Owner: Forgelab-Robotics
 Repository: forge
 Workflow: publish-pypi.yml
-Environment: pypi
+Environment: pypi-msgs
 ```
 
 Existing release tags can be published with `workflow_dispatch` by entering the

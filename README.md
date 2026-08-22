@@ -154,7 +154,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge
   GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
-  GIT_TAG forge-msgs-v1.0.1
+  GIT_TAG forge-msgs-v1.1.0
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
