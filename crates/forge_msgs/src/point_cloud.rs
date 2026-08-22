@@ -101,11 +101,12 @@ impl PointCloud {
     }
 
     pub fn from_record_batch(batch: &RecordBatch) -> Result<Self, PointCloudError> {
-        if batch.num_rows() == 0 {
+        if batch.num_rows() != 1 {
             return Err(PointCloudError::Invalid(
-                "RecordBatch must contain one row".to_string(),
+                "RecordBatch must contain exactly one row".to_string(),
             ));
         }
+        validate_required_fields(batch)?;
         Self::new(
             read_u32(batch, "width").map_err(PointCloudError::Invalid)?,
             read_u32(batch, "height").map_err(PointCloudError::Invalid)?,
@@ -167,6 +168,44 @@ impl PointCloud {
     }
 }
 
+fn validate_required_fields(batch: &RecordBatch) -> Result<(), PointCloudError> {
+    const REQUIRED_FIELDS: [&str; 10] = [
+        "width",
+        "height",
+        "is_dense",
+        "x",
+        "y",
+        "z",
+        "intensity",
+        "red",
+        "green",
+        "blue",
+    ];
+
+    let schema = batch.schema();
+    for name in REQUIRED_FIELDS {
+        let count = schema
+            .fields()
+            .iter()
+            .filter(|field| field.name() == name)
+            .count();
+        match count {
+            0 => {
+                return Err(PointCloudError::Invalid(format!(
+                    "missing required field '{name}'"
+                )));
+            }
+            1 => {}
+            count => {
+                return Err(PointCloudError::Invalid(format!(
+                    "duplicate required field '{name}' (found {count} occurrences)"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_optional_len(
     name: &str,
     actual: usize,
@@ -199,7 +238,49 @@ impl std::error::Error for PointCloudError {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow_array::builder::{Float32Builder, ListBuilder, UInt8Builder};
+    use arrow_array::{Array, ArrayRef, ListArray, RecordBatch, UInt32Array};
+    use arrow_schema::{DataType, Field, Schema};
+
     use super::PointCloud;
+
+    fn one_point_batch() -> RecordBatch {
+        PointCloud::from_xyz(vec![1.0], vec![2.0], vec![3.0])
+            .unwrap()
+            .to_record_batch()
+            .unwrap()
+    }
+
+    fn replace_x_column(batch: &RecordBatch, x: ListArray, nullable: bool) -> RecordBatch {
+        let x: ArrayRef = Arc::new(x);
+        let mut fields = batch.schema().fields().to_vec();
+        fields[3] = Arc::new(Field::new("x", x.data_type().clone(), nullable));
+        let mut columns = batch.columns().to_vec();
+        columns[3] = x;
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
+
+    fn duplicate_column(batch: &RecordBatch, name: &str) -> RecordBatch {
+        let schema = batch.schema();
+        let index = schema.index_of(name).unwrap();
+        let mut fields = schema.fields().to_vec();
+        fields.push(Arc::clone(&fields[index]));
+        let mut columns = batch.columns().to_vec();
+        columns.push(Arc::clone(batch.column(index)));
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
+
+    fn remove_column(batch: &RecordBatch, name: &str) -> RecordBatch {
+        let schema = batch.schema();
+        let index = schema.index_of(name).unwrap();
+        let mut fields = schema.fields().to_vec();
+        fields.remove(index);
+        let mut columns = batch.columns().to_vec();
+        columns.remove(index);
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
 
     #[test]
     fn point_cloud_roundtrip() {
@@ -229,6 +310,168 @@ mod tests {
         assert_eq!(sparse.width, 1);
         assert_eq!(sparse.height, 1);
         assert!(!sparse.is_dense);
+    }
+
+    #[test]
+    fn writer_schema_has_contract_order_types_and_non_nullability() {
+        let batch = one_point_batch();
+        let schema = batch.schema();
+        let fields = schema.fields();
+        let expected = [
+            ("width", DataType::UInt32),
+            ("height", DataType::UInt32),
+            ("is_dense", DataType::Boolean),
+            (
+                "x",
+                DataType::List(Arc::new(Field::new("item", DataType::Float32, true))),
+            ),
+            (
+                "y",
+                DataType::List(Arc::new(Field::new("item", DataType::Float32, true))),
+            ),
+            (
+                "z",
+                DataType::List(Arc::new(Field::new("item", DataType::Float32, true))),
+            ),
+            (
+                "intensity",
+                DataType::List(Arc::new(Field::new("item", DataType::Float32, true))),
+            ),
+            (
+                "red",
+                DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            ),
+            (
+                "green",
+                DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            ),
+            (
+                "blue",
+                DataType::List(Arc::new(Field::new("item", DataType::UInt8, true))),
+            ),
+        ];
+
+        assert_eq!(fields.len(), expected.len());
+        for (field, (name, data_type)) in fields.iter().zip(expected) {
+            assert_eq!(field.name(), name);
+            assert_eq!(field.data_type(), &data_type, "unexpected type for {name}");
+            assert!(!field.is_nullable(), "{name} must be non-nullable");
+        }
+    }
+
+    #[test]
+    fn from_record_batch_requires_exactly_one_row() {
+        let valid = one_point_batch();
+        let empty = RecordBatch::new_empty(valid.schema());
+        let empty_error = PointCloud::from_record_batch(&empty).unwrap_err();
+        assert_eq!(
+            empty_error.to_string(),
+            "invalid point cloud: RecordBatch must contain exactly one row"
+        );
+
+        let two_rows = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "width",
+                DataType::UInt32,
+                false,
+            )])),
+            vec![Arc::new(UInt32Array::from(vec![1, 1]))],
+        )
+        .unwrap();
+        let two_row_error = PointCloud::from_record_batch(&two_rows).unwrap_err();
+        assert_eq!(
+            two_row_error.to_string(),
+            "invalid point cloud: RecordBatch must contain exactly one row"
+        );
+    }
+
+    #[test]
+    fn from_record_batch_rejects_duplicate_required_fields() {
+        for name in [
+            "width",
+            "height",
+            "is_dense",
+            "x",
+            "y",
+            "z",
+            "intensity",
+            "red",
+            "green",
+            "blue",
+        ] {
+            let batch = duplicate_column(&one_point_batch(), name);
+            let error = PointCloud::from_record_batch(&batch).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "invalid point cloud: duplicate required field '{name}' (found 2 occurrences)"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn from_record_batch_rejects_missing_required_fields() {
+        for name in [
+            "width",
+            "height",
+            "is_dense",
+            "x",
+            "y",
+            "z",
+            "intensity",
+            "red",
+            "green",
+            "blue",
+        ] {
+            let batch = remove_column(&one_point_batch(), name);
+            let error = PointCloud::from_record_batch(&batch).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("invalid point cloud: missing required field '{name}'")
+            );
+        }
+    }
+
+    #[test]
+    fn from_record_batch_rejects_wrong_list_primitive() {
+        let mut x = ListBuilder::new(UInt8Builder::new());
+        x.values().append_value(1);
+        x.append(true);
+        let batch = replace_x_column(&one_point_batch(), x.finish(), false);
+
+        let error = PointCloud::from_record_batch(&batch).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid point cloud: x values must be float32"
+        );
+    }
+
+    #[test]
+    fn from_record_batch_rejects_null_list_cell() {
+        let mut x = ListBuilder::new(Float32Builder::new());
+        x.append(false);
+        let batch = replace_x_column(&one_point_batch(), x.finish(), true);
+
+        let error = PointCloud::from_record_batch(&batch).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid point cloud: x must contain one non-null list row"
+        );
+    }
+
+    #[test]
+    fn from_record_batch_rejects_null_child_value() {
+        let mut x = ListBuilder::new(Float32Builder::new());
+        x.values().append_null();
+        x.append(true);
+        let batch = replace_x_column(&one_point_batch(), x.finish(), false);
+
+        let error = PointCloud::from_record_batch(&batch).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid point cloud: x values must not contain nulls"
+        );
     }
 
     #[test]

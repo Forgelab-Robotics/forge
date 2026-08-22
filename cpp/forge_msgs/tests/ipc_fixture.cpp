@@ -8,7 +8,8 @@ namespace {
 
 int Usage() {
   std::cerr << "usage: forge_msgs_ipc_fixture <command> <path>\n"
-            << "commands: write/read-{text,audio,classification,keypoint2d,keypoint3d,segmentation,"
+            << "commands: write/read-{text,audio,point-cloud,classification,keypoint2d,keypoint3d,"
+               "segmentation,"
                "follow-joint-trajectory-goal,gripper-command-goal,gripper-command-feedback,"
                "gripper-command-result,move-joints-goal,move-pose-goal}\n";
   return 2;
@@ -83,6 +84,50 @@ int main(int argc, char** argv) {
     std::cout << audio->sample_rate << " " << audio->channels << " "
               << audio->sample_format << " " << audio->frame_count << " "
               << audio->data.size() << "\n";
+    return 0;
+  }
+
+  if (command == "write-point-cloud") {
+    forge_msgs::PointCloud value{2, 1, true, {1.0f, 2.0f}, {3.0f, 4.0f}, {5.0f, 6.0f},
+                                 {}, {255, 0}, {0, 255}, {0, 0}};
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-point-cloud") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::PointCloud::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    std::cout << value->width << " " << value->height << " " << value->x.size() << " "
+              << value->is_dense;
+    if (value->x.empty()) {
+      std::cout << " empty\n";
+      return 0;
+    }
+    std::cout << " " << value->x.back() << " " << value->y.back() << " " << value->z.back();
+    if (value->red.empty()) {
+      std::cout << " no-rgb";
+    } else {
+      std::cout << " " << static_cast<unsigned>(value->red.back()) << " "
+                << static_cast<unsigned>(value->green.back()) << " "
+                << static_cast<unsigned>(value->blue.back());
+    }
+    if (value->intensity.empty()) {
+      std::cout << " empty\n";
+    } else {
+      std::cout << " " << value->intensity.back() << "\n";
+    }
     return 0;
   }
 

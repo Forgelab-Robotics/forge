@@ -4,6 +4,12 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
+### forge-msgs
+
+- Align the Python `PointCloud` writer with the canonical non-nullable top-level Arrow schema already emitted by Rust and C++; field names, order, and physical value types are unchanged, and readers remain compatible with prior nullable schemas.
+- Harden `PointCloud` readers across Python, Rust, and C++ with exact single-row validation, stricter malformed-payload checks, duplicate-field rejection, and Python/C++ IPC coverage.
+- Document organized-cloud ordering, invalid-point, frame/time, and future packed-format semantics without changing the v1 fields.
+
 ## Package-family 1.0.1 releases - 2026-08-13
 
 | Package family | Version | Protected tag |
