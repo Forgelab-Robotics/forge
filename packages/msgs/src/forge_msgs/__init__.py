@@ -28,7 +28,7 @@ from forge_msgs.perception import (
     Keypoint3DSet,
     SegmentationMaskSet,
 )
-from forge_msgs.point_cloud import PointCloud
+from forge_msgs.point_cloud import PointCloud, PointCloudBatch, PointCloudView
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.teleop import TeleopObservation
 from forge_msgs.text import Text
@@ -74,6 +74,8 @@ __all__ = [
     "MovePoseGoal",
     "MovePoseResult",
     "PointCloud",
+    "PointCloudBatch",
+    "PointCloudView",
     "PolicyCommand",
     "PolicyCommandStatus",
     "Pose",

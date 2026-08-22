@@ -4,8 +4,7 @@ Forge message definitions for Dora dataflow.
 
 The canonical cross-language contract starts at
 `interfaces/forge_msgs/forge_msgs.v1.yaml`. That manifest references the
-versioned domain schemas that Python, Rust, and future C++ implementations
-should follow.
+versioned domain schemas followed by the Python, Rust, and C++ implementations.
 
 ## Core Messages
 
@@ -134,6 +133,62 @@ unorganized clouds use `height=1`. Coordinates use meters, while the coordinate
 frame is supplied by Dora metadata or node configuration. High-level
 constructors may infer unorganized clouds from `x/y/z` by setting `height=1`,
 `width=len(x)`, and `is_dense` from finite XYZ values.
+
+The owned `PointCloud` model uses Python lists and is intended for convenience,
+tests, and small clouds. Treat an instance as an immutable message value after
+construction. High-throughput producers can construct the same wire schema from
+typed NumPy buffers:
+
+```python
+import numpy as np
+from forge_msgs import PointCloudBatch, PointCloudView
+
+x = np.arange(640 * 480, dtype=np.float32).reshape(480, 640)
+y = np.zeros_like(x)
+z = np.ones_like(x)
+
+# Safe default: create an immutable payload snapshot.
+batch = PointCloudBatch.from_numpy(x=x, y=y, z=z).to_arrow()
+
+# Consumer-side field views share the Arrow value buffers and are read-only.
+view = PointCloudView.from_arrow(batch)
+assert view.x.shape == (640 * 480,)
+```
+
+A `PointCloudView` is not an immutable snapshot: mutations through any
+independent writable alias to the input Arrow storage remain observable.
+
+XYZ inputs are same-shape one- or two-dimensional `float32` arrays. A 2D shape
+infers organized `height/width`; view properties are always flat row-major
+arrays. Optional intensity is `float32` with the XYZ shape or a flat point-count
+shape. RGB is `uint8`, supplied either as three matching channel arrays or one
+interleaved `(..., 3)` array. `is_dense=None` scans XYZ once to infer density.
+
+`PointCloudBatch.from_numpy()` has explicit payload-buffer policies:
+
+- `copy="always"` is the safe default and snapshots every supplied attribute.
+- `copy="if_needed"` borrows only exact-dtype, naturally aligned, C-contiguous
+  arrays whose visible backing chain is read-only. Inputs that satisfy the shape
+  and casting contract but cannot be borrowed are copied.
+- `copy="never"` rejects any input that cannot be borrowed. Small scalar and
+  Arrow list-offset buffers are still allocated.
+- `casting="no"` is the default, so dtype mismatches are rejected. `safe` or
+  `same_kind` casting must be requested separately and requires a copy when the
+  dtype changes. Float32 and RGB range checks still apply.
+
+A three-array `(red, green, blue)` tuple can use the borrowing path. Interleaved
+`(..., 3)` RGB requires deinterleaving into the v1 SoA columns and is therefore
+rejected by `copy="never"`.
+
+When borrowing, Arrow retains the exported buffer lifetime, so callers do not
+need to keep source-array references alive manually. Callers are still
+responsible for ensuring that no remaining writable alias modifies the storage
+or re-enables writes until all derived Arrow batches and views are released.
+NumPy's read-only flag is a guard, not a guarantee against another alias. Use the
+default `copy="always"` whenever immutability cannot be guaranteed. Buffer
+sharing applies only to the local NumPy/PyArrow boundary; it does not imply that
+Dora IPC, networking, recording, or downstream layout conversion is end-to-end
+zero-copy.
 
 ## Motion Messages
 

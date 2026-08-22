@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import math
 import struct
 import subprocess
@@ -100,12 +101,26 @@ def main() -> int:
     args = parser.parse_args()
 
     sys.path.insert(0, args.pythonpath)
-    try:
-        import pyarrow as pa
-        from forge_msgs import AudioChunk, PointCloud, Text
-    except Exception as exc:  # pragma: no cover - exercised by CTest skip
-        print(f"skipping Python/C++ interop test: {exc}", file=sys.stderr)
+    missing_dependencies = [
+        name for name in ("numpy", "pyarrow") if importlib.util.find_spec(name) is None
+    ]
+    if missing_dependencies:  # pragma: no cover - exercised by CTest skip
+        print(
+            "skipping Python/C++ interop test: missing "
+            + ", ".join(missing_dependencies),
+            file=sys.stderr,
+        )
         return 77
+
+    import numpy as np
+    import pyarrow as pa
+    from forge_msgs import (
+        AudioChunk,
+        PointCloud,
+        PointCloudBatch,
+        PointCloudView,
+        Text,
+    )
 
     driver = Path(args.driver)
     if not driver.exists():
@@ -168,6 +183,19 @@ def main() -> int:
         )
         cpp_point_cloud = tmp_path / "cpp_point_cloud.arrow"
         subprocess.run([driver, "write-point-cloud", cpp_point_cloud], check=True)
+        cpp_point_cloud_view = PointCloudView.from_arrow(cpp_point_cloud.read_bytes())
+        assert cpp_point_cloud_view.to_owned() == PointCloud(
+            width=2,
+            height=1,
+            is_dense=True,
+            x=[1.0, 2.0],
+            y=[3.0, 4.0],
+            z=[5.0, 6.0],
+            red=[255, 0],
+            green=[0, 255],
+            blue=[0, 0],
+        )
+
         batch = _from_ipc_file(cpp_point_cloud)
         assert batch.schema == point_cloud_schema
         assert batch.num_rows == 1
@@ -182,23 +210,42 @@ def main() -> int:
         assert batch["green"][0].as_py() == [0, 255]
         assert batch["blue"][0].as_py() == [0, 0]
 
-        py_point_cloud_batch = PointCloud(
-            width=2,
-            height=1,
-            is_dense=True,
-            x=[10.0, 20.0],
-            y=[30.0, 40.0],
-            z=[50.0, 60.0],
-            red=[1, 2],
-            green=[3, 4],
-            blue=[5, 6],
+        expected_point_cloud = "2 1 2 1 20 40 60 2 4 6 empty"
+        py_owned_point_cloud = tmp_path / "py_owned_point_cloud.arrow"
+        _to_ipc_file(
+            PointCloud(
+                width=2,
+                height=1,
+                is_dense=True,
+                x=[10.0, 20.0],
+                y=[30.0, 40.0],
+                z=[50.0, 60.0],
+                red=[1, 2],
+                green=[3, 4],
+                blue=[5, 6],
+            ).to_arrow(),
+            py_owned_point_cloud,
+        )
+        out = subprocess.check_output(
+            [driver, "read-point-cloud", py_owned_point_cloud], text=True
+        ).strip()
+        assert out == expected_point_cloud
+
+        py_point_cloud_batch = PointCloudBatch.from_numpy(
+            x=np.array([10.0, 20.0], dtype=np.float32),
+            y=np.array([30.0, 40.0], dtype=np.float32),
+            z=np.array([50.0, 60.0], dtype=np.float32),
+            rgb=(
+                np.array([1, 2], dtype=np.uint8),
+                np.array([3, 4], dtype=np.uint8),
+                np.array([5, 6], dtype=np.uint8),
+            ),
         ).to_arrow()
-        py_point_cloud = tmp_path / "py_point_cloud.arrow"
+        py_point_cloud = tmp_path / "py_point_cloud_batch.arrow"
         _to_ipc_file(py_point_cloud_batch, py_point_cloud)
         out = subprocess.check_output(
             [driver, "read-point-cloud", py_point_cloud], text=True
         ).strip()
-        expected_point_cloud = "2 1 2 1 20 40 60 2 4 6 empty"
         assert out == expected_point_cloud
 
         point_cloud_columns = list(
