@@ -679,16 +679,20 @@ class ToolEndpointHandler:
         except ToolEndpointError as error:
             await emitter.reject()
             async with self._lock:
-                record.outcome = error.error
-                self._release_permit_locked(record)
+                if record.result is None:
+                    outcome = error.error
+                    self._release_permit_locked(record)
+                else:
+                    outcome = record.result
+                record.outcome = outcome
                 record.ready.set()
-            return (make_invoke_response_envelope(error.error, request),)
+            return (make_invoke_response_envelope(outcome, request),)
         except asyncio.CancelledError:
-            await asyncio.shield(self._finish_unknown(record, emitter))
+            await asyncio.shield(self._resolve_failed_action_start(record, emitter))
             raise
         except Exception:
-            unknown = await self._finish_unknown(record, emitter)
-            return (make_invoke_response_envelope(unknown, request),)
+            outcome = await self._resolve_failed_action_start(record, emitter)
+            return (make_invoke_response_envelope(outcome, request),)
 
         async with self._lock:
             if record.result is not None:
@@ -705,24 +709,29 @@ class ToolEndpointHandler:
         early_events = await emitter.accept()
         return (make_invoke_response_envelope(outcome, request), *early_events)
 
-    async def _finish_unknown(
+    async def _resolve_failed_action_start(
         self,
         record: _ExecutionRecord,
         emitter: _ActionEventEmitter,
     ) -> ToolResult:
         await emitter.reject()
-        unknown = ToolResult(
-            status="unknown",
-            error=ToolError(
-                code="FORGE_ENDPOINT_OUTCOME_UNKNOWN",
-                message=(
-                    "Action start failed after dispatch; the execution outcome "
-                    "cannot be recovered"
-                ),
-                retryable=False,
-            ),
-        )
         async with self._lock:
+            if record.result is not None:
+                record.outcome = record.result
+                record.ready.set()
+                return record.result
+
+            unknown = ToolResult(
+                status="unknown",
+                error=ToolError(
+                    code="FORGE_ENDPOINT_OUTCOME_UNKNOWN",
+                    message=(
+                        "Action start failed after dispatch; the execution outcome "
+                        "cannot be recovered"
+                    ),
+                    retryable=False,
+                ),
+            )
             record.outcome = unknown
             record.status = ToolExecutionStatus(
                 phase="unknown",
@@ -731,7 +740,7 @@ class ToolEndpointHandler:
             record.result = unknown
             self._release_permit_locked(record)
             record.ready.set()
-        return unknown
+            return unknown
 
     async def handle_invoke(
         self,

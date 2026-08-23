@@ -667,6 +667,57 @@ def test_action_terminal_event_requires_and_retains_matching_result() -> None:
         asyncio.run(action.emitter.emit(ToolEvent(type="heartbeat")))
 
 
+@pytest.mark.parametrize(
+    "failure",
+    (
+        pytest.param(
+            RuntimeError("start failed after terminal result was established"),
+            id="runtime-error",
+        ),
+        pytest.param(
+            ToolEndpointError(
+                ToolError(
+                    code="FORGE_ENDPOINT_REJECTED",
+                    message="structured failure after terminal result was established",
+                )
+            ),
+            id="structured-endpoint-error",
+        ),
+    ),
+)
+def test_action_start_failure_preserves_an_established_terminal_result(
+    failure: Exception,
+) -> None:
+    result = ToolResult(status="succeeded", outputs={"position": "home"})
+
+    class TerminalThenFailingAction(RecordingAction):
+        async def start(
+            self,
+            request: ToolRequest,
+            context: ToolContext,
+            events: ToolEventEmitter,
+        ) -> ToolAccepted:
+            self.start_calls += 1
+            self.emitter = events
+            await events.emit(ToolEvent(type="executor_completed"))
+            raise failure
+
+    action = TerminalThenFailingAction(
+        status=ToolExecutionStatus(phase="completed"),
+        result=ToolResultResponse(status="available", result=result),
+    )
+    handler = _action_handler(action)
+
+    first = asyncio.run(handler.dispatch(_action_request(request_id="request-1")))[0]
+    duplicate = asyncio.run(
+        handler.dispatch(_action_request(request_id="request-2"))
+    )[0]
+
+    assert invoke_response_from_payload(first.payload) == result
+    assert invoke_response_from_payload(duplicate.payload) == result
+    assert action.start_calls == 1
+
+
 def test_action_status_result_and_control_dispatch_provider_models() -> None:
     result = ToolResult(status="succeeded", outputs={"position": "home"})
     action = RecordingAction()
