@@ -87,9 +87,10 @@ messages:
       - Non-event messages require null sequence.
       - payload_json must be a strict JSON object with unique keys, valid Unicode scalar values, finite numbers, integers in ±(2^53-1), and nesting no deeper than 64. Message-specific payload validation belongs to forge-tool.
     notes:
-      - This is the first tagged/public Tool protocol contract; earlier untagged prototypes are not compatible even if they used the same v1alpha1 protocol identifier.
+      - This schema is the release candidate for the first tagged/public Tool protocol contract; earlier untagged prototypes are not compatible even if they used the same v1alpha1 protocol identifier.
       - Python, Rust, and C++ bindings plus Gateway and provider deployments must upgrade atomically; mixed prototype/current deployments are unsupported.
       - The carrier has no observation timestamp. Dora event context supplies transport observation time.
       - The stable correlation fields are real Arrow columns so routing and recordings do not need to parse payload_json.
       - Arrow null represents an omitted optional logical-envelope field; empty strings are not null sentinels.
+      - A provider-originated tool.event must supply its concrete endpoint_instance_id even though the generic pre-routing Tool carrier field is nullable.
       - ToolMessage is a carrier for the Endpoint protocol, not a Runtime ToolSpec or caller-facing invocation API.

@@ -7,18 +7,19 @@ helpers for robot drivers and policy nodes, and typed tool endpoint contracts.
 This repository intentionally focuses on the framework layer:
 
 - `interfaces/forge_msgs/` contains the canonical message schema.
-- `interfaces/forge_tool/` documents the language-neutral ToolEndpoint Wire Protocol.
+- `interfaces/forge_tool/` contains the Tool documentation index, architecture, and
+  language-neutral Wire Protocol.
 - `packages/msgs` provides Python message models and Arrow serialization.
 - `crates/forge_msgs` provides the Rust message implementation.
 - `cpp/forge_msgs` provides the C++ message implementation.
 - `packages/robot` provides robot driver protocols, safety clipping helpers, and
-  a standard Dora robot node loop.
+  a standard Dora Adapter node loop.
 - `cpp/forge_robot` provides the C++ robot driver interfaces, safety helpers,
-  and optional Dora C++ node runner.
-- `packages/policy` provides policy adapter protocols and a standard Dora policy
-  node loop.
-- `packages/tool` provides dependency-free Python contracts for describing and
-  invoking query, action, and session tools.
+  and optional Dora C++ Adapter runner.
+- `packages/policy` provides policy implementation protocols and a standard Dora
+  Operator node loop.
+- `packages/tool` provides dependency-free ToolEndpoint SPI and logical Wire models,
+  with embedded Query and Action handling; Session dispatch remains future work.
 - `packages/common` and `crates/forge_common` provide shared utilities,
   currently including logging and tracing helpers.
 - `packages/kinematics` provides optional Pinocchio-based URDF forward
@@ -50,16 +51,22 @@ requires its next major version. See
 tags, and validation procedures.
 
 Forge ToolEndpoint v1alpha1 has no earlier tagged/public Tool release. Its first release
-is atomic across `forge-tool`, Python/Rust/C++ `ToolMessage` bindings, Gateway, and
-providers; earlier untagged prototypes are incompatible, and mixed deployments are not
-supported as backward compatible.
+candidate is coordinated across `forge-tool`, Python/Rust/C++ `ToolMessage` bindings,
+Gateway, and providers; earlier untagged prototypes are incompatible, and mixed
+deployments are not supported as backward compatible.
+
+## Tool documentation
+
+Start with [`interfaces/forge_tool/README.md`](interfaces/forge_tool/README.md). It links
+the architecture, normative Wire protocol, Python package guide, and canonical Arrow
+schema without duplicating their contracts.
 
 ## Repository Layout
 
 ```text
 forge/
 ├── interfaces/forge_msgs/      # Canonical cross-language message schema
-├── interfaces/forge_tool/      # Language-neutral ToolEndpoint Wire Protocol
+├── interfaces/forge_tool/      # Tool architecture and Wire Protocol
 ├── packages/common/            # Python shared utilities
 ├── packages/kinematics/        # Python Pinocchio FK/Jacobian/IK library
 ├── packages/msgs/              # Python message models and Arrow conversion
@@ -312,31 +319,88 @@ Core messages include:
 - `Pose`, `PolicyCommand`, and policy status/control messages
 - `ToolMessage` for Forge ToolEndpoint protocol transport
 
-`ToolMessage` is implemented in Python, Rust, and C++ as an exact single-row,
-ten-column Arrow carrier ordered as `protocol`, `message_type`, `request_id`,
-`invocation_id`, `attempt_id`, `endpoint_id`, `endpoint_instance_id`,
-`operation`, `sequence`, and `payload_json`. Nullable columns use Arrow null when
-allowed by the message class; management exchanges, including
-`endpoint.registry.response`, require `request_id`, while unsolicited `endpoint.status`
-requires null.
-`payload_json` encodes the logical payload object, and message-specific
-validation remains in `forge-tool`. There is no observation timestamp column.
-Bidirectional Arrow IPC compatibility is covered between Python and C++.
+`ToolMessage` is the exact single-row Arrow carrier for ToolEndpoint Wire messages.
+Its canonical column order, types, nullability, and generic validation live in
+[`interfaces/forge_msgs/tool.v1.yaml`](interfaces/forge_msgs/tool.v1.yaml); logical
+payload semantics live in the
+[ToolEndpoint protocol](interfaces/forge_tool/PROTOCOL.md). `payload_json` contains only
+the logical payload object, and message-specific validation remains in `forge-tool`.
+Python, Rust, and C++ implementations exist, with bidirectional Python/C++ Arrow IPC
+coverage.
 
-## Dora Node Semantics
+## Forge Node Model
 
-`forge-robot` and `cpp/forge_robot` use fixed input and output names for
-standard robot nodes:
+Every deployed Forge Dora node is classified by its primary responsibility as one of two
+categories:
+
+| Category | Responsibility | Typical examples |
+| --- | --- | --- |
+| **Operator** | Performs Forge-native computation inside the graph; its primary boundary is Forge messages. | Policy, perception, planner, controller, simulator. |
+| **Adapter** | Owns communication with an external device, service, runtime, or caller and translates its protocol/lifecycle into Forge messages. | Robot, camera, Gateway, storage or cloud connector. |
+
+```mermaid
+flowchart TB
+    subgraph external[External world]
+        callers[Agents, Web and API callers]
+        camera_device[Camera device]
+        robot_device[Robot device]
+    end
+
+    subgraph forge[Forge Dora graph]
+        subgraph adapters[Adapter nodes]
+            gateway[Gateway]
+            camera[Camera]
+            robot[Robot]
+        end
+
+        subgraph operators[Operator nodes]
+            perception[Perception]
+            policy[Policy]
+            simulator[Simulator]
+        end
+    end
+
+    callers <--> gateway
+    camera_device --> camera
+    robot <--> robot_device
+    camera -->|sensor data| perception
+    perception -->|observations| policy
+    policy -->|commands| robot
+    policy <--> simulator
+```
+
+Classification follows the node's primary ownership boundary, not message direction or
+whether it performs local computation. The diagram illustrates ownership boundaries,
+not allowed topology: either category may exchange Forge messages with either category.
+External Agents, applications, devices, and services are outside this node taxonomy; a
+Forge Adapter owns their boundary. A simulator is an Operator because its world model is
+internal computation. Gateway is an Adapter because it owns external caller and routing
+boundaries.
+
+`ToolEndpoint` is orthogonal to this classification: either an Operator or Adapter may
+expose Query, Action, or Session capabilities. It does not create a third node category.
+See the [Tool architecture](interfaces/forge_tool/ARCHITECTURE.md) for the control-plane
+overlay.
+
+Some implementation interfaces retain names such as `PolicyAdapter`. That name describes
+a plug-in hosted inside a policy Operator node; it does not classify the node itself as
+an Adapter.
+
+### Standard runners
+
+`forge-robot` and `cpp/forge_robot` use fixed input and output names for standard Robot
+Adapter nodes:
 
 - input `tick` publishes output `state`
 - input `action` or `action/<source>` accepts a sparse low-level `JointCommand`; namespaced inputs allow disjoint arm and gripper streams, while overlapping command sources require explicit arbitration
 - input `master_state` mirrors a leader `JointState` to a position command
-- input `locomotion_command` accepts a `LocomotionCommand` when the driver
-  supports locomotion
+- input `locomotion_command` accepts a `LocomotionCommand` when the driver supports
+  locomotion
 
-`forge-policy` provides a similar runner pattern for policy adapters. The runner
-handles ticks, proprioceptive state, image caching, and policy lifecycle
-commands so algorithm code can focus on inference and command generation.
+`forge-policy` provides the standard Policy Operator runner. It hosts a policy
+implementation (currently exposed through the `PolicyAdapter` Python protocol) and
+handles ticks, proprioceptive state, image caching, and policy lifecycle commands so
+algorithm code can focus on inference and command generation.
 
 ## Configuration
 
