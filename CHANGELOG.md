@@ -16,7 +16,10 @@ Forge package families are versioned independently. Implementations of the same 
 - Define identity and correlation without promising replay, persistent idempotency, exactly-once execution, or automatic retry. Action duplicate suppression is private, bounded, and ends on eviction or process restart.
 - Prepare v1alpha1 as the first coordinated tagged/public Tool release candidate; earlier untagged prototypes are incompatible and mixed logical-package/carrier/Gateway/provider deployments are unsupported.
 
-### Msgs 1.1.0
+### Msgs 1.2.0
+
+This backward-compatible message-family release is coordinated with Tool 0.1.0 and must
+be published first so the Tool Dora binding can resolve its carrier dependency.
 
 - Add `tool.v1.yaml` and `forge_msgs.ToolMessage` alongside `PolicyCommand` and `PolicyCommandStatus` in the canonical cross-language schema and the Python, Rust, and C++ carrier implementations.
 - Define an exact ten-column, single-row Arrow carrier whose optional columns use null, whose `payload_json` contains the logical payload object, and which has no observation timestamp; Python `from_arrow()` additionally supports a caller-configured pre-validation raw payload byte limit.
@@ -24,13 +27,33 @@ Forge package families are versioned independently. Implementations of the same 
 - Add bidirectional Python/C++ Arrow IPC compatibility coverage for the carrier; Rust provides Arrow `RecordBatch` conversion without a claimed Rust/Python IPC interop test.
 - Require C++20 for `forge_msgs_cpp` and propagate that requirement to CMake consumers with `cxx_std_20`.
 
-### Release tooling
+## forge-msgs 1.1.0 - 2026-08-22
+
+Protected tag: `forge-msgs-v1.1.0`
+
+- Add Python `PointCloudBatch.from_numpy()` and `PointCloudView.from_arrow()` APIs with explicit NumPy copy/casting policies, read-only Arrow-backed field views, and local payload-buffer sharing for high-throughput producers and consumers.
+- Align the Python `PointCloud` writer with the canonical non-nullable top-level Arrow schema already emitted by Rust and C++; field names, order, physical value types, payload values, and the canonical v1 contract are unchanged, and readers remain compatible with prior nullable schemas.
+- Harden `PointCloud` readers across Python, Rust, and C++ with exact single-row validation, stricter malformed-payload checks, duplicate-field rejection, complete IPC stream consumption, and expanded Python/C++ interoperability coverage.
+- Document organized-cloud ordering, invalid-point, frame/time, buffer ownership, and future packed-format semantics without changing the v1 fields.
+
+## Package-family 1.0.1 releases - 2026-08-13
+
+| Package family | Version | Protected tag |
+|---|---:|---|
+| Common | `1.0.1` | `forge-common-v1.0.1` |
+| Msgs | `1.0.1` | `forge-msgs-v1.0.1` |
+| Robot | `1.0.1` | `forge-robot-v1.0.1` |
+| Policy | `1.0.1` | `forge-policy-v1.0.1` |
+| Kinematics | `1.0.1` | `forge-kinematics-v1.0.1` |
+
+### Packaging
 
 - Include the complete Apache-2.0 `LICENSE` in every Python wheel and source distribution.
 - Add one repository-level command to cleanly build and validate all Python distributions and generate `SHA256SUMS`.
 - Validate wheel and sdist identity, Apache-2.0 metadata, exact license layout, and unexpected output entries.
 - Add guarded, single-family release candidate builds while retaining all-family local validation.
-- Make CI validate all Python distributions instead of only `forge-kinematics`.
+- Make CI validate all five Python distributions instead of only `forge-kinematics`.
+- Add repository, changelog, and issue tracker links to the published Python package metadata.
 
 ## Initial package-family 1.0 releases - 2026-08-02
 

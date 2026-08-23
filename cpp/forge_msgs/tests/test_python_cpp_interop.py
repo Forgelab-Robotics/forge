@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import math
 import struct
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 def _to_ipc_file(batch, path: Path) -> None:
@@ -39,6 +41,42 @@ def _record_batch(arrays: list, fields: list[tuple[str, object]]):
     return pa.RecordBatch.from_arrays(arrays, schema=schema)
 
 
+def _named_record_batch(columns: list[tuple[str, Any]]):
+    return _record_batch(
+        [array for _, array in columns],
+        [(name, array.type) for name, array in columns],
+    )
+
+
+def _replace_named_array(
+    columns: list[tuple[str, Any]], name: str, replacement: Any
+) -> list[tuple[str, Any]]:
+    return [
+        (column_name, replacement if column_name == name else array)
+        for column_name, array in columns
+    ]
+
+
+def _assert_point_cloud_rejected(
+    driver: Path,
+    batch: Any,
+    path: Path,
+    stderr_fragments: tuple[str, ...],
+) -> None:
+    _to_ipc_file(batch, path)
+    result = subprocess.run(
+        [driver, "read-point-cloud", path],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0, f"C++ reader unexpectedly accepted {path.name}"
+    for fragment in stderr_fragments:
+        assert fragment in result.stderr, (
+            f"expected {fragment!r} in stderr for {path.name}, got {result.stderr!r}"
+        )
+
+
 def _assert_schema(batch, fields: list[tuple[str, object]]) -> None:
     assert batch.schema.names == [name for name, _ in fields]
     assert [field.type for field in batch.schema] == [
@@ -69,14 +107,27 @@ def main() -> int:
     args = parser.parse_args()
 
     sys.path.insert(0, args.pythonpath)
-    try:
-        import pyarrow as pa
-    except ModuleNotFoundError as exc:  # pragma: no cover - optional CTest environment
-        if exc.name != "pyarrow":
-            raise
-        print(f"skipping Python/C++ interop test: {exc}", file=sys.stderr)
+    missing_dependencies = [
+        name for name in ("numpy", "pyarrow") if importlib.util.find_spec(name) is None
+    ]
+    if missing_dependencies:  # pragma: no cover - exercised by CTest skip
+        print(
+            "skipping Python/C++ interop test: missing "
+            + ", ".join(missing_dependencies),
+            file=sys.stderr,
+        )
         return 77
-    from forge_msgs import AudioChunk, Text, ToolMessage
+
+    import numpy as np
+    import pyarrow as pa
+    from forge_msgs import (
+        AudioChunk,
+        PointCloud,
+        PointCloudBatch,
+        PointCloudView,
+        Text,
+        ToolMessage,
+    )
 
     driver = Path(args.driver)
     if not driver.exists():
@@ -200,7 +251,188 @@ def main() -> int:
 
         string_list = pa.list_(pa.string())
         f32_list = pa.list_(pa.float32())
+        u8_list = pa.list_(pa.uint8())
         u32_list = pa.list_(pa.uint32())
+
+        point_cloud_schema = pa.schema(
+            [
+                pa.field("width", pa.uint32(), nullable=False),
+                pa.field("height", pa.uint32(), nullable=False),
+                pa.field("is_dense", pa.bool_(), nullable=False),
+                pa.field("x", f32_list, nullable=False),
+                pa.field("y", f32_list, nullable=False),
+                pa.field("z", f32_list, nullable=False),
+                pa.field("intensity", f32_list, nullable=False),
+                pa.field("red", u8_list, nullable=False),
+                pa.field("green", u8_list, nullable=False),
+                pa.field("blue", u8_list, nullable=False),
+            ]
+        )
+        cpp_point_cloud = tmp_path / "cpp_point_cloud.arrow"
+        subprocess.run([driver, "write-point-cloud", cpp_point_cloud], check=True)
+        cpp_point_cloud_view = PointCloudView.from_arrow(cpp_point_cloud.read_bytes())
+        assert cpp_point_cloud_view.to_owned() == PointCloud(
+            width=2,
+            height=1,
+            is_dense=True,
+            x=[1.0, 2.0],
+            y=[3.0, 4.0],
+            z=[5.0, 6.0],
+            red=[255, 0],
+            green=[0, 255],
+            blue=[0, 0],
+        )
+
+        batch = _from_ipc_file(cpp_point_cloud)
+        assert batch.schema == point_cloud_schema
+        assert batch.num_rows == 1
+        assert batch["width"][0].as_py() == 2
+        assert batch["height"][0].as_py() == 1
+        assert batch["is_dense"][0].as_py() is True
+        _assert_close(batch["x"][0].as_py(), [1.0, 2.0])
+        _assert_close(batch["y"][0].as_py(), [3.0, 4.0])
+        _assert_close(batch["z"][0].as_py(), [5.0, 6.0])
+        assert batch["intensity"][0].as_py() == []
+        assert batch["red"][0].as_py() == [255, 0]
+        assert batch["green"][0].as_py() == [0, 255]
+        assert batch["blue"][0].as_py() == [0, 0]
+
+        expected_point_cloud = "2 1 2 1 20 40 60 2 4 6 empty"
+        py_owned_point_cloud = tmp_path / "py_owned_point_cloud.arrow"
+        _to_ipc_file(
+            PointCloud(
+                width=2,
+                height=1,
+                is_dense=True,
+                x=[10.0, 20.0],
+                y=[30.0, 40.0],
+                z=[50.0, 60.0],
+                red=[1, 2],
+                green=[3, 4],
+                blue=[5, 6],
+            ).to_arrow(),
+            py_owned_point_cloud,
+        )
+        out = subprocess.check_output(
+            [driver, "read-point-cloud", py_owned_point_cloud], text=True
+        ).strip()
+        assert out == expected_point_cloud
+
+        py_point_cloud_batch = PointCloudBatch.from_numpy(
+            x=np.array([10.0, 20.0], dtype=np.float32),
+            y=np.array([30.0, 40.0], dtype=np.float32),
+            z=np.array([50.0, 60.0], dtype=np.float32),
+            rgb=(
+                np.array([1, 2], dtype=np.uint8),
+                np.array([3, 4], dtype=np.uint8),
+                np.array([5, 6], dtype=np.uint8),
+            ),
+        ).to_arrow()
+        py_point_cloud = tmp_path / "py_point_cloud_batch.arrow"
+        _to_ipc_file(py_point_cloud_batch, py_point_cloud)
+        out = subprocess.check_output(
+            [driver, "read-point-cloud", py_point_cloud], text=True
+        ).strip()
+        assert out == expected_point_cloud
+
+        point_cloud_columns = list(
+            zip(
+                py_point_cloud_batch.schema.names,
+                py_point_cloud_batch.columns,
+                strict=True,
+            )
+        )
+        reordered_point_cloud = tmp_path / "py_point_cloud_reordered_extra.arrow"
+        _to_ipc_file(
+            _named_record_batch(
+                [
+                    *reversed(point_cloud_columns),
+                    ("extra", pa.array(["ignored"], type=pa.string())),
+                ]
+            ),
+            reordered_point_cloud,
+        )
+        out = subprocess.check_output(
+            [driver, "read-point-cloud", reordered_point_cloud], text=True
+        ).strip()
+        assert out == expected_point_cloud
+
+        width_column = next(column for column in point_cloud_columns if column[0] == "width")
+        malformed_point_clouds = [
+            (
+                "two_rows",
+                _named_record_batch(
+                    [
+                        (name, pa.concat_arrays([array, array]))
+                        for name, array in point_cloud_columns
+                    ]
+                ),
+                ("RecordBatch", "one row"),
+            ),
+            (
+                "null_scalar",
+                _named_record_batch(
+                    _replace_named_array(
+                        point_cloud_columns,
+                        "width",
+                        pa.array([None], type=pa.uint32()),
+                    )
+                ),
+                ("width", "non-null scalar"),
+            ),
+            (
+                "null_list_cell",
+                _named_record_batch(
+                    _replace_named_array(
+                        point_cloud_columns,
+                        "x",
+                        pa.array([None], type=f32_list),
+                    )
+                ),
+                ("x", "non-null list"),
+            ),
+            (
+                "null_list_item",
+                _named_record_batch(
+                    _replace_named_array(
+                        point_cloud_columns,
+                        "x",
+                        pa.array([[10.0, None]], type=f32_list),
+                    )
+                ),
+                ("x", "must not contain nulls"),
+            ),
+            (
+                "wrong_list_primitive",
+                _named_record_batch(
+                    _replace_named_array(
+                        point_cloud_columns,
+                        "x",
+                        pa.array([[10.0, 20.0]], type=pa.list_(pa.float64())),
+                    )
+                ),
+                ("x", "float32"),
+            ),
+            (
+                "missing_required_field",
+                _named_record_batch(
+                    [column for column in point_cloud_columns if column[0] != "width"]
+                ),
+                ("missing", "width"),
+            ),
+            (
+                "duplicate_required_field",
+                _named_record_batch([width_column, *point_cloud_columns]),
+                ("width", "column"),
+            ),
+        ]
+        for case_name, malformed_batch, stderr_fragments in malformed_point_clouds:
+            _assert_point_cloud_rejected(
+                driver,
+                malformed_batch,
+                tmp_path / f"py_point_cloud_{case_name}.arrow",
+                stderr_fragments,
+            )
 
         cpp_classification = tmp_path / "cpp_classification.arrow"
         subprocess.run([driver, "write-classification", cpp_classification], check=True)

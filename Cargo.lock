@@ -215,16 +215,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge_common"
-version = "1.0.0"
-dependencies = [
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "forge_msgs"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -233,6 +225,14 @@ dependencies = [
  "ndarray",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "forgelab_common"
+version = "1.0.1"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

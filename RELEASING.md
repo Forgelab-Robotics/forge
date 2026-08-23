@@ -8,11 +8,11 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 
 ```toml
 [packages]
-common = "1.0.0"
-msgs = "1.1.0"
-robot = "1.0.0"
-policy = "1.0.0"
-kinematics = "1.0.0"
+common = "1.0.1"
+msgs = "1.2.0"
+robot = "1.0.1"
+policy = "1.0.1"
+kinematics = "1.0.1"
 tool = "0.1.0"
 ```
 
@@ -49,8 +49,8 @@ Use the tag for the exact family being consumed:
 
 ```toml
 [tool.uv.sources]
-forge-msgs = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", tag = "forge-msgs-v1.0.0", subdirectory = "packages/msgs" }
-forge-common = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", tag = "forge-common-v1.0.0", subdirectory = "packages/common" }
+forge-msgs = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-msgs-v1.0.1", subdirectory = "packages/msgs" }
+forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v1.0.1", subdirectory = "packages/common" }
 ```
 
 A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from each protected tag. Protected release tags must never be moved.
@@ -66,15 +66,15 @@ A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from ea
 
 When one family introduces a dependency whose minimum version is being released from
 the same revision, publish the dependency family first. For the current candidates,
-`forge-msgs 1.1.0` must be available before publishing `forge-tool 0.1.0`, so
-`forge-tool[dora]` can resolve its `forge-msgs>=1.1.0,<2` requirement.
+`forge-msgs 1.2.0` must be available before publishing `forge-tool 0.1.0`, so
+`forge-tool[dora]` can resolve its `forge-msgs>=1.2.0,<2` requirement.
 
 `./scripts/check_release_versions.py` verifies family synchronization, workspace membership, internal Python requirements, uv/Cargo locks, and the Msgs interface major. In GitLab and GitHub tag pipelines it also reads `CI_COMMIT_TAG` or `GITHUB_REF_NAME` and rejects unknown families, non-SemVer tags, and tags whose version differs from `versions.toml`.
 
 A tag can be checked locally before creation:
 
 ```bash
-./scripts/check_release_versions.py --tag forge-msgs-v1.1.0
+./scripts/check_release_versions.py --tag forge-msgs-v1.2.0
 ```
 
 ## Release requirements
@@ -159,6 +159,102 @@ ctest --test-dir build/release/forge_robot --output-on-failure
 ```
 
 `cargo package --allow-dirty` may be used while preparing a release candidate. Final package verification and tag creation must use a clean working tree without `--allow-dirty`.
+
+## Publishing Rust crates to crates.io
+
+The public distribution names and Rust library targets are:
+
+| Family | crates.io distribution | Rust library target |
+|---|---|---|
+| Common | `forgelab_common` | `forge_common` |
+| Msgs | `forge_msgs` | `forge_msgs` |
+
+The Common distribution uses the `forgelab_` prefix because the crates.io
+`forge_common`/`forge-common` namespace is owned by an unrelated project. The
+explicit `forge_common` library target preserves existing Rust imports. Each
+crate-local `LICENSE` must exactly match the repository root Apache-2.0 license
+so the published archive carries the complete license text.
+
+Validate each crate before uploading from the clean release revision:
+
+```bash
+cargo publish -p forgelab_common --locked --dry-run
+cargo publish -p forge_msgs --locked --dry-run
+```
+
+For local publishing, authenticate with `cargo login`, then publish only the
+crate belonging to the release family:
+
+```bash
+cargo publish -p forgelab_common --locked
+cargo publish -p forge_msgs --locked
+```
+
+Never store a crates.io token in the repository. crates.io does not permit
+replacing an uploaded version; increment the affected family version after an
+incorrect upload rather than attempting to reuse it.
+
+## Publishing Python distributions to PyPI
+
+Publish only artifacts produced by a clean, single-family release build. Use a
+separate output directory for each family because every build cleans its output
+directory:
+
+```bash
+uv run python scripts/build_python_distributions.py \
+  --release-family common --out-dir dist/release/python/common
+uv run python scripts/build_python_distributions.py \
+  --release-family msgs --out-dir dist/release/python/msgs
+uv run python scripts/build_python_distributions.py \
+  --release-family tool --out-dir dist/release/python/tool
+uv run python scripts/build_python_distributions.py \
+  --release-family kinematics --out-dir dist/release/python/kinematics
+uv run python scripts/build_python_distributions.py \
+  --release-family policy --out-dir dist/release/python/policy
+uv run python scripts/build_python_distributions.py \
+  --release-family robot --out-dir dist/release/python/robot
+```
+
+Pass only the wheel and source archive; `SHA256SUMS` is release metadata and
+must not be uploaded as a Python distribution. Configure authentication before
+the dry run because `uv publish --dry-run` still validates authentication
+parameters:
+
+```bash
+uv publish --dry-run \
+  dist/release/python/common/*.whl \
+  dist/release/python/common/*.tar.gz
+```
+
+Prefer PyPI trusted publishing. The GitHub workflow
+`.github/workflows/publish-pypi.yml` requests a short-lived OIDC credential and
+does not require a stored PyPI token. Configure one `pypi-<family>` GitHub
+Environment per package family and add the matching trusted publisher to each
+PyPI project (or as a pending publisher before the first upload). For Msgs:
+
+```text
+Owner: Forgelab-Robotics
+Repository: forge
+Workflow: publish-pypi.yml
+Environment: pypi-msgs
+```
+
+Existing release tags can be published with `workflow_dispatch` by entering the
+full immutable family tag. Future `forge-*-v*` tag pushes trigger the same
+workflow automatically. In both cases the workflow checks out and verifies the
+annotated tag, builds only that family, stores the artifacts for audit, and
+publishes only its wheel and source archive.
+
+For token-based local publishing, provide a scoped token through the protected
+`UV_PUBLISH_TOKEN` environment variable; never store it in the repository.
+Publish in dependency order: `common`, `msgs`, `tool`, `kinematics`, `policy`, then
+`robot`. In particular, publish Msgs before Tool because the Tool Dora extra requires the
+new carrier version. Verify each exact version from PyPI in a fresh environment before
+continuing to dependent packages.
+
+PyPI does not permit replacing an uploaded file or reusing a released version.
+If an upload is wrong, increment that family version and create a new immutable
+tag rather than attempting to overwrite it.
 
 ## GitLab release procedure
 

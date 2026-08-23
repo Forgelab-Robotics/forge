@@ -31,10 +31,11 @@ packages, for example a separate `forge_robots` repository.
 ## Status
 
 Forge tracks six independently versioned package families: Common, Msgs, Robot,
-Policy, Kinematics, and Tool. The first five have stable `1.0.0` baselines; current
-unreleased manifests stage Msgs `1.1.0` and Tool `0.1.0`. Implementations of one
-family across Python, Rust, C++, and the language-neutral interface remain
-synchronized; unrelated families may release at different rates.
+Policy, Kinematics, and Tool. Common, Robot, Policy, and Kinematics have published
+`1.0.1` releases, while Msgs has published `1.1.0`. Current unreleased manifests stage
+Msgs `1.2.0` and Tool `0.1.0`. Implementations of one family across Python, Rust, C++,
+and the language-neutral interface remain synchronized; unrelated families may release
+at different rates.
 
 Each release is identified by a protected family tag such as
 `forge-msgs-v1.0.0`; Tool releases use `forge-tool-v<semver>`. Historical generic
@@ -117,6 +118,13 @@ Build the Rust workspace:
 cargo build --workspace
 ```
 
+Published package names differ only where crates.io ownership requires it:
+
+| Family | PyPI distribution | crates.io distribution | Import/library name |
+|---|---|---|---|
+| Common | `forge-common` | `forgelab_common` | `forge_common` |
+| Msgs | `forge-msgs` | `forge_msgs` | `forge_msgs` |
+
 Build the C++ `forge_msgs` library:
 
 ```bash
@@ -167,8 +175,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-msgs-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-msgs-v1.1.0
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
@@ -187,8 +195,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge_common
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-common-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-common-v1.0.1
   SOURCE_SUBDIR cpp/forge_common
 )
 FetchContent_MakeAvailable(forge_common)
@@ -207,8 +215,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   forge_robot
-  GIT_REPOSITORY https://gitlab.ex-ai.cn/meta-emt/framework/forge.git
-  GIT_TAG forge-robot-v1.0.0
+  GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
+  GIT_TAG forge-robot-v1.0.1
   SOURCE_SUBDIR cpp/forge_robot
 )
 FetchContent_MakeAvailable(forge_robot)

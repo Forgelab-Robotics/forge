@@ -306,12 +306,12 @@ dev = [
 
 [[package]]
 name = "forge-common"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/common" }
 
 [[package]]
 name = "forge-kinematics"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/kinematics" }
 dependencies = [
     { name = "numpy" },
@@ -333,7 +333,7 @@ provides-extras = ["least-squares"]
 
 [[package]]
 name = "forge-msgs"
-version = "1.1.0"
+version = "1.2.0"
 source = { editable = "packages/msgs" }
 dependencies = [
     { name = "numpy" },
@@ -359,7 +359,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "forge-policy"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/policy" }
 dependencies = [
     { name = "dora-rs" },
@@ -374,7 +374,7 @@ requires-dist = [
 
 [[package]]
 name = "forge-robot"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/robot" }
 dependencies = [
     { name = "dora-rs" },

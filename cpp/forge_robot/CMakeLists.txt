@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(forge_robot_cpp VERSION 1.0.0 LANGUAGES CXX)
+project(forge_robot_cpp VERSION 1.0.1 LANGUAGES CXX)
 
 find_package(Python3 COMPONENTS Interpreter)
 

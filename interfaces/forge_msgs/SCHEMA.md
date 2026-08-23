@@ -193,11 +193,41 @@ Fields:
 - `intensity: list<float32>`
 - `red/green/blue: list<uint8>`
 
-XYZ coordinates use meters. Optional attribute columns are empty or match the
-point count. The coordinate frame comes from Dora metadata or node
-configuration. High-level constructors may infer unorganized clouds from
-`x/y/z` by setting `height=1`, `width=len(x)`, and `is_dense` from finite XYZ
-values.
+Rules:
+
+- XYZ coordinates use meters.
+- Canonical writers emit exactly one row in the declared field order and mark
+  every top-level field non-nullable. Required scalar/list cells and list items
+  are non-null.
+- Readers resolve required fields by name and require their exact physical Arrow
+  types. They may accept reordered fields and ignore unknown fields. Missing,
+  duplicated, null, or malformed required fields are invalid.
+- `width * height` equals the point count. Because Arrow `list<T>` uses signed
+  32-bit offsets, the point count must not exceed `2,147,483,647`.
+- Organized points use row-major order: `index = row * width + column`. Invalid
+  slots remain present so point and source-pixel indices stay aligned.
+- Unorganized clouds use `height=1` and `width=point_count`. The recommended
+  empty unorganized shape is `width=0`, `height=1`.
+- `is_dense=true` guarantees every XYZ component is finite. Canonical producers
+  should encode an invalid organized slot as NaN in all three components and set
+  `is_dense=false`; consumers treat any non-finite XYZ component as invalid.
+  `is_dense=false` does not require an invalid point to be present.
+- `intensity` is empty or has one value per point. Producers must document its
+  quantity and scale before populating it.
+- RGB is all-or-none, has one byte per channel per point, and is not packed into
+  a floating-point value. Consumers check XYZ validity before using geometry,
+  even when an invalid organized slot retains source-pixel color.
+- The coordinate frame comes from Dora metadata or stable node configuration,
+  never Arrow schema metadata. Camera clouds should use a documented optical
+  frame with X right, Y down, and Z forward. Timing comes from the Dora event
+  context; derived outputs preserve the source event time.
+
+PointCloud v1 is Forge's normalized, computation-oriented SoA representation.
+It is not a raw vendor, PCL, or ROS `PointCloud2` byte layout. Any future packed
+format for arbitrary fields, stride, padding, or lossless bridge passthrough
+must be a separately named and versioned message rather than an in-place v1
+schema change. High-throughput borrowed/view APIs may be added without changing
+this wire contract.
 
 ### Perception result sets
 

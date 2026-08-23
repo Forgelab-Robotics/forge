@@ -1,6 +1,6 @@
 [project]
 name = "forge-common"
-version = "1.0.0"
+version = "1.0.1"
 description = "Shared Python utilities for Forge packages."
 readme = "README.md"
 authors = [
@@ -10,6 +10,11 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = []
+
+[project.urls]
+Repository = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge"
+Changelog = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/blob/master/CHANGELOG.md"
+Issues = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/issues"
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]

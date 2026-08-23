@@ -54,7 +54,7 @@ EXPECTED_INTERNAL_REQUIREMENTS = {
 }
 EXPECTED_OPTIONAL_INTERNAL_REQUIREMENTS = {
     Path("packages/tool/pyproject.toml"): {
-        "dora": {"forge-msgs>=1.1.0,<2"},
+        "dora": {"forge-msgs>=1.2.0,<2"},
     },
 }
 UV_PACKAGE_FAMILIES = {
@@ -75,7 +75,7 @@ UV_PACKAGE_SOURCES = {
     "forge-tool": "packages/tool",
 }
 CARGO_PACKAGE_FAMILIES = {
-    "forge_common": "common",
+    "forgelab_common": "common",
     "forge_msgs": "msgs",
 }
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")

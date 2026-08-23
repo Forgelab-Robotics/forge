@@ -134,14 +134,22 @@ messages:
         empty_allowed: true
         length: x_or_empty
     validation:
+      - The serialized RecordBatch must contain exactly one row.
+      - Required scalar and list cells must not be null, and list items must not be null.
       - x, y, and z must have the same length.
       - width * height must equal the point count.
       - Unorganized point clouds use height=1 and width equal to the point count.
+      - Organized points are flattened in row-major order using index = row * width + column.
       - intensity, red, green, and blue must be empty or have the same length as x.
       - red, green, and blue must all be empty or all be populated.
       - If is_dense is true, x, y, and z must contain only finite values.
     notes:
+      - Canonical writers use the declared field order, mark every top-level field non-nullable, and serialize unavailable optional attributes as present empty lists.
+      - Readers resolve required fields by name, require exact physical Arrow types, and may accept reordered or additional fields.
       - XYZ coordinates use meters.
-      - Invalid points use non-finite XYZ values and require is_dense=false.
+      - Arrow list offsets are signed 32-bit integers, so serialized point counts cannot exceed 2147483647.
+      - Canonical producers should represent an invalid organized slot with NaN in all three XYZ components and set is_dense=false; readers treat any non-finite XYZ component as invalid.
+      - is_dense=false does not require the cloud to contain an invalid point.
       - High-level constructors may infer unorganized clouds with height=1, width equal to the point count, and is_dense from finite XYZ values; serialized Arrow payloads still include width, height, and is_dense columns.
-      - The coordinate frame is supplied by Dora metadata or node configuration.
+      - The coordinate frame is supplied by Dora metadata or node configuration, and timing comes from the Dora event context.
+      - PointCloud v1 is the normalized Forge representation; any future raw packed representation must use a separately named and versioned message.

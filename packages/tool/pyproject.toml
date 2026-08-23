@@ -12,7 +12,7 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-dora = ["forge-msgs>=1.1.0,<2"]
+dora = ["forge-msgs>=1.2.0,<2"]
 
 [tool.uv.sources]
 forge-msgs = { workspace = true }
