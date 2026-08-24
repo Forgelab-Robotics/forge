@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <string>
 
@@ -11,8 +15,9 @@ int Usage() {
       << "usage: forge_msgs_ipc_fixture <command> <path>\n"
       << "commands: "
          "write/"
-         "read-{text,audio,point-cloud,classification,keypoint2d,keypoint3d,"
-         "segmentation,follow-joint-trajectory-goal,gripper-command-goal,"
+         "read-{text,audio,point-cloud,point-cloud-buffer,imu,classification,"
+         "keypoint2d,keypoint3d,segmentation,follow-joint-trajectory-goal,"
+         "gripper-command-goal,"
          "gripper-command-feedback,gripper-command-result,move-joints-goal,"
          "move-pose-goal,tool-message}\n";
   return 2;
@@ -26,6 +31,21 @@ int WriteBatch(const std::shared_ptr<arrow::RecordBatch>& batch,
     return 1;
   }
   return 0;
+}
+
+template <typename T>
+void StoreScalar(forge_msgs::Bytes& data, std::size_t offset, T value,
+                 forge_msgs::ByteOrder byte_order) {
+  std::array<std::uint8_t, sizeof(T)> bytes{};
+  std::memcpy(bytes.data(), &value, sizeof(T));
+  bool reverse = false;
+  if constexpr (std::endian::native == std::endian::little) {
+    reverse = byte_order == forge_msgs::ByteOrder::BigEndian;
+  } else if constexpr (std::endian::native == std::endian::big) {
+    reverse = byte_order == forge_msgs::ByteOrder::LittleEndian;
+  }
+  if (reverse) std::reverse(bytes.begin(), bytes.end());
+  std::copy(bytes.begin(), bytes.end(), data.begin() + offset);
 }
 
 }  // namespace
@@ -115,11 +135,10 @@ int main(int argc, char** argv) {
   }
 
   if (command == "write-audio") {
-    forge_msgs::Bytes data;
-    for (float value : {0.0f, 0.25f}) {
-      auto* bytes = reinterpret_cast<std::uint8_t*>(&value);
-      data.insert(data.end(), bytes, bytes + sizeof(float));
-    }
+    forge_msgs::Bytes data(2 * sizeof(float));
+    StoreScalar(data, 0, 0.0f, forge_msgs::ByteOrder::LittleEndian);
+    StoreScalar(data, sizeof(float), 0.25f,
+                forge_msgs::ByteOrder::LittleEndian);
     auto batch =
         forge_msgs::AudioChunk{16000, 1, "f32le", 2, data}.ToRecordBatch();
     if (!batch.ok()) {
@@ -187,6 +206,130 @@ int main(int argc, char** argv) {
     } else {
       std::cout << " " << value->intensity.back() << "\n";
     }
+    return 0;
+  }
+
+  if (command == "write-point-cloud-buffer") {
+    using forge_msgs::PointField;
+    using forge_msgs::PointFieldDatatype;
+    forge_msgs::PointCloudBuffer value;
+    value.width = 2;
+    value.height = 1;
+    value.is_dense = true;
+    value.byte_order = forge_msgs::ByteOrder::LittleEndian;
+    value.point_stride = 16;
+    value.row_stride = 32;
+    value.fields = {
+        PointField{"ring", 12, PointFieldDatatype::UInt16, 1},
+        PointField{"z", 8, PointFieldDatatype::Float32, 1},
+        PointField{"x", 0, PointFieldDatatype::Float32, 1},
+        PointField{"y", 4, PointFieldDatatype::Float32, 1},
+    };
+    value.data.assign(32, 0);
+    for (std::uint32_t point = 0; point < value.width; ++point) {
+      const std::size_t offset = point * value.point_stride;
+      StoreScalar(value.data, offset, static_cast<float>(point * 3 + 1),
+                  value.byte_order);
+      StoreScalar(value.data, offset + 4,
+                  static_cast<float>(point * 3 + 2), value.byte_order);
+      StoreScalar(value.data, offset + 8,
+                  static_cast<float>(point * 3 + 3), value.byte_order);
+      StoreScalar(value.data, offset + 12,
+                  static_cast<std::uint16_t>(point + 7), value.byte_order);
+    }
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-point-cloud-buffer") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    std::shared_ptr<const arrow::RecordBatch> owner = *batch;
+    auto view =
+        forge_msgs::PointCloudBufferView::FromRecordBatch(std::move(owner));
+    if (!view.ok()) {
+      std::cerr << view.status().ToString() << "\n";
+      return 1;
+    }
+    if (view->width() == 0) {
+      std::cerr << "PointCloudBuffer fixture requires at least one point\n";
+      return 1;
+    }
+    const auto row = view->height() - 1;
+    const auto column = view->width() - 1;
+    auto x = view->ReadScalar<float>(row, column, "x");
+    auto y = view->ReadScalar<float>(row, column, "y");
+    auto z = view->ReadScalar<float>(row, column, "z");
+    auto ring = view->ReadScalar<std::uint16_t>(row, column, "ring");
+    if (!x.ok() || !y.ok() || !z.ok() || !ring.ok()) {
+      const auto status = !x.ok()   ? x.status()
+                          : !y.ok() ? y.status()
+                          : !z.ok() ? z.status()
+                                    : ring.status();
+      std::cerr << status.ToString() << "\n";
+      return 1;
+    }
+    std::cout << view->width() << " " << view->height() << " "
+              << forge_msgs::ToString(view->byte_order()) << " "
+              << view->fields().size() << " " << view->raw_bytes().size()
+              << " " << *x << " " << *y << " " << *z << " " << *ring
+              << "\n";
+    return 0;
+  }
+
+  if (command == "write-imu") {
+    forge_msgs::Imu value;
+    value.orientation = forge_msgs::ImuOrientation{0.0, 0.0, 0.0, 2.0};
+    value.angular_velocity = {0.1, 0.2, 0.3};
+    value.linear_acceleration = {1.0, 2.0, 9.8};
+    value.orientation_covariance = {1.0, 0.0, 0.0, 0.0, 2.0,
+                                    0.0, 0.0, 0.0, 3.0};
+    value.angular_velocity_covariance = {};
+    value.linear_acceleration_covariance = {4.0, 0.0, 0.0, 0.0, 5.0,
+                                            0.0, 0.0, 0.0, 6.0};
+    value.temperature_celsius = std::nullopt;
+    auto batch = value.ToRecordBatch();
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    return WriteBatch(*batch, path);
+  }
+
+  if (command == "read-imu") {
+    auto batch = forge_msgs::ReadIpcStream(path);
+    if (!batch.ok()) {
+      std::cerr << batch.status().ToString() << "\n";
+      return 1;
+    }
+    auto value = forge_msgs::Imu::FromRecordBatch(**batch);
+    if (!value.ok()) {
+      std::cerr << value.status().ToString() << "\n";
+      return 1;
+    }
+    if (value->orientation) {
+      std::cout << value->orientation->qw;
+    } else {
+      std::cout << "null";
+    }
+    std::cout << " " << value->angular_velocity.z << " "
+              << value->linear_acceleration.z << " "
+              << value->orientation_covariance.size() << " "
+              << value->angular_velocity_covariance.size() << " "
+              << value->linear_acceleration_covariance.size() << " ";
+    if (value->temperature_celsius) {
+      std::cout << *value->temperature_celsius;
+    } else {
+      std::cout << "null";
+    }
+    std::cout << "\n";
     return 0;
   }
 

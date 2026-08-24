@@ -4,6 +4,16 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
+## forge-msgs 1.3.0 - 2026-08-24
+
+Protected tag: `forge-msgs-v1.3.0`
+
+- Add the cross-language `PointCloudBuffer` message for decoded Cartesian point records whose fixed-width fields, byte offsets, point stride, row stride, padding, byte order, and additional sensor attributes must survive a node boundary. Keep normalized `PointCloud` unchanged for registered clouds, maps, ICP, visualization, and consumers that no longer need the source record layout.
+- Require scalar meter-valued `x`, `y`, and `z` fields while leaving intensity, per-point time, laser channel, and vendor attributes optional. Canonical writers sort descriptors and emit little-endian bytes; readers validate checked sizes, unique non-overlapping fields, exact data length, canonical empty shape, dense finite XYZ, endian conversion, and unaligned access.
+- Add safe local `PointCloudBufferView` APIs: Python exposes retained, read-only NumPy strided field views over Arrow payload storage; Rust and C++ provide checked descriptor, point, scalar, and fixed-array element access without unaligned pointer casts.
+- Add the cross-language `Imu` message with nullable named-XYZW orientation, required SI-unit angular velocity and linear acceleration, optional 3x3 covariance lists, and nullable temperature. Arrow null and empty covariance lists replace ROS numeric sentinels; quaternion values remain unnormalized.
+- Cover the two messages with Python, Rust, and C++ schema/validation tests plus bidirectional Python/C++ Arrow IPC interoperability, including organized row padding, big-endian input, null nested IMU values, malformed layouts, and invalid UTF-8 descriptor names.
+
 ## forge-tool 0.1.0 - 2026-08-24
 
 Protected tag: `forge-tool-v0.1.0`

@@ -31,13 +31,13 @@ packages, for example a separate `forge_robots` repository.
 ## Status
 
 Forge tracks six independently versioned package families: Common, Msgs, Robot,
-Policy, Kinematics, and Tool. Current releases are Common `1.0.1`, Msgs `1.2.0`, Robot
+Policy, Kinematics, and Tool. Current releases are Common `1.0.1`, Msgs `1.3.0`, Robot
 `1.0.1`, Policy `1.0.1`, Kinematics `1.0.1`, and Tool `0.1.0`. Implementations of one
 family across Python, Rust, C++, and the language-neutral interface remain synchronized;
 unrelated families may release at different rates.
 
 Each release is identified by a protected family tag such as
-`forge-msgs-v1.2.0`; Tool releases use `forge-tool-v<semver>`. Historical generic tags
+`forge-msgs-v1.3.0`; Tool releases use `forge-tool-v<semver>`. Historical generic tags
 such as `v1.0.0` belong to an earlier repository layout and do not identify these
 releases.
 
@@ -174,7 +174,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge
   GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
-  GIT_TAG forge-msgs-v1.2.0
+  GIT_TAG forge-msgs-v1.3.0
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
@@ -320,7 +320,9 @@ Core messages include:
 - `JointCommand` for low-level joint commands
 - `LocomotionCommand` for planar body-frame velocity commands
 - `Image` and `CompressedImage` for camera payloads
-- `PointCloud` for organized and unorganized XYZ data
+- `PointCloud` for normalized organized and unorganized XYZ data
+- `PointCloudBuffer` for layout-preserving decoded point records with dynamic fixed-width fields
+- `Imu` for SI-unit orientation, angular velocity, and linear acceleration samples
 - 2D/3D detections and instance masks
 - `Pose`, `PolicyCommand`, and policy status/control messages
 - `ToolMessage` for Forge ToolEndpoint protocol transport

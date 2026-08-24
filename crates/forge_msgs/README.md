@@ -14,7 +14,8 @@ The crate currently exports:
 - `JointState` and `JointCommand`
 - `LocomotionCommand`
 - `Image` and `CompressedImage`
-- `PointCloud`
+- normalized `PointCloud` and layout-preserving `PointCloudBuffer`
+- `Imu`
 - `Detection2DSet` and `Detection3DSet`
 - `SegmentationMaskSet`
 - `Pose` and `PoseSet`
@@ -23,6 +24,15 @@ The crate currently exports:
 - `Text`
 
 Each message type is designed for single-row Arrow `RecordBatch` interchange.
+
+`PointCloudBuffer` transports decoded Cartesian point records whose dynamic
+fixed-width fields and strides still matter across a node boundary. Its borrowed
+`PointCloudBufferView` performs checked, endian-aware scalar and fixed-array
+element access without assuming aligned storage. Once only normalized
+XYZ/intensity/RGB values remain relevant, use `PointCloud` instead. `Imu` carries
+required SI-unit angular velocity and linear acceleration, nullable named-XYZW
+orientation and temperature, and empty-or-3x3 covariance lists without numeric
+sentinels.
 
 `ToolMessage`, defined by `tool.v1.yaml`, is introduced in Msgs `1.2.0` for
 `forge.tool.endpoint/v1alpha1`; the first tagged/public `forge-tool` package release using

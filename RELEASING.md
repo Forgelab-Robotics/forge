@@ -9,7 +9,7 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 ```toml
 [packages]
 common = "1.0.1"
-msgs = "1.2.0"
+msgs = "1.3.0"
 robot = "1.0.1"
 policy = "1.0.1"
 kinematics = "1.0.1"
@@ -37,7 +37,7 @@ The initial five `1.0.0` tags may point to the same clean commit. Tool's first r
 
 ```text
 forge-common-v1.0.1
-forge-msgs-v1.2.0
+forge-msgs-v1.3.0
 forge-robot-v1.0.0
 forge-policy-v1.1.0
 forge-kinematics-v1.0.2
@@ -76,7 +76,7 @@ requirement.
 A tag can be checked locally before creation:
 
 ```bash
-./scripts/check_release_versions.py --tag forge-msgs-v1.2.0
+./scripts/check_release_versions.py --tag forge-msgs-v1.3.0
 ```
 
 ## Release requirements

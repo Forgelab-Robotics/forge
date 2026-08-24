@@ -217,6 +217,60 @@ sharing applies only to the local NumPy/PyArrow boundary; it does not imply that
 Dora IPC, networking, recording, or downstream layout conversion is end-to-end
 zero-copy.
 
+### `PointCloudBuffer`
+
+`PointCloudBuffer` is the decoded-sensor counterpart to normalized `PointCloud`.
+It preserves a fixed-stride point-record buffer across a node boundary, including
+field names, numeric datatypes, byte offsets, point/row padding, byte order, and
+additional fields such as per-point time or laser channel. It is not an
+undecoded device packet and does not imply a specific calibration, deskew,
+filter, transform, or registration stage.
+
+Every buffer contains scalar meter-valued `x`, `y`, and `z` fields of the same
+`float32` or `float64` datatype. Other fixed-width numeric fields are optional.
+Writers canonicalize Arrow payloads to little-endian bytes; readers can consume
+both byte orders and reject overlapping or out-of-bounds descriptors. The only
+empty shape is `width=0`, `height=1`, `row_stride=0`, and empty data while the
+point stride and descriptors continue to declare the record layout.
+
+`PointCloudBufferView` validates the Arrow payload, retains its buffer owner, and
+returns read-only NumPy arrays with strides derived from `row_stride`,
+`point_stride`, field offset, and element size:
+
+```python
+from forge_msgs import PointCloudBufferView
+
+view = PointCloudBufferView.from_arrow(event["value"])
+x = view.field("x")
+if view.has_field("time_offset_ns"):
+    time_offset_ns = view.field("time_offset_ns")
+```
+
+Scalar unorganized fields have shape `(width,)`; organized fields have shape
+`(height, width)`, and `count>1` adds a trailing dimension. These arrays can be
+non-contiguous, non-native-endian, and unaligned. The view does not silently
+copy or normalize them. Use `np.ascontiguousarray()` explicitly when an algorithm
+requires native contiguous columns. `PointCloudBuffer.from_arrow()` instead
+materializes an owned `bytes` snapshot.
+
+Use `PointCloudBuffer` only while dynamic record layout or per-point attributes
+must cross a node boundary. Publish existing `PointCloud` after preprocessing
+when only normalized XYZ/intensity/RGB data remains relevant.
+
+### `Imu`
+
+`Imu` carries one SI-unit inertial sample with required angular velocity in
+rad/s and linear acceleration in m/s². Orientation is a nullable struct with
+named `qx/qy/qz/qw` components, forcing adapters to convert vendor array order
+explicitly. The message does not include redundant roll/pitch/yaw values and
+never silently normalizes a quaternion.
+
+Each covariance is either an empty list when unavailable or a row-major 3x3
+`float64` matrix with a non-negative diagonal. A missing orientation uses Arrow
+null and requires an empty orientation covariance; optional temperature also
+uses Arrow null rather than NaN or a numeric sentinel. Timing and sensor frame
+remain in Dora event context and stable node configuration.
+
 ## Motion Messages
 
 The motion API provides single-row Arrow payloads for joint trajectories and

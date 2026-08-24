@@ -2,11 +2,15 @@
 
 #include <arrow/api.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -81,6 +85,253 @@ struct PointCloud {
   arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
   static arrow::Result<PointCloud> FromRecordBatch(
       const arrow::RecordBatch& batch);
+};
+
+enum class ByteOrder {
+  LittleEndian,
+  BigEndian,
+};
+
+std::string ToString(ByteOrder value);
+arrow::Result<ByteOrder> ByteOrderFromString(const std::string& value);
+
+enum class PointFieldDatatype {
+  Int8,
+  UInt8,
+  Int16,
+  UInt16,
+  Int32,
+  UInt32,
+  Int64,
+  UInt64,
+  Float32,
+  Float64,
+};
+
+std::string ToString(PointFieldDatatype value);
+arrow::Result<PointFieldDatatype> PointFieldDatatypeFromString(
+    const std::string& value);
+arrow::Result<std::size_t> PointFieldDatatypeSize(PointFieldDatatype value);
+
+struct PointField {
+  std::string name;
+  std::uint32_t offset = 0;
+  PointFieldDatatype datatype = PointFieldDatatype::Float32;
+  std::uint32_t count = 1;
+};
+
+struct PointCloudBuffer {
+  std::uint32_t width = 0;
+  std::uint32_t height = 1;
+  bool is_dense = false;
+  ByteOrder byte_order = ByteOrder::LittleEndian;
+  std::uint32_t point_stride = 0;
+  std::uint64_t row_stride = 0;
+  std::vector<PointField> fields;
+  Bytes data;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<PointCloudBuffer> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+};
+
+class PointCloudBufferView {
+ public:
+  static arrow::Result<PointCloudBufferView> FromPointCloudBuffer(
+      PointCloudBuffer value);
+  static arrow::Result<PointCloudBufferView> FromRecordBatch(
+      const arrow::RecordBatch& batch);
+  static arrow::Result<PointCloudBufferView> FromRecordBatch(
+      std::shared_ptr<const arrow::RecordBatch> batch);
+
+  std::uint32_t width() const noexcept { return width_; }
+  std::uint32_t height() const noexcept { return height_; }
+  bool is_dense() const noexcept { return is_dense_; }
+  ByteOrder byte_order() const noexcept { return byte_order_; }
+  std::uint32_t point_stride() const noexcept { return point_stride_; }
+  std::uint64_t row_stride() const noexcept { return row_stride_; }
+  std::span<const PointField> fields() const noexcept { return fields_; }
+  std::span<const std::uint8_t> raw_bytes() const noexcept { return data_; }
+
+  const PointField* FindField(std::string_view name) const noexcept;
+  arrow::Result<std::span<const std::uint8_t>> PointBytes(
+      std::uint32_t row, std::uint32_t column) const;
+
+  template <typename T>
+  arrow::Result<T> ReadScalar(std::uint32_t row, std::uint32_t column,
+                              std::string_view field_name) const {
+    const auto* field = FindField(field_name);
+    if (field == nullptr) {
+      return arrow::Status::Invalid("point field not found: ",
+                                    std::string(field_name));
+    }
+    return ReadScalar<T>(row, column, *field);
+  }
+
+  template <typename T>
+  arrow::Result<T> ReadScalar(std::uint32_t row, std::uint32_t column,
+                              const PointField& field) const {
+    if (field.count != 1) {
+      return arrow::Status::Invalid("PointField is not scalar: ", field.name);
+    }
+    return ReadElement<T>(row, column, field, 0);
+  }
+
+  template <typename T>
+  arrow::Result<T> ReadElement(std::uint32_t row, std::uint32_t column,
+                               std::string_view field_name,
+                               std::uint32_t element_index) const {
+    const auto* field = FindField(field_name);
+    if (field == nullptr) {
+      return arrow::Status::Invalid("point field not found: ",
+                                    std::string(field_name));
+    }
+    return ReadElement<T>(row, column, *field, element_index);
+  }
+
+  template <typename T>
+  arrow::Result<T> ReadElement(std::uint32_t row, std::uint32_t column,
+                               const PointField& field,
+                               std::uint32_t element_index) const {
+    static_assert(IsSupportedScalar<T>(),
+                  "PointCloudBufferView field reads require an exact "
+                  "fixed-width PointField C++ type");
+    T value{};
+    ARROW_RETURN_NOT_OK(ReadElementBytes(
+        row, column, field, element_index, DatatypeFor<T>(), &value, sizeof(T)));
+    return value;
+  }
+
+  template <typename T>
+  arrow::Result<T> ReadScalarAt(std::uint64_t point_index,
+                                std::string_view field_name) const {
+    if (width_ == 0) {
+      return arrow::Status::IndexError(
+          "cannot read a point from a zero-width PointCloudBuffer");
+    }
+    const auto point_count =
+        static_cast<std::uint64_t>(width_) * static_cast<std::uint64_t>(height_);
+    if (point_index >= point_count) {
+      return arrow::Status::IndexError("point index is out of range");
+    }
+    return ReadScalar<T>(
+        static_cast<std::uint32_t>(point_index / width_),
+        static_cast<std::uint32_t>(point_index % width_), field_name);
+  }
+
+  template <typename T>
+  arrow::Result<T> ReadElementAt(std::uint64_t point_index,
+                                 std::string_view field_name,
+                                 std::uint32_t element_index) const {
+    if (width_ == 0) {
+      return arrow::Status::IndexError(
+          "cannot read a point from a zero-width PointCloudBuffer");
+    }
+    const auto point_count =
+        static_cast<std::uint64_t>(width_) * static_cast<std::uint64_t>(height_);
+    if (point_index >= point_count) {
+      return arrow::Status::IndexError("point index is out of range");
+    }
+    return ReadElement<T>(
+        static_cast<std::uint32_t>(point_index / width_),
+        static_cast<std::uint32_t>(point_index % width_), field_name,
+        element_index);
+  }
+
+ private:
+  PointCloudBufferView(std::uint32_t width, std::uint32_t height, bool is_dense,
+                       ByteOrder byte_order, std::uint32_t point_stride,
+                       std::uint64_t row_stride,
+                       std::vector<PointField> fields,
+                       std::span<const std::uint8_t> data,
+                       std::shared_ptr<const void> owner);
+
+  template <typename T>
+  static consteval bool IsSupportedScalar() {
+    return std::is_same_v<T, std::int8_t> ||
+           std::is_same_v<T, std::uint8_t> ||
+           std::is_same_v<T, std::int16_t> ||
+           std::is_same_v<T, std::uint16_t> ||
+           std::is_same_v<T, std::int32_t> ||
+           std::is_same_v<T, std::uint32_t> ||
+           std::is_same_v<T, std::int64_t> ||
+           std::is_same_v<T, std::uint64_t> || std::is_same_v<T, float> ||
+           std::is_same_v<T, double>;
+  }
+
+  template <typename T>
+  static consteval PointFieldDatatype DatatypeFor() {
+    if constexpr (std::is_same_v<T, std::int8_t>) {
+      return PointFieldDatatype::Int8;
+    } else if constexpr (std::is_same_v<T, std::uint8_t>) {
+      return PointFieldDatatype::UInt8;
+    } else if constexpr (std::is_same_v<T, std::int16_t>) {
+      return PointFieldDatatype::Int16;
+    } else if constexpr (std::is_same_v<T, std::uint16_t>) {
+      return PointFieldDatatype::UInt16;
+    } else if constexpr (std::is_same_v<T, std::int32_t>) {
+      return PointFieldDatatype::Int32;
+    } else if constexpr (std::is_same_v<T, std::uint32_t>) {
+      return PointFieldDatatype::UInt32;
+    } else if constexpr (std::is_same_v<T, std::int64_t>) {
+      return PointFieldDatatype::Int64;
+    } else if constexpr (std::is_same_v<T, std::uint64_t>) {
+      return PointFieldDatatype::UInt64;
+    } else if constexpr (std::is_same_v<T, float>) {
+      return PointFieldDatatype::Float32;
+    } else {
+      static_assert(std::is_same_v<T, double>);
+      return PointFieldDatatype::Float64;
+    }
+  }
+
+  arrow::Status ReadElementBytes(std::uint32_t row, std::uint32_t column,
+                                 const PointField& field,
+                                 std::uint32_t element_index,
+                                 PointFieldDatatype expected_datatype,
+                                 void* output, std::size_t output_size) const;
+
+  std::uint32_t width_ = 0;
+  std::uint32_t height_ = 0;
+  bool is_dense_ = false;
+  ByteOrder byte_order_ = ByteOrder::LittleEndian;
+  std::uint32_t point_stride_ = 0;
+  std::uint64_t row_stride_ = 0;
+  std::vector<PointField> fields_;
+  std::span<const std::uint8_t> data_;
+  std::shared_ptr<const void> owner_;
+};
+
+struct ImuOrientation {
+  double qx = 0.0;
+  double qy = 0.0;
+  double qz = 0.0;
+  double qw = 1.0;
+
+  arrow::Status Validate() const;
+};
+
+struct ImuVector3 {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+
+  arrow::Status Validate() const;
+};
+
+struct Imu {
+  std::optional<ImuOrientation> orientation;
+  ImuVector3 angular_velocity;
+  ImuVector3 linear_acceleration;
+  std::vector<double> orientation_covariance;
+  std::vector<double> angular_velocity_covariance;
+  std::vector<double> linear_acceleration_covariance;
+  std::optional<double> temperature_celsius;
+
+  arrow::Status Validate() const;
+  arrow::Result<std::shared_ptr<arrow::RecordBatch>> ToRecordBatch() const;
+  static arrow::Result<Imu> FromRecordBatch(const arrow::RecordBatch& batch);
 };
 
 struct JointState {

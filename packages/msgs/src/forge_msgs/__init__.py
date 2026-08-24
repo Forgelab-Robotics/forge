@@ -4,6 +4,7 @@ from forge_msgs.arrow import ensure_record_batch
 from forge_msgs.audio import AudioChunk
 from forge_msgs.control import PolicyCommand, PolicyCommandStatus
 from forge_msgs.image import CompressedImage, Image
+from forge_msgs.imu import Imu, ImuOrientation, ImuVector3
 from forge_msgs.joint import JointCommand, JointState
 from forge_msgs.locomotion import LocomotionCommand
 from forge_msgs.motion import (
@@ -29,6 +30,11 @@ from forge_msgs.perception import (
     SegmentationMaskSet,
 )
 from forge_msgs.point_cloud import PointCloud, PointCloudBatch, PointCloudView
+from forge_msgs.point_cloud_buffer import (
+    PointCloudBuffer,
+    PointCloudBufferView,
+    PointField,
+)
 from forge_msgs.pose import Pose, PoseSet
 from forge_msgs.teleop import TeleopObservation
 from forge_msgs.text import Text
@@ -58,6 +64,9 @@ __all__ = [
     "GripperCommandGoal",
     "GripperCommandResult",
     "Image",
+    "Imu",
+    "ImuOrientation",
+    "ImuVector3",
     "JointCommand",
     "JointState",
     "JointTolerance",
@@ -76,7 +85,10 @@ __all__ = [
     "MovePoseResult",
     "PointCloud",
     "PointCloudBatch",
+    "PointCloudBuffer",
+    "PointCloudBufferView",
     "PointCloudView",
+    "PointField",
     "PolicyCommand",
     "PolicyCommandStatus",
     "Pose",

@@ -42,8 +42,9 @@ change the wire contract of existing messages.
   `ToolMessage` but excluding the Python-only `TeleopObservation`.
 - C++ implements the same shared message set as Rust in `cpp/forge_msgs`,
   including `ToolMessage`, with `ToRecordBatch` / `FromRecordBatch` APIs.
-- Bidirectional Arrow IPC compatibility for `ToolMessage` is covered between
-  Python and C++; no Rust/Python IPC coverage is claimed.
+- Bidirectional Arrow IPC compatibility for `ToolMessage`, `PointCloudBuffer`,
+  and `Imu` is covered between Python and C++; no Rust/Python IPC coverage is
+  claimed.
 
 ## Messages
 
@@ -223,11 +224,81 @@ Rules:
   context; derived outputs preserve the source event time.
 
 PointCloud v1 is Forge's normalized, computation-oriented SoA representation.
-It is not a raw vendor, PCL, or ROS `PointCloud2` byte layout. Any future packed
-format for arbitrary fields, stride, padding, or lossless bridge passthrough
-must be a separately named and versioned message rather than an in-place v1
-schema change. High-throughput borrowed/view APIs may be added without changing
+It is not a raw vendor, PCL, or ROS `PointCloud2` byte layout. Layout-preserving
+decoded point records use the separately named `PointCloudBuffer`; `PointCloud`
+is unchanged. High-throughput borrowed/view APIs may be added without changing
 this wire contract.
+
+### PointCloudBuffer
+
+Single-row, layout-preserving buffer for decoded Cartesian point records with
+dynamic fixed-width attributes. It is the cross-node boundary between a device
+or ROS adapter and a consumer that still needs per-point timing, laser channel,
+or vendor attributes. It is not an undecoded device packet and does not imply a
+specific calibration, filtering, deskew, transform, or registration stage.
+
+Fields:
+
+- `width/height: uint32`
+- `is_dense: bool`
+- `byte_order: utf8` (`little_endian` or `big_endian`)
+- `point_stride: uint32`
+- `row_stride: uint64`
+- `fields: list<struct<name: utf8, offset: uint32, datatype: utf8, count: uint32>>`
+- `data: large_binary`
+
+The datatype set is closed to fixed-width numeric values: `int8`, `uint8`,
+`int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, `float32`, and
+`float64`. Field names are non-empty and unique, counts are positive, every
+field fits within `point_stride`, and declared field byte ranges do not overlap.
+Point and row padding are valid. All size and offset calculations are checked;
+`row_stride >= width * point_stride` and `len(data) == row_stride * height`.
+If `width=0`, the only valid shape is `height=1`, `row_stride=0`, and empty data;
+`point_stride` and the field descriptors still declare the record layout.
+
+The canonical `fields` list item Arrow field is nullable, its struct children are
+non-nullable, and actual null struct items or children are invalid. Every cloud
+declares one scalar `x`, `y`, and `z` field. The three fields use the
+same `float32` or `float64` datatype and meters. `is_dense=true` guarantees
+finite XYZ values. Unorganized clouds use `height=1`. Organized byte offsets are
+`row * row_stride + column * point_stride + field.offset`.
+
+Canonical writers are little-endian, emit the declared top-level order and
+non-nullability, and sort descriptors by offset then name. Readers resolve
+required top-level columns by name, require exact Arrow physical types, and may
+ignore additional top-level columns. Readers honor `byte_order` and never rely
+on field alignment. `intensity` is an optional producer-defined scalar;
+`time_offset_ns: uint32` and `ring: uint16` are recommended optional names, not a
+LiDAR profile or mandatory field set. Device-specific fixed-width descriptors
+may remain alongside them. Once dynamic layout and per-point attributes are no
+longer needed, producers should publish normalized `PointCloud` instead.
+
+### Imu
+
+Decoded SI-unit inertial sample modeled after the useful semantics of ROS 2
+`sensor_msgs/Imu` without copying its `Header` or numeric sentinels.
+
+Fields:
+
+- `orientation: struct<qx: float64, qy: float64, qz: float64, qw: float64>?`
+- `angular_velocity: struct<x: float64, y: float64, z: float64>` in rad/s
+- `linear_acceleration: struct<x: float64, y: float64, z: float64>` in m/s²
+- `orientation_covariance: list<float64>`
+- `angular_velocity_covariance: list<float64>`
+- `linear_acceleration_covariance: list<float64>`
+- `temperature_celsius: float64?`
+
+Null orientation means unavailable; a present quaternion is finite, non-zero,
+and never silently normalized. Orientation/vector struct children are
+non-nullable. Angular velocity and linear acceleration are required and finite.
+Each covariance is either empty when unavailable or a finite row-major 3x3
+matrix with non-negative diagonal. Covariance list item metadata is nullable,
+but actual null items are invalid. Orientation covariance
+must be empty when orientation is null and represents local small-angle X/Y/Z
+error, not a quaternion 4x4 covariance. Temperature is null when unavailable
+and finite when present. Named quaternion fields force adapters to explicitly
+convert vendor order; redundant roll, pitch, and yaw are omitted. Timing and
+sensor frame follow the package-wide Dora event/configuration conventions.
 
 ### Perception result sets
 
