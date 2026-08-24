@@ -26,7 +26,9 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return value
 
 
-def _require_equal(path: Path, document: dict[str, Any], key: str, expected: Any) -> None:
+def _require_equal(
+    path: Path, document: dict[str, Any], key: str, expected: Any
+) -> None:
     actual = document.get(key)
     if actual != expected:
         raise SchemaError(f"{path}: {key} must be {expected!r}, got {actual!r}")
@@ -58,7 +60,9 @@ def _validate_message(path: Path, name: str, message: Any) -> None:
     implementations = message.get("implementations")
     if implementations is not None:
         if not isinstance(implementations, list) or not implementations:
-            raise SchemaError(f"{path}: {name}.implementations must be a non-empty list")
+            raise SchemaError(
+                f"{path}: {name}.implementations must be a non-empty list"
+            )
         unknown = set(implementations) - ALLOWED_IMPLEMENTATIONS
         if unknown:
             raise SchemaError(
@@ -94,7 +98,9 @@ def validate() -> list[str]:
 
         path = SCHEMA_DIR / filename
         if path in loaded_files:
-            raise SchemaError(f"{MANIFEST_PATH}: schema file referenced twice: {filename}")
+            raise SchemaError(
+                f"{MANIFEST_PATH}: schema file referenced twice: {filename}"
+            )
         if not path.is_file():
             raise SchemaError(f"{MANIFEST_PATH}: missing schema file: {filename}")
         loaded_files.add(path)

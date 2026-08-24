@@ -1,21 +1,25 @@
 # Forge
 
 Forge is a small robotics framework core for Dora dataflows. It provides shared
-message schemas, Python and Rust message implementations, and reusable node
-runner helpers for robot drivers and policy nodes.
+message schemas, Python and Rust message implementations, reusable node runner
+helpers for robot drivers and policy nodes, and typed tool endpoint contracts.
 
 This repository intentionally focuses on the framework layer:
 
 - `interfaces/forge_msgs/` contains the canonical message schema.
+- `interfaces/forge_tool/` contains the Tool documentation index, architecture, and
+  language-neutral Wire Protocol.
 - `packages/msgs` provides Python message models and Arrow serialization.
 - `crates/forge_msgs` provides the Rust message implementation.
 - `cpp/forge_msgs` provides the C++ message implementation.
 - `packages/robot` provides robot driver protocols, safety clipping helpers, and
-  a standard Dora robot node loop.
+  a standard Dora Adapter node loop.
 - `cpp/forge_robot` provides the C++ robot driver interfaces, safety helpers,
-  and optional Dora C++ node runner.
-- `packages/policy` provides policy adapter protocols and a standard Dora policy
-  node loop.
+  and optional Dora C++ Adapter runner.
+- `packages/policy` provides policy implementation protocols and a standard Dora
+  Operator node loop.
+- `packages/tool` provides dependency-free ToolEndpoint SPI and logical Wire models,
+  with embedded Query and Action handling; Session dispatch remains future work.
 - `packages/common` and `crates/forge_common` provide shared utilities,
   currently including logging and tracing helpers.
 - `packages/kinematics` provides optional Pinocchio-based URDF forward
@@ -26,14 +30,18 @@ packages, for example a separate `forge_robots` repository.
 
 ## Status
 
-Forge provides stable `1.0.0` baselines for five independently versioned
-package families: Common, Msgs, Robot, Policy, and Kinematics. Implementations
-of one family across Python, Rust, C++, and the language-neutral interface
-remain synchronized; unrelated families may release at different rates.
+Forge tracks six independently versioned package families: Common, Msgs, Robot,
+Policy, Kinematics, and Tool. Common, Robot, Policy, and Kinematics have published
+`1.0.1` releases, while Msgs has published `1.1.0`. Current unreleased manifests stage
+Msgs `1.2.0` and Tool `0.1.0`. Implementations of one family across Python, Rust, C++,
+and the language-neutral interface remain synchronized; unrelated families may release
+at different rates.
 
-Each baseline is identified by a protected family tag such as
-`forge-msgs-v1.0.0`. Historical generic tags such as `v1.0.0` belong to an
-earlier repository layout and do not identify these releases.
+Each release is identified by a protected family tag such as
+`forge-msgs-v1.0.0`; Tool releases use `forge-tool-v<semver>`. Historical generic
+tags such as `v1.0.0` belong to an earlier repository layout and do not identify
+these releases. The tag pattern does not indicate that a Tool tag has been
+published.
 
 The initial family releases define stable contracts for message schemas,
 serialization, shared utilities, kinematics, and robot/policy runners. Each
@@ -43,16 +51,29 @@ requires its next major version. See
 [`RELEASING.md`](RELEASING.md) for package-family boundaries, protected GitLab
 tags, and validation procedures.
 
+Forge ToolEndpoint v1alpha1 has no earlier tagged/public Tool release. Its first release
+candidate is coordinated across `forge-tool`, Python/Rust/C++ `ToolMessage` bindings,
+Gateway, and providers; earlier untagged prototypes are incompatible, and mixed
+deployments are not supported as backward compatible.
+
+## Tool documentation
+
+Start with [`interfaces/forge_tool/README.md`](interfaces/forge_tool/README.md). It links
+the architecture, normative Wire protocol, Python package guide, and canonical Arrow
+schema without duplicating their contracts.
+
 ## Repository Layout
 
 ```text
 forge/
 ├── interfaces/forge_msgs/      # Canonical cross-language message schema
+├── interfaces/forge_tool/      # Tool architecture and Wire Protocol
 ├── packages/common/            # Python shared utilities
 ├── packages/kinematics/        # Python Pinocchio FK/Jacobian/IK library
 ├── packages/msgs/              # Python message models and Arrow conversion
 ├── packages/policy/            # Python policy node protocols and Dora runner
 ├── packages/robot/             # Python robot driver protocols and Dora runner
+├── packages/tool/              # Python ToolEndpoint API and logical protocol
 ├── crates/forge_common/        # Rust shared utilities
 ├── crates/forge_msgs/          # Rust message types and Arrow conversion
 ├── cpp/forge_common/           # C++ shared utilities
@@ -67,7 +88,8 @@ forge/
 
 - Python 3.12 or newer for the workspace
 - Rust toolchain with edition 2024 support
-- CMake 3.20 or newer for C++ packages
+- A C++20-capable compiler and CMake 3.20 or newer for C++ packages;
+  `cpp/forge_msgs` and its dependents require C++20
 - Apache Arrow C++ for `cpp/forge_msgs`
 - Rust/Cargo and network access, or a local Dora `v0.4.1` checkout, for the
   optional C++ `forge_robot` Dora runner
@@ -83,8 +105,8 @@ Clone the repository and install the default Python workspace:
 uv sync --dev
 ```
 
-Install every workspace package, including the optional Pinocchio kinematics
-library, when developing or running the complete Python test suite:
+Install every workspace package, including Tool and the optional Pinocchio
+kinematics library, when developing or running the complete Python test suite:
 
 ```bash
 uv sync --all-packages --all-extras --dev
@@ -238,7 +260,7 @@ python scripts/check_release_versions.py
 Run the Python tests:
 
 ```bash
-uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
+uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests packages/tool/tests
 ```
 
 Run the Rust tests:
@@ -255,7 +277,7 @@ cargo package --workspace --locked
 ```
 
 By default, the Python build script creates local validation artifacts for all
-five packages. It starts from a clean `dist/release/python` directory, verifies
+six packages. It starts from a clean `dist/release/python` directory, verifies
 wheel and sdist identity, Apache-2.0 metadata and exact license layout, runs the
 additional Kinematics checks, and writes `dist/release/python/SHA256SUMS`.
 These all-family artifacts are not a publishing command.
@@ -287,9 +309,10 @@ uv run ruff check .
 ## Message Schema
 
 The canonical cross-language contract starts at
-`interfaces/forge_msgs/forge_msgs.v1.yaml`, which references versioned schemas
-for the control, geometry, interaction, perception, and sensor domains. Python,
-Rust, and C++ implementations should conform to those schemas. See
+`interfaces/forge_msgs/forge_msgs.v1.yaml`, which references `common.v1.yaml`,
+`control.v1.yaml`, `motion.v1.yaml`, `geometry.v1.yaml`, `interaction.v1.yaml`,
+`perception.v1.yaml`, `sensor.v1.yaml`, and `tool.v1.yaml`. Python, Rust, and C++
+implementations should conform to those schemas. See
 `interfaces/forge_msgs/SCHEMA.md` and `packages/msgs/README.md` for message
 semantics and Arrow encoding details.
 
@@ -302,21 +325,90 @@ Core messages include:
 - `PointCloud` for organized and unorganized XYZ data
 - 2D/3D detections and instance masks
 - `Pose`, `PolicyCommand`, and policy status/control messages
+- `ToolMessage` for Forge ToolEndpoint protocol transport
 
-## Dora Node Semantics
+`ToolMessage` is the exact single-row Arrow carrier for ToolEndpoint Wire messages.
+Its canonical column order, types, nullability, and generic validation live in
+[`interfaces/forge_msgs/tool.v1.yaml`](interfaces/forge_msgs/tool.v1.yaml); logical
+payload semantics live in the
+[ToolEndpoint protocol](interfaces/forge_tool/PROTOCOL.md). `payload_json` contains only
+the logical payload object, and message-specific validation remains in `forge-tool`.
+Python, Rust, and C++ implementations exist, with bidirectional Python/C++ Arrow IPC
+coverage.
 
-`forge-robot` and `cpp/forge_robot` use fixed input and output names for
-standard robot nodes:
+## Forge Node Model
+
+Every deployed Forge Dora node is classified by its primary responsibility as one of two
+categories:
+
+| Category | Responsibility | Typical examples |
+| --- | --- | --- |
+| **Operator** | Performs Forge-native computation inside the graph; its primary boundary is Forge messages. | Policy, perception, planner, controller, simulator. |
+| **Adapter** | Owns communication with an external device, service, runtime, or caller and translates its protocol/lifecycle into Forge messages. | Robot, camera, Gateway, storage or cloud connector. |
+
+```mermaid
+flowchart TB
+    subgraph external[External world]
+        callers[Agents, Web and API callers]
+        camera_device[Camera device]
+        robot_device[Robot device]
+    end
+
+    subgraph forge[Forge Dora graph]
+        subgraph adapters[Adapter nodes]
+            gateway[Gateway]
+            camera[Camera]
+            robot[Robot]
+        end
+
+        subgraph operators[Operator nodes]
+            perception[Perception]
+            policy[Policy]
+            simulator[Simulator]
+        end
+    end
+
+    callers <--> gateway
+    camera_device --> camera
+    robot <--> robot_device
+    camera -->|sensor data| perception
+    perception -->|observations| policy
+    policy -->|commands| robot
+    policy <--> simulator
+```
+
+Classification follows the node's primary ownership boundary, not message direction or
+whether it performs local computation. The diagram illustrates ownership boundaries,
+not allowed topology: either category may exchange Forge messages with either category.
+External Agents, applications, devices, and services are outside this node taxonomy; a
+Forge Adapter owns their boundary. A simulator is an Operator because its world model is
+internal computation. Gateway is an Adapter because it owns external caller and routing
+boundaries.
+
+`ToolEndpoint` is orthogonal to this classification: either an Operator or Adapter may
+expose Query, Action, or Session capabilities. It does not create a third node category.
+See the [Tool architecture](interfaces/forge_tool/ARCHITECTURE.md) for the control-plane
+overlay.
+
+Some implementation interfaces retain names such as `PolicyAdapter`. That name describes
+a plug-in hosted inside a policy Operator node; it does not classify the node itself as
+an Adapter.
+
+### Standard runners
+
+`forge-robot` and `cpp/forge_robot` use fixed input and output names for standard Robot
+Adapter nodes:
 
 - input `tick` publishes output `state`
 - input `action` or `action/<source>` accepts a sparse low-level `JointCommand`; namespaced inputs allow disjoint arm and gripper streams, while overlapping command sources require explicit arbitration
 - input `master_state` mirrors a leader `JointState` to a position command
-- input `locomotion_command` accepts a `LocomotionCommand` when the driver
-  supports locomotion
+- input `locomotion_command` accepts a `LocomotionCommand` when the driver supports
+  locomotion
 
-`forge-policy` provides a similar runner pattern for policy adapters. The runner
-handles ticks, proprioceptive state, image caching, and policy lifecycle
-commands so algorithm code can focus on inference and command generation.
+`forge-policy` provides the standard Policy Operator runner. It hosts a policy
+implementation (currently exposed through the `PolicyAdapter` Python protocol) and
+handles ticks, proprioceptive state, image caching, and policy lifecycle commands so
+algorithm code can focus on inference and command generation.
 
 ## Configuration
 

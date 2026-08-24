@@ -9,10 +9,11 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 ```toml
 [packages]
 common = "1.0.1"
-msgs = "1.1.0"
+msgs = "1.2.0"
 robot = "1.0.1"
 policy = "1.0.1"
 kinematics = "1.0.1"
+tool = "0.1.0"
 ```
 
 The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Python distribution. Its project version is workspace tooling metadata and is not a package-family release version.
@@ -26,12 +27,13 @@ The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Pyt
 | Robot | `packages/robot`, `cpp/forge_robot` | `forge-robot-v<semver>` |
 | Policy | `packages/policy` | `forge-policy-v<semver>` |
 | Kinematics | `packages/kinematics` | `forge-kinematics-v<semver>` |
+| Tool | `interfaces/forge_tool`, `packages/tool` | `forge-tool-v<semver>` |
 
 Do not create separate Python/Rust/C++ tags for one family. `forge-msgs-v1.0.0`, for example, identifies the v1 schema plus all three language implementations at the tagged commit.
 
 Do not use or move historical generic tags such as `v1.0.0`. They belong to an earlier repository layout. All new release tags must use a family namespace.
 
-The initial five `1.0.0` tags may point to the same clean commit. Later releases can be independent, for example:
+The initial five `1.0.0` tags may point to the same clean commit. Tool is versioned at `0.1.0`; its tag, when released, will be `forge-tool-v0.1.0`. Later releases can be independent, for example:
 
 ```text
 forge-common-v1.0.1
@@ -62,12 +64,17 @@ A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from ea
 5. Add a family-specific entry to `CHANGELOG.md`.
 6. Run the version gate and relevant tests before review.
 
+When one family introduces a dependency whose minimum version is being released from
+the same revision, publish the dependency family first. For the current candidates,
+`forge-msgs 1.2.0` must be available before publishing `forge-tool 0.1.0`, so
+`forge-tool[dora]` can resolve its `forge-msgs>=1.2.0,<2` requirement.
+
 `./scripts/check_release_versions.py` verifies family synchronization, workspace membership, internal Python requirements, uv/Cargo locks, and the Msgs interface major. In GitLab and GitHub tag pipelines it also reads `CI_COMMIT_TAG` or `GITHUB_REF_NAME` and rejects unknown families, non-SemVer tags, and tags whose version differs from `versions.toml`.
 
 A tag can be checked locally before creation:
 
 ```bash
-./scripts/check_release_versions.py --tag forge-msgs-v1.0.0
+./scripts/check_release_versions.py --tag forge-msgs-v1.2.0
 ```
 
 ## Release requirements
@@ -99,7 +106,8 @@ uv run pytest \
   packages/msgs/tests \
   packages/policy/tests \
   packages/robot/tests \
-  packages/kinematics/tests
+  packages/kinematics/tests \
+  packages/tool/tests
 
 cargo test --workspace --locked
 ```
@@ -107,7 +115,7 @@ cargo test --workspace --locked
 Build language packages:
 
 ```bash
-# Local validation of all five Python packages; do not publish these artifacts.
+# Local validation of all six Python packages; do not publish these artifacts.
 uv run python scripts/build_python_distributions.py
 
 # Final candidate for one affected family, from a clean commit.
@@ -198,6 +206,8 @@ uv run python scripts/build_python_distributions.py \
 uv run python scripts/build_python_distributions.py \
   --release-family msgs --out-dir dist/release/python/msgs
 uv run python scripts/build_python_distributions.py \
+  --release-family tool --out-dir dist/release/python/tool
+uv run python scripts/build_python_distributions.py \
   --release-family kinematics --out-dir dist/release/python/kinematics
 uv run python scripts/build_python_distributions.py \
   --release-family policy --out-dir dist/release/python/policy
@@ -237,8 +247,9 @@ publishes only its wheel and source archive.
 
 For token-based local publishing, provide a scoped token through the protected
 `UV_PUBLISH_TOKEN` environment variable; never store it in the repository.
-Publish in dependency order: `common`, `msgs`, `kinematics`, `policy`, then
-`robot`. Verify each exact version from PyPI in a fresh environment before
+Publish in dependency order: `common`, `msgs`, `tool`, `kinematics`, `policy`, then
+`robot`. In particular, publish Msgs before Tool because the Tool Dora extra requires the
+new carrier version. Verify each exact version from PyPI in a fresh environment before
 continuing to dependent packages.
 
 PyPI does not permit replacing an uploaded file or reusing a released version.
@@ -249,7 +260,7 @@ tag rather than attempting to overwrite it.
 
 After review:
 
-1. Replace the affected family entry's `Unreleased` marker with the release date.
+1. Move the affected family subsection from the global `Unreleased` section into a dated release section; leave unrelated family subsections under `Unreleased`.
 2. Commit the release changes.
 3. Run the required validation again from the clean commit.
 4. Create the protected annotated family tag or tags at that exact commit.
@@ -257,7 +268,7 @@ After review:
 6. Attach checksums or package registry links to the corresponding GitLab Release if artifacts are uploaded.
 7. Update downstream nodes to use the family tags and regenerate their locks.
 
-The initial baseline tags have already been created:
+The initial five `1.0.0` baseline tags have already been created:
 
 ```text
 forge-common-v1.0.0
@@ -267,5 +278,6 @@ forge-policy-v1.0.0
 forge-kinematics-v1.0.0
 ```
 
+This historical list does not indicate that a Tool tag has been published.
 These and all future release tags are immutable. Never move or reuse one; increment
 the affected family version and create a new protected tag instead.

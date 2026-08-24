@@ -35,7 +35,9 @@ def _list_array(values: list, value_type):
 def _record_batch(arrays: list, fields: list[tuple[str, object]]):
     import pyarrow as pa
 
-    schema = pa.schema([pa.field(name, field_type, nullable=False) for name, field_type in fields])
+    schema = pa.schema(
+        [pa.field(name, field_type, nullable=False) for name, field_type in fields]
+    )
     return pa.RecordBatch.from_arrays(arrays, schema=schema)
 
 
@@ -77,7 +79,9 @@ def _assert_point_cloud_rejected(
 
 def _assert_schema(batch, fields: list[tuple[str, object]]) -> None:
     assert batch.schema.names == [name for name, _ in fields]
-    assert [field.type for field in batch.schema] == [field_type for _, field_type in fields]
+    assert [field.type for field in batch.schema] == [
+        field_type for _, field_type in fields
+    ]
     assert all(not field.nullable for field in batch.schema)
     assert batch.num_rows == 1
 
@@ -91,7 +95,9 @@ def _assert_exact_schema(batch, schema) -> None:
 
 def _assert_close(actual: list[float], expected: list[float]) -> None:
     assert len(actual) == len(expected)
-    assert all(math.isclose(left, right, rel_tol=1e-6) for left, right in zip(actual, expected))
+    assert all(
+        math.isclose(left, right, rel_tol=1e-6) for left, right in zip(actual, expected)
+    )
 
 
 def main() -> int:
@@ -120,6 +126,7 @@ def main() -> int:
         PointCloudBatch,
         PointCloudView,
         Text,
+        ToolMessage,
     )
 
     driver = Path(args.driver)
@@ -138,6 +145,84 @@ def main() -> int:
         _to_ipc_file(Text(text="python hello").to_arrow(), py_text)
         out = subprocess.check_output([driver, "read-text", py_text], text=True).strip()
         assert out == "python hello"
+
+        cpp_tool_message = tmp_path / "cpp_tool_message.arrow"
+        subprocess.run([driver, "write-tool-message", cpp_tool_message], check=True)
+        tool_message = ToolMessage.from_arrow(cpp_tool_message.read_bytes())
+        assert tool_message.message_type == "tool.invoke.request"
+        assert tool_message.request_id == "cpp-request-1"
+        assert tool_message.invocation_id == "cpp-invocation-1"
+        assert tool_message.attempt_id == "cpp-attempt-1"
+        assert tool_message.endpoint_id == "vision.yolo"
+        assert tool_message.endpoint_instance_id == "cpp-instance-1"
+        assert tool_message.operation == "detect"
+        assert tool_message.sequence is None
+        assert tool_message.payload() == {"arguments": {"class": "cube"}}
+
+        cpp_unresolved = tmp_path / "cpp_unresolved_tool_message.arrow"
+        subprocess.run(
+            [driver, "write-unresolved-tool-message", cpp_unresolved], check=True
+        )
+        unresolved = ToolMessage.from_arrow(cpp_unresolved.read_bytes())
+        assert unresolved.message_type == "tool.invoke.response"
+        assert unresolved.endpoint_instance_id is None
+        assert unresolved.payload() == {
+            "outcome": "accepted",
+            "accepted": {"details": {}},
+        }
+
+        py_tool_message = tmp_path / "py_tool_message.arrow"
+        _to_ipc_file(
+            ToolMessage.from_payload(
+                message_type="tool.event",
+                invocation_id="py-invocation-1",
+                attempt_id="py-attempt-1",
+                endpoint_id="policy.lerobot",
+                endpoint_instance_id="py-instance-1",
+                operation="execute",
+                sequence=7,
+                payload={"type": "progress", "data": {"fraction": 0.5}},
+            ).to_arrow(),
+            py_tool_message,
+        )
+        out = subprocess.check_output(
+            [driver, "read-tool-message", py_tool_message], text=True
+        ).strip()
+        assert out == (
+            "tool.event null py-invocation-1 py-attempt-1 policy.lerobot "
+            'py-instance-1 execute 7 {"data":{"fraction":0.5},"type":"progress"}'
+        )
+
+        py_unresolved = tmp_path / "py_unresolved_tool_message.arrow"
+        _to_ipc_file(
+            ToolMessage.from_payload(
+                message_type="tool.error",
+                request_id="py-request-1",
+                invocation_id="py-invocation-1",
+                attempt_id="py-attempt-1",
+                endpoint_id="vision.yolo",
+                endpoint_instance_id=None,
+                operation="detect",
+                payload={
+                    "error": {
+                        "code": "GATEWAY_RESOLUTION_FAILED",
+                        "message": "no provider available",
+                        "retryable": False,
+                        "details": {},
+                    }
+                },
+            ).to_arrow(),
+            py_unresolved,
+        )
+        out = subprocess.check_output(
+            [driver, "read-tool-message", py_unresolved], text=True
+        ).strip()
+        assert out == (
+            "tool.error py-request-1 py-invocation-1 py-attempt-1 "
+            "vision.yolo null detect null "
+            '{"error":{"code":"GATEWAY_RESOLUTION_FAILED",'
+            '"details":{},"message":"no provider available","retryable":false}}'
+        )
 
         cpp_audio = tmp_path / "cpp_audio.arrow"
         subprocess.run([driver, "write-audio", cpp_audio], check=True)
@@ -159,7 +244,9 @@ def main() -> int:
             ).to_arrow(),
             py_audio,
         )
-        out = subprocess.check_output([driver, "read-audio", py_audio], text=True).strip()
+        out = subprocess.check_output(
+            [driver, "read-audio", py_audio], text=True
+        ).strip()
         assert out == "48000 1 s16le 2 4"
 
         string_list = pa.list_(pa.string())
@@ -357,7 +444,10 @@ def main() -> int:
         py_classification = tmp_path / "py_classification.arrow"
         _to_ipc_file(
             _record_batch(
-                [_list_array(["cat", "dog"], pa.string()), _list_array([0.75, 0.25], pa.float32())],
+                [
+                    _list_array(["cat", "dog"], pa.string()),
+                    _list_array([0.75, 0.25], pa.float32()),
+                ],
                 [("class_id", string_list), ("score", f32_list)],
             ),
             py_classification,
@@ -428,7 +518,9 @@ def main() -> int:
             ),
             py_keypoint2d,
         )
-        out = subprocess.check_output([driver, "read-keypoint2d", py_keypoint2d], text=True).strip()
+        out = subprocess.check_output(
+            [driver, "read-keypoint2d", py_keypoint2d], text=True
+        ).strip()
         assert out == "animal-0 1 4 0.8"
 
         py_empty_keypoint2d = tmp_path / "py_empty_keypoint2d.arrow"
@@ -453,7 +545,10 @@ def main() -> int:
         ).strip()
         assert out == "0 0 empty"
 
-        keypoint3d_fields = keypoint2d_fields[:-1] + [("z", f32_list), ("score", f32_list)]
+        keypoint3d_fields = keypoint2d_fields[:-1] + [
+            ("z", f32_list),
+            ("score", f32_list),
+        ]
         cpp_keypoint3d = tmp_path / "cpp_keypoint3d.arrow"
         subprocess.run([driver, "write-keypoint3d", cpp_keypoint3d], check=True)
         batch = _from_ipc_file(cpp_keypoint3d)
@@ -478,7 +573,9 @@ def main() -> int:
             ),
             py_keypoint3d,
         )
-        out = subprocess.check_output([driver, "read-keypoint3d", py_keypoint3d], text=True).strip()
+        out = subprocess.check_output(
+            [driver, "read-keypoint3d", py_keypoint3d], text=True
+        ).strip()
         assert out == "animal-0 nose 3 0.9"
 
         py_empty_keypoint3d = tmp_path / "py_empty_keypoint3d.arrow"
@@ -613,7 +710,9 @@ def main() -> int:
             ]
         )
         cpp_follow = tmp_path / "cpp_follow.arrow"
-        subprocess.run([driver, "write-follow-joint-trajectory-goal", cpp_follow], check=True)
+        subprocess.run(
+            [driver, "write-follow-joint-trajectory-goal", cpp_follow], check=True
+        )
         batch = _from_ipc_file(cpp_follow)
         _assert_exact_schema(batch, follow_schema)
         trajectory = batch["trajectory"][0].as_py()
@@ -647,8 +746,16 @@ def main() -> int:
                 [
                     pa.array([python_trajectory], type=trajectory_type),
                     pa.array(
-                        [[{"joint_name": "joint_2", "position": None,
-                           "velocity": 0.1, "acceleration": None}]],
+                        [
+                            [
+                                {
+                                    "joint_name": "joint_2",
+                                    "position": None,
+                                    "velocity": 0.1,
+                                    "acceleration": None,
+                                }
+                            ]
+                        ],
                         type=pa.list_(tolerance_type),
                     ),
                     pa.array([[]], type=pa.list_(tolerance_type)),
@@ -730,8 +837,17 @@ def main() -> int:
                     pa.array(["base"], type=pa.string()),
                     pa.array(["tcp"], type=pa.string()),
                     pa.array(
-                        [{"x": 0.6, "y": 0.1, "z": 0.2, "qx": 0.0, "qy": 0.0,
-                          "qz": 0.0, "qw": 1.0}],
+                        [
+                            {
+                                "x": 0.6,
+                                "y": 0.1,
+                                "z": 0.2,
+                                "qx": 0.0,
+                                "qy": 0.0,
+                                "qz": 0.0,
+                                "qw": 1.0,
+                            }
+                        ],
                         type=pose_type,
                     ),
                     pa.array([0.8], type=pa.float64()),

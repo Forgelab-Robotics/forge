@@ -14,13 +14,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 VERSIONS_PATH = Path("versions.toml")
 WORKSPACE_PROJECT = Path("pyproject.toml")
-FAMILY_ORDER = ("common", "msgs", "robot", "policy", "kinematics")
+FAMILY_ORDER = ("common", "msgs", "robot", "policy", "kinematics", "tool")
 PYTHON_PROJECTS = {
     "common": Path("packages/common/pyproject.toml"),
     "msgs": Path("packages/msgs/pyproject.toml"),
     "robot": Path("packages/robot/pyproject.toml"),
     "policy": Path("packages/policy/pyproject.toml"),
     "kinematics": Path("packages/kinematics/pyproject.toml"),
+    "tool": Path("packages/tool/pyproject.toml"),
 }
 RUST_CRATES = {
     "common": Path("crates/forge_common/Cargo.toml"),
@@ -37,6 +38,7 @@ EXPECTED_WORKSPACE_MEMBERS = {
     "packages/msgs",
     "packages/policy",
     "packages/robot",
+    "packages/tool",
 }
 EXPECTED_INTERNAL_REQUIREMENTS = {
     WORKSPACE_PROJECT: {
@@ -44,9 +46,16 @@ EXPECTED_INTERNAL_REQUIREMENTS = {
         "forge-msgs>=1.0.0,<2",
         "forge-policy>=1.0.0,<2",
         "forge-robot>=1.0.0,<2",
+        "forge-tool>=0.1.0,<0.2",
     },
     Path("packages/policy/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},
     Path("packages/robot/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},
+    Path("packages/tool/pyproject.toml"): set(),
+}
+EXPECTED_OPTIONAL_INTERNAL_REQUIREMENTS = {
+    Path("packages/tool/pyproject.toml"): {
+        "dora": {"forge-msgs>=1.2.0,<2"},
+    },
 }
 UV_PACKAGE_FAMILIES = {
     "forge-common": "common",
@@ -54,6 +63,7 @@ UV_PACKAGE_FAMILIES = {
     "forge-robot": "robot",
     "forge-policy": "policy",
     "forge-kinematics": "kinematics",
+    "forge-tool": "tool",
 }
 UV_PACKAGE_SOURCES = {
     "forge": ".",
@@ -62,6 +72,7 @@ UV_PACKAGE_SOURCES = {
     "forge-robot": "packages/robot",
     "forge-policy": "packages/policy",
     "forge-kinematics": "packages/kinematics",
+    "forge-tool": "packages/tool",
 }
 CARGO_PACKAGE_FAMILIES = {
     "forgelab_common": "common",
@@ -110,7 +121,9 @@ def _table(document: dict[str, Any], path: Path, *keys: str) -> dict[str, Any]:
 
 def _strict_version(value: Any, location: str) -> str:
     if not isinstance(value, str) or not SEMVER.fullmatch(value):
-        raise ReleaseVersionError(f"{location}: expected strict SemVer, found {value!r}")
+        raise ReleaseVersionError(
+            f"{location}: expected strict SemVer, found {value!r}"
+        )
     return value
 
 
@@ -141,7 +154,37 @@ def _internal_requirements(document: dict[str, Any], path: Path) -> set[str]:
         isinstance(requirement, str) for requirement in dependencies
     ):
         raise ReleaseVersionError(f"{path}: project.dependencies must be strings")
-    return {requirement for requirement in dependencies if requirement.startswith("forge-")}
+    return {
+        requirement for requirement in dependencies if requirement.startswith("forge-")
+    }
+
+
+def _optional_internal_requirements(
+    document: dict[str, Any], path: Path
+) -> dict[str, set[str]]:
+    optional = _table(document, path, "project").get("optional-dependencies", {})
+    if not isinstance(optional, dict):
+        raise ReleaseVersionError(
+            f"{path}: project.optional-dependencies must be a table"
+        )
+    internal: dict[str, set[str]] = {}
+    for extra, dependencies in optional.items():
+        if (
+            not isinstance(extra, str)
+            or not isinstance(dependencies, list)
+            or not all(isinstance(requirement, str) for requirement in dependencies)
+        ):
+            raise ReleaseVersionError(
+                f"{path}: project.optional-dependencies entries must be string lists"
+            )
+        requirements = {
+            requirement
+            for requirement in dependencies
+            if requirement.startswith("forge-")
+        }
+        if requirements:
+            internal[extra] = requirements
+    return internal
 
 
 def _check_workspace(findings: list[str]) -> str | None:
@@ -162,7 +205,9 @@ def _check_workspace(findings: list[str]) -> str | None:
         findings.append(f"{WORKSPACE_PROJECT}: [tool.uv].package must be false")
 
     members = workspace.get("members")
-    if not isinstance(members, list) or not all(isinstance(item, str) for item in members):
+    if not isinstance(members, list) or not all(
+        isinstance(item, str) for item in members
+    ):
         findings.append(
             f"{WORKSPACE_PROJECT}: [tool.uv.workspace].members must be strings"
         )
@@ -205,6 +250,18 @@ def _check_python(findings: list[str], versions: dict[str, str]) -> None:
             findings.append(
                 f"{path}: internal requirements differ; "
                 f"expected {sorted(expected)}, found {sorted(actual)}"
+            )
+
+    for path, expected in EXPECTED_OPTIONAL_INTERNAL_REQUIREMENTS.items():
+        try:
+            actual = _optional_internal_requirements(_load_toml(path), path)
+        except ReleaseVersionError as exc:
+            findings.append(str(exc))
+            continue
+        if actual != expected:
+            findings.append(
+                f"{path}: optional internal requirements differ; "
+                f"expected {expected}, found {actual}"
             )
 
 

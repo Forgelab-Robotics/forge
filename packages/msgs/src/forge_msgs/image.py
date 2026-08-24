@@ -82,7 +82,9 @@ class Image(BaseModel):
             )
         expected = self.step * self.height
         if len(self.data) != expected:
-            raise ValueError(f"data length must equal step * height ({len(self.data)} != {expected})")
+            raise ValueError(
+                f"data length must equal step * height ({len(self.data)} != {expected})"
+            )
         return self
 
     @property
@@ -116,7 +118,9 @@ class Image(BaseModel):
             if self.channels == 1
             else (self.step, self.dtype.itemsize * self.channels, self.dtype.itemsize)
         )
-        return np.ndarray(shape=shape, dtype=self.dtype, buffer=self.data, strides=strides).copy()
+        return np.ndarray(
+            shape=shape, dtype=self.dtype, buffer=self.data, strides=strides
+        ).copy()
 
     @classmethod
     def from_numpy(cls, frame: np.ndarray, encoding: ImageEncoding = "rgb8") -> "Image":
@@ -125,17 +129,23 @@ class Image(BaseModel):
         dtype, channels = _ENCODING_INFO[encoding]
         expected_dtype = np.dtype(dtype)
         if frame.dtype != expected_dtype:
-            raise ValueError(f"{encoding} expects dtype {expected_dtype}, got {frame.dtype}")
+            raise ValueError(
+                f"{encoding} expects dtype {expected_dtype}, got {frame.dtype}"
+            )
 
         if channels == 1:
             if frame.ndim == 3 and frame.shape[2] == 1:
                 frame = frame.reshape(frame.shape[0], frame.shape[1])
             if frame.ndim != 2:
-                raise ValueError(f"{encoding} expects shape (H, W) or (H, W, 1), got {frame.shape}")
+                raise ValueError(
+                    f"{encoding} expects shape (H, W) or (H, W, 1), got {frame.shape}"
+                )
             height, width = frame.shape
         else:
             if frame.ndim != 3 or frame.shape[2] != channels:
-                raise ValueError(f"{encoding} expects shape (H, W, {channels}), got {frame.shape}")
+                raise ValueError(
+                    f"{encoding} expects shape (H, W, {channels}), got {frame.shape}"
+                )
             height, width, _ = frame.shape
 
         contiguous = np.ascontiguousarray(frame)
@@ -161,7 +171,9 @@ class Image(BaseModel):
         )
 
     @classmethod
-    def from_arrow(cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes) -> "Image":
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "Image":
         batch = ensure_record_batch(data)
         if batch.num_rows == 0:
             raise ValueError("Image RecordBatch must contain one row")
@@ -213,7 +225,9 @@ class CompressedImage(BaseModel):
         elif frame.ndim == 3 and frame.shape[2] == 3:
             image = PILImage.fromarray(frame, mode="RGB")
         else:
-            raise ValueError(f"compressed image expects HW, HW1, or HW3 frame, got {frame.shape}")
+            raise ValueError(
+                f"compressed image expects HW, HW1, or HW3 frame, got {frame.shape}"
+            )
 
         buffer = io.BytesIO()
         save_format = format.upper()

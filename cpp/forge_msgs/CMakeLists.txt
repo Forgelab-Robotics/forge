@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(forge_msgs_cpp VERSION 1.1.0 LANGUAGES CXX)
+project(forge_msgs_cpp VERSION 1.2.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -21,9 +21,11 @@ add_library(forge_msgs_cpp
   src/perception.cpp
   src/sensor.cpp
   src/text.cpp
+  src/tool.cpp
   src/trajectory.cpp
 )
 add_library(forge_msgs::forge_msgs ALIAS forge_msgs_cpp)
+target_compile_features(forge_msgs_cpp PUBLIC cxx_std_20)
 
 target_include_directories(forge_msgs_cpp
   PUBLIC

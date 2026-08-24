@@ -1,0 +1,96 @@
+version: 1
+package: forge_msgs
+domain: tool
+
+messages:
+  ToolMessage:
+    purpose: Low-rate Forge ToolEndpoint protocol carrier for Dora and Arrow IPC.
+    row_count: single
+    fields:
+      protocol:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        allowed_values:
+          - forge.tool.endpoint/v1alpha1
+      message_type:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        allowed_values:
+          - endpoint.register
+          - endpoint.unregister
+          - endpoint.registry.response
+          - endpoint.status
+          - tool.invoke.request
+          - tool.invoke.response
+          - tool.status.request
+          - tool.status.response
+          - tool.result.request
+          - tool.result.response
+          - tool.control.request
+          - tool.control.response
+          - tool.event
+          - tool.error
+      request_id:
+        arrow: utf8
+        required: false
+        nullable: true
+        empty_allowed: false
+      invocation_id:
+        arrow: utf8
+        required: false
+        nullable: true
+        empty_allowed: false
+      attempt_id:
+        arrow: utf8
+        required: false
+        nullable: true
+        empty_allowed: false
+      endpoint_id:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+      endpoint_instance_id:
+        arrow: utf8
+        required: false
+        nullable: true
+        empty_allowed: false
+      operation:
+        arrow: utf8
+        required: false
+        nullable: true
+        empty_allowed: false
+      sequence:
+        arrow: int64
+        required: false
+        nullable: true
+        minimum: 0
+        maximum: 9007199254740991
+      payload_json:
+        arrow: utf8
+        required: true
+        empty_allowed: false
+        json_type: object
+    validation:
+      - The RecordBatch must contain exactly one row and every listed column.
+      - protocol must equal forge.tool.endpoint/v1alpha1.
+      - message_type must be one of the listed v1alpha1 message types.
+      - endpoint_id must contain valid Unicode and be non-empty after Unicode whitespace trimming.
+      - endpoint_instance_id may be null for any Tool execution message; every endpoint-management message, including endpoint.status, requires it.
+      - Non-null optional string fields must contain valid Unicode and be non-empty after Unicode whitespace trimming.
+      - Endpoint-management messages require null invocation_id, attempt_id, operation, and sequence.
+      - endpoint.register, endpoint.unregister, and endpoint.registry.response require a non-null request_id; unsolicited endpoint.status requires null request_id.
+      - Tool execution messages require non-null invocation_id, attempt_id, and operation.
+      - Every Tool execution message except tool.event requires a non-null request_id.
+      - tool.event requires null request_id and a non-negative sequence no greater than 2^53-1.
+      - Non-event messages require null sequence.
+      - payload_json must be a strict JSON object with unique keys, valid Unicode scalar values, finite numbers, integers in ±(2^53-1), and nesting no deeper than 64. Message-specific payload validation belongs to forge-tool.
+    notes:
+      - This schema is the release candidate for the first tagged/public Tool protocol contract; earlier untagged prototypes are not compatible even if they used the same v1alpha1 protocol identifier.
+      - Python, Rust, and C++ bindings plus Gateway and provider deployments must upgrade atomically; mixed prototype/current deployments are unsupported.
+      - The carrier has no observation timestamp. Dora event context supplies transport observation time.
+      - The stable correlation fields are real Arrow columns so routing and recordings do not need to parse payload_json.
+      - Arrow null represents an omitted optional logical-envelope field; empty strings are not null sentinels.
+      - A provider-originated tool.event must supply its concrete endpoint_instance_id even though the generic pre-routing Tool carrier field is nullable.
+      - ToolMessage is a carrier for the Endpoint protocol, not a Runtime ToolSpec or caller-facing invocation API.

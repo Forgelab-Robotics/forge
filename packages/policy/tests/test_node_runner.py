@@ -17,7 +17,13 @@ fake_dora = types.ModuleType("dora")
 fake_dora.Node = object
 sys.modules.setdefault("dora", fake_dora)
 
-from forge_msgs import Image, JointCommand, JointState, PolicyCommand, PolicyCommandStatus
+from forge_msgs import (
+    Image,
+    JointCommand,
+    JointState,
+    PolicyCommand,
+    PolicyCommandStatus,
+)
 from forge_policy.node_runner import run_dora_policy_node
 
 
@@ -92,12 +98,15 @@ def test_runner_waits_for_start(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert policy.generated == []
     assert FakeNode.sent == []
@@ -108,7 +117,11 @@ def test_runner_starts_and_sends_action(monkeypatch) -> None:
 
     FakeNode.reset(
         [
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("start"),
+            },
             {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
             {"type": "INPUT", "id": "image/top", "value": _image_payload()},
             {"type": "INPUT", "id": "tick"},
@@ -118,12 +131,15 @@ def test_runner_starts_and_sends_action(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert [output_id for output_id, _ in FakeNode.sent] == [
         "policy_command_status",
@@ -143,11 +159,23 @@ def test_runner_reset_clears_cached_observation(monkeypatch) -> None:
 
     FakeNode.reset(
         [
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("start"),
+            },
             {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
             {"type": "INPUT", "id": "image/top", "value": _image_payload()},
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("reset")},
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("reset"),
+            },
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("start"),
+            },
             {"type": "INPUT", "id": "tick"},
             {"type": "STOP"},
         ]
@@ -155,12 +183,15 @@ def test_runner_reset_clears_cached_observation(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert policy.reset_count == 1
     assert policy.generated == []
@@ -176,10 +207,18 @@ def test_runner_reset_scene_clears_cache_and_preserves_running(monkeypatch) -> N
 
     FakeNode.reset(
         [
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("start"),
+            },
             {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
             {"type": "INPUT", "id": "image/top", "value": _image_payload()},
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("reset_scene")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("reset_scene"),
+            },
             {"type": "INPUT", "id": "tick"},
             {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
             {"type": "INPUT", "id": "image/top", "value": _image_payload()},
@@ -190,12 +229,15 @@ def test_runner_reset_scene_clears_cache_and_preserves_running(monkeypatch) -> N
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert policy.reset_count == 1
     assert len(policy.generated) == 1
@@ -215,9 +257,21 @@ def test_runner_reset_scene_preserves_paused_phase(monkeypatch) -> None:
 
     FakeNode.reset(
         [
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("start")},
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("pause")},
-            {"type": "INPUT", "id": "policy_command", "value": _command_payload("reset_scene")},
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("start"),
+            },
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("pause"),
+            },
+            {
+                "type": "INPUT",
+                "id": "policy_command",
+                "value": _command_payload("reset_scene"),
+            },
             {"type": "INPUT", "id": "proprio_state", "value": _state_payload()},
             {"type": "INPUT", "id": "image/top", "value": _image_payload()},
             {"type": "INPUT", "id": "tick"},
@@ -227,12 +281,15 @@ def test_runner_reset_scene_preserves_paused_phase(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert policy.reset_count == 1
     assert policy.generated == []
@@ -266,12 +323,15 @@ def test_runner_ignores_other_policy_id(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={"image/top": "top"},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={"image/top": "top"},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert policy.generated == []
     assert FakeNode.sent == []
@@ -293,12 +353,15 @@ def test_runner_rejects_unsupported_command(monkeypatch) -> None:
     monkeypatch.setattr(node_runner, "Node", FakeNode)
 
     policy = FakePolicy()
-    assert run_dora_policy_node(
-        policy,
-        joint_order=["joint1"],
-        image_input_id_to_alias={},
-        build_action=_build_action,
-    ) == 0
+    assert (
+        run_dora_policy_node(
+            policy,
+            joint_order=["joint1"],
+            image_input_id_to_alias={},
+            build_action=_build_action,
+        )
+        == 0
+    )
 
     assert [output_id for output_id, _ in FakeNode.sent] == ["policy_command_status"]
     status = PolicyCommandStatus.from_arrow(FakeNode.sent[0][1])

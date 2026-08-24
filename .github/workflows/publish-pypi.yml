@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! "$REQUESTED_TAG" =~ ^forge-(common|msgs|robot|policy|kinematics)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+          if [[ ! "$REQUESTED_TAG" =~ ^forge-(common|msgs|robot|policy|kinematics|tool)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Unsupported release tag: $REQUESTED_TAG" >&2
             exit 1
           fi

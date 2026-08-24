@@ -43,9 +43,7 @@ _JOINT_TRAJECTORY_POINT_TYPE = pa.struct(
 _JOINT_TRAJECTORY_TYPE = pa.struct(
     [
         pa.field("joint_names", _STRING_LIST_TYPE, nullable=False),
-        pa.field(
-            "points", pa.list_(_JOINT_TRAJECTORY_POINT_TYPE), nullable=False
-        ),
+        pa.field("points", pa.list_(_JOINT_TRAJECTORY_POINT_TYPE), nullable=False),
     ]
 )
 _JOINT_TOLERANCE_TYPE = pa.struct(
@@ -299,9 +297,7 @@ class FollowJointTrajectoryGoal(_ArrowMessage):
                 raise ValueError(
                     f"{field_name} joint names must belong to trajectory.joint_names"
                 )
-        _validate_non_negative(
-            "goal_time_tolerance_ns", self.goal_time_tolerance_ns
-        )
+        _validate_non_negative("goal_time_tolerance_ns", self.goal_time_tolerance_ns)
         return self
 
 

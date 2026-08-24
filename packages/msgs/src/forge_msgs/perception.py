@@ -16,7 +16,9 @@ def _list_type(value_type: pa.DataType) -> pa.ListType:
 
 
 def _schema(*fields: tuple[str, pa.DataType]) -> pa.Schema:
-    return pa.schema([pa.field(name, data_type, nullable=False) for name, data_type in fields])
+    return pa.schema(
+        [pa.field(name, data_type, nullable=False) for name, data_type in fields]
+    )
 
 
 def _to_record_batch(values: dict[str, object], schema: pa.Schema) -> pa.RecordBatch:

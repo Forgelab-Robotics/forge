@@ -19,10 +19,29 @@ The crate currently exports:
 - `SegmentationMaskSet`
 - `Pose` and `PoseSet`
 - `PolicyCommand` and `PolicyCommandStatus`
+- `ToolMessage`
 - `Text`
 
-Each message type is designed for single-row Arrow `RecordBatch` interchange so
-Rust, Python, and Dora nodes can exchange the same payloads.
+Each message type is designed for single-row Arrow `RecordBatch` interchange.
+
+`ToolMessage`, defined by `tool.v1.yaml`, is the release candidate for the first
+tagged/public Tool protocol contract; earlier untagged prototypes are incompatible, and
+Python/Rust/C++ bindings plus Gateway and provider must deploy atomically. It is implemented in Python, Rust,
+and C++ as an exact ten-column carrier ordered as `protocol`, `message_type`,
+`request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
+`endpoint_instance_id`, `operation`, `sequence`, and `payload_json`. All columns
+are `utf8` except nullable `sequence: int64`; optional values use Arrow null.
+`endpoint_instance_id` is structurally nullable on pre-routing `tool.*` messages, but a
+provider-originated `tool.event` must supply its concrete instance; every `endpoint.*`
+message, including `endpoint.status`, requires it.
+`payload_json` is a bounded strict JSON object with unique keys, valid Unicode,
+finite numbers, interoperable integers, and at most 64 levels. Message-specific
+validation remains in `forge-tool`. The known management types include
+`endpoint.registry.response`; register, unregister, and Registry response require
+`request_id`, while unsolicited endpoint status requires null. Transport
+observation time is not a carrier column. The repository's bidirectional IPC
+compatibility coverage for this carrier
+is between Python and C++.
 
 ## Testing
 
