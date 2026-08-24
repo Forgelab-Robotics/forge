@@ -363,8 +363,9 @@ same SPI/Wire boundary whether the provider is an Operator or Adapter.
 
 ## 14. Versioning and deployment
 
-`forge.tool.endpoint/v1alpha1` is the candidate contract for the first tagged/public
-Tool release. Earlier untagged prototypes are not a compatibility baseline.
+`forge.tool.endpoint/v1alpha1` is the first tagged/public Tool contract, released with
+Tool `0.1.0` and Msgs `1.2.0`. Earlier untagged prototypes are not a compatibility
+baseline.
 
 The first release is coordinated across the `forge-tool` logical package, Python/Rust/C++
 `ToolMessage` bindings, Gateway behavior, and concrete providers. Mixed

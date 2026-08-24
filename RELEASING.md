@@ -33,7 +33,7 @@ Do not create separate Python/Rust/C++ tags for one family. `forge-msgs-v1.0.0`,
 
 Do not use or move historical generic tags such as `v1.0.0`. They belong to an earlier repository layout. All new release tags must use a family namespace.
 
-The initial five `1.0.0` tags may point to the same clean commit. Tool is versioned at `0.1.0`; its tag, when released, will be `forge-tool-v0.1.0`. Later releases can be independent, for example:
+The initial five `1.0.0` tags may point to the same clean commit. Tool's first release is `forge-tool-v0.1.0`. Later releases can be independent, for example:
 
 ```text
 forge-common-v1.0.1
@@ -41,6 +41,7 @@ forge-msgs-v1.2.0
 forge-robot-v1.0.0
 forge-policy-v1.1.0
 forge-kinematics-v1.0.2
+forge-tool-v0.1.0
 ```
 
 ## Downstream dependencies
@@ -65,9 +66,10 @@ A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from ea
 6. Run the version gate and relevant tests before review.
 
 When one family introduces a dependency whose minimum version is being released from
-the same revision, publish the dependency family first. For the current candidates,
-`forge-msgs 1.2.0` must be available before publishing `forge-tool 0.1.0`, so
-`forge-tool[dora]` can resolve its `forge-msgs>=1.2.0,<2` requirement.
+the same revision, publish the dependency family first. For the coordinated Msgs 1.2.0
+and Tool 0.1.0 releases, `forge-msgs 1.2.0` must be available before publishing
+`forge-tool 0.1.0`, so `forge-tool[dora]` can resolve its `forge-msgs>=1.2.0,<2`
+requirement.
 
 `./scripts/check_release_versions.py` verifies family synchronization, workspace membership, internal Python requirements, uv/Cargo locks, and the Msgs interface major. In GitLab and GitHub tag pipelines it also reads `CI_COMMIT_TAG` or `GITHUB_REF_NAME` and rejects unknown families, non-SemVer tags, and tags whose version differs from `versions.toml`.
 
@@ -268,6 +270,11 @@ After review:
 6. Attach checksums or package registry links to the corresponding GitLab Release if artifacts are uploaded.
 7. Update downstream nodes to use the family tags and regenerate their locks.
 
+When one release depends on another version from the same commit, do not batch-push the
+tags. Push and publish the dependency tag first, verify the exact package version from
+the public registry, and only then push the dependent tag. For Msgs 1.2.0 and Tool 0.1.0,
+publish `forge-msgs-v1.2.0` before `forge-tool-v0.1.0`.
+
 The initial five `1.0.0` baseline tags have already been created:
 
 ```text
@@ -278,6 +285,6 @@ forge-policy-v1.0.0
 forge-kinematics-v1.0.0
 ```
 
-This historical list does not indicate that a Tool tag has been published.
-These and all future release tags are immutable. Never move or reuse one; increment
-the affected family version and create a new protected tag instead.
+Tool's first release uses the separate `forge-tool-v0.1.0` tag. These and all future
+release tags are immutable. Never move or reuse one; increment the affected family
+version and create a new protected tag instead.

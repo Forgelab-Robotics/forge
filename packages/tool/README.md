@@ -35,8 +35,7 @@ therefore does not imply a complete caller-to-provider Action system.
 
 ## Installation
 
-Python 3.12 or newer is required. Tool `0.1.0` is still an unreleased candidate; the
-following distribution commands apply after publication:
+Python 3.12 or newer is required. Install Tool `0.1.0` from PyPI:
 
 ```bash
 pip install forge-tool
@@ -414,10 +413,10 @@ Explicitly import from `forge_tool.dora`:
 
 ## Protocol documentation
 
-- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/master/interfaces/forge_tool/README.md)
-- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/master/interfaces/forge_tool/ARCHITECTURE.md)
-- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/master/interfaces/forge_tool/PROTOCOL.md)
-- [Canonical `ToolMessage` Arrow schema](https://github.com/Forgelab-Robotics/forge/blob/master/interfaces/forge_msgs/tool.v1.yaml)
+- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/README.md)
+- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/ARCHITECTURE.md)
+- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/PROTOCOL.md)
+- [Canonical `ToolMessage` Arrow schema](https://github.com/Forgelab-Robotics/forge/blob/forge-msgs-v1.2.0/interfaces/forge_msgs/tool.v1.yaml)
 
 ## Development
 
@@ -429,4 +428,4 @@ uv run pytest packages/tool/tests
 
 ## License
 
-Apache-2.0. See the repository [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/master/LICENSE).
+Apache-2.0. See the release [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/LICENSE).

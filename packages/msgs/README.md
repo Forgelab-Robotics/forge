@@ -106,10 +106,11 @@ Producers should omit empty outputs when there is no meaningful text.
 
 ### `ToolMessage`
 
-Cross-language single-row Arrow carrier for one Forge ToolEndpoint v1alpha1
-logical message. This is the release candidate for the first tagged/public Tool
-protocol contract; earlier untagged prototypes are incompatible, and Python/Rust/C++
-bindings plus Gateway and provider must deploy atomically. Its exact ten-column order is `protocol`, `message_type`,
+Cross-language single-row Arrow carrier for one `forge.tool.endpoint/v1alpha1` logical
+message. Msgs `1.2.0` introduces the carrier; the first tagged/public `forge-tool`
+package release using this protocol is `0.1.0`. Earlier untagged prototypes are
+incompatible, and Python/Rust/C++ bindings plus Gateway and provider must deploy
+atomically. Its exact ten-column order is `protocol`, `message_type`,
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
 `endpoint_instance_id`, `operation`, `sequence`, and `payload_json`; all are
 `utf8` except nullable `sequence: int64`. `request_id`, `invocation_id`,

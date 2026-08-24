@@ -1,6 +1,6 @@
 # Forge ToolEndpoint Wire Protocol v1alpha1
 
-- Status: **release candidate** for the first tagged/public Forge Tool release
+- Status: **released** with Forge Tool `0.1.0`
 - Protocol identifier: `forge.tool.endpoint/v1alpha1`
 
 This document is the normative language-neutral contract for low-rate endpoint
@@ -88,11 +88,11 @@ protocol = forge.tool.endpoint/v1alpha1
 
 A receiver MUST reject any other value as an unsupported protocol version.
 
-This is the candidate contract for the first tagged/public release of this identifier.
-Earlier untagged prototypes are not a compatibility baseline. The first release must be
-deployed as one coordinated version set across the logical protocol package,
-Python/Rust/C++ carrier bindings, Gateway, and providers. Mixed prototype/current
-deployments are unsupported.
+This is the first tagged/public contract for this identifier, released with Tool `0.1.0`
+and Msgs `1.2.0`. Earlier untagged prototypes are not a compatibility baseline. A
+compatible deployment MUST use one coordinated version set across the logical protocol
+package, Python/Rust/C++ carrier bindings, Gateway, and providers. Mixed
+prototype/current deployments are unsupported.
 
 ### 3.2 JSON rules
 

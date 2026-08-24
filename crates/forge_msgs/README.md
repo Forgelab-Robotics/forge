@@ -24,8 +24,9 @@ The crate currently exports:
 
 Each message type is designed for single-row Arrow `RecordBatch` interchange.
 
-`ToolMessage`, defined by `tool.v1.yaml`, is the release candidate for the first
-tagged/public Tool protocol contract; earlier untagged prototypes are incompatible, and
+`ToolMessage`, defined by `tool.v1.yaml`, is introduced in Msgs `1.2.0` for
+`forge.tool.endpoint/v1alpha1`; the first tagged/public `forge-tool` package release using
+this protocol is `0.1.0`. Earlier untagged prototypes are incompatible, and
 Python/Rust/C++ bindings plus Gateway and provider must deploy atomically. It is implemented in Python, Rust,
 and C++ as an exact ten-column carrier ordered as `protocol`, `message_type`,
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,

@@ -4,8 +4,8 @@ Forge Tool separates a caller-facing Tool Runtime from the provider-side
 ToolEndpoint contract. The files in this directory document the stable provider
 boundary and its logical Wire protocol.
 
-The protocol identifier is `forge.tool.endpoint/v1alpha1`. Tool `0.1.0` is still an
-unreleased candidate for the first tagged/public Forge Tool release.
+The protocol identifier is `forge.tool.endpoint/v1alpha1`. Tool `0.1.0` is the first
+tagged/public Forge Tool release.
 
 ## Read this first
 
@@ -69,7 +69,7 @@ The architecture document defines these terms in context.
 
 ## Compatibility
 
-The first public Tool release must deploy `forge-tool`, the Python/Rust/C++
-`ToolMessage` bindings, Gateway, and providers as one coordinated version set. Earlier
-untagged prototypes are not a compatibility baseline, even if they used the same
-v1alpha1 identifier.
+Tool `0.1.0` and Msgs `1.2.0` define one coordinated contract set. Compatible
+deployments must use matching `forge-tool`, Python/Rust/C++ `ToolMessage` bindings,
+Gateway, and provider revisions. Earlier untagged prototypes are not a compatibility
+baseline, even if they used the same v1alpha1 identifier.

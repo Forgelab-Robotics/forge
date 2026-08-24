@@ -4,7 +4,9 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
-### Tool 0.1.0
+## forge-tool 0.1.0 - 2026-08-24
+
+Protected tag: `forge-tool-v0.1.0`
 
 - Add the dependency-free `forge-tool` Python package with validated endpoint descriptors, attempt-scoped `ToolExecutionKey`, authoritative terminal results, structured status/control/event/error models, and async Query/Action/Session ToolEndpoint SPI.
 - Define the generic ToolEndpoint v1alpha1 invoke/status/result/control/event/error and endpoint-management message family, strict UTF-8 JSON codec, closed typed payload schemas, complete request-derived envelope factories, and response correlation validation.
@@ -14,12 +16,14 @@ Forge package families are versioned independently. Implementations of the same 
 - Add the exact ten-column `forge_msgs.ToolMessage` carrier in Python, Rust, and C++; keep message-specific payload validation in `forge-tool` and cover bidirectional Python/C++ Arrow IPC interop.
 - Keep ToolEndpoint as a provider-side SPI/Wire boundary. The external Gateway and YOLO integration currently validate an experimental endpoint-oriented Query bridge, not the target ToolSpec/Runtime caller boundary; the complete caller-facing Runtime, stable Web/Dora caller contracts, Gateway Action/events, Session dispatch, SSE, and MCP remain outside Tool 0.1.0.
 - Define identity and correlation without promising replay, persistent idempotency, exactly-once execution, or automatic retry. Action duplicate suppression is private, bounded, and ends on eviction or process restart.
-- Prepare v1alpha1 as the first coordinated tagged/public Tool release candidate; earlier untagged prototypes are incompatible and mixed logical-package/carrier/Gateway/provider deployments are unsupported.
+- Release v1alpha1 as the first coordinated tagged/public Tool contract; earlier untagged prototypes are incompatible and mixed logical-package/carrier/Gateway/provider deployments are unsupported.
 
-### Msgs 1.2.0
+## forge-msgs 1.2.0 - 2026-08-24
 
-This backward-compatible message-family release is coordinated with Tool 0.1.0 and must
-be published first so the Tool Dora binding can resolve its carrier dependency.
+Protected tag: `forge-msgs-v1.2.0`
+
+This backward-compatible message-family release is coordinated with Tool 0.1.0. Msgs is
+published first so the Tool Dora binding can resolve its carrier dependency.
 
 - Add `tool.v1.yaml` and `forge_msgs.ToolMessage` alongside `PolicyCommand` and `PolicyCommandStatus` in the canonical cross-language schema and the Python, Rust, and C++ carrier implementations.
 - Define an exact ten-column, single-row Arrow carrier whose optional columns use null, whose `payload_json` contains the logical payload object, and which has no observation timestamp; Python `from_arrow()` additionally supports a caller-configured pre-validation raw payload byte limit.

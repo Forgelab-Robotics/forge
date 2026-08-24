@@ -31,17 +31,15 @@ packages, for example a separate `forge_robots` repository.
 ## Status
 
 Forge tracks six independently versioned package families: Common, Msgs, Robot,
-Policy, Kinematics, and Tool. Common, Robot, Policy, and Kinematics have published
-`1.0.1` releases, while Msgs has published `1.1.0`. Current unreleased manifests stage
-Msgs `1.2.0` and Tool `0.1.0`. Implementations of one family across Python, Rust, C++,
-and the language-neutral interface remain synchronized; unrelated families may release
-at different rates.
+Policy, Kinematics, and Tool. Current releases are Common `1.0.1`, Msgs `1.2.0`, Robot
+`1.0.1`, Policy `1.0.1`, Kinematics `1.0.1`, and Tool `0.1.0`. Implementations of one
+family across Python, Rust, C++, and the language-neutral interface remain synchronized;
+unrelated families may release at different rates.
 
 Each release is identified by a protected family tag such as
-`forge-msgs-v1.0.0`; Tool releases use `forge-tool-v<semver>`. Historical generic
-tags such as `v1.0.0` belong to an earlier repository layout and do not identify
-these releases. The tag pattern does not indicate that a Tool tag has been
-published.
+`forge-msgs-v1.2.0`; Tool releases use `forge-tool-v<semver>`. Historical generic tags
+such as `v1.0.0` belong to an earlier repository layout and do not identify these
+releases.
 
 The initial family releases define stable contracts for message schemas,
 serialization, shared utilities, kinematics, and robot/policy runners. Each
@@ -51,9 +49,9 @@ requires its next major version. See
 [`RELEASING.md`](RELEASING.md) for package-family boundaries, protected GitLab
 tags, and validation procedures.
 
-Forge ToolEndpoint v1alpha1 has no earlier tagged/public Tool release. Its first release
-candidate is coordinated across `forge-tool`, Python/Rust/C++ `ToolMessage` bindings,
-Gateway, and providers; earlier untagged prototypes are incompatible, and mixed
+Forge ToolEndpoint v1alpha1 is the first tagged/public Tool contract and is released as
+Tool `0.1.0` with its carrier in Msgs `1.2.0`. Compatible deployments must use matching
+Gateway and provider revisions. Earlier untagged prototypes are incompatible, and mixed
 deployments are not supported as backward compatible.
 
 ## Tool documentation
@@ -176,7 +174,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge
   GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
-  GIT_TAG forge-msgs-v1.1.0
+  GIT_TAG forge-msgs-v1.2.0
   SOURCE_SUBDIR cpp/forge_msgs
 )
 FetchContent_MakeAvailable(forge)
