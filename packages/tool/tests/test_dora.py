@@ -122,6 +122,38 @@ class DoraAction:
         return ToolResultResponse(status="pending")
 
 
+class DoraSession:
+    def __init__(self, *, emit_early: bool = False) -> None:
+        self.emit_early = emit_early
+        self.emitter: ToolEventEmitter | None = None
+        self.start_calls = 0
+
+    async def start(
+        self,
+        request: ToolRequest,
+        context: ToolContext,
+        events: ToolEventEmitter,
+    ) -> ToolAccepted:
+        self.start_calls += 1
+        self.emitter = events
+        if self.emit_early:
+            await events.emit(ToolEvent(type="progress", data={"fraction": 0.5}))
+        return ToolAccepted()
+
+    async def stop(
+        self,
+        key: ToolExecutionKey,
+        reason: str | None = None,
+    ) -> ToolControlResponse:
+        return ToolControlResponse(command="stop", status="accepted")
+
+    async def status(self, key: ToolExecutionKey) -> ToolExecutionStatus:
+        return ToolExecutionStatus(phase="running")
+
+    async def result(self, key: ToolExecutionKey) -> ToolResultResponse:
+        return ToolResultResponse(status="pending")
+
+
 def _ipc_bytes(batch: pa.RecordBatch) -> bytes:
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, batch.schema) as writer:
@@ -201,6 +233,44 @@ def _action_handler(action: DoraAction) -> ToolEndpointHandler:
     )
 
 
+def _session_context() -> ToolContext:
+    return ToolContext(
+        execution_key=ToolExecutionKey("session-invocation-1", "attempt-1"),
+        tool_id="forge.tool.policy",
+        implementation_id="policy",
+        endpoint_id="policy.runner",
+        operation="serve",
+    )
+
+
+def _session_request() -> ToolEnvelope:
+    return make_invoke_request_envelope(
+        ToolRequest(arguments={}),
+        _session_context(),
+        request_id="session-request-1",
+        endpoint_instance_id="instance-1",
+    )
+
+
+def _session_handler(session: DoraSession) -> ToolEndpointHandler:
+    return ToolEndpointHandler(
+        ToolEndpointDescriptor(
+            protocol_version=TOOL_ENDPOINT_PROTOCOL,
+            endpoint_id="policy.runner",
+            operations=(
+                ToolOperationDescriptor(
+                    name="serve",
+                    semantics="session",
+                    stoppable=True,
+                    status_supported=True,
+                ),
+            ),
+        ),
+        endpoint_instance_id="instance-1",
+        operations={"serve": session},
+    )
+
+
 @pytest.mark.parametrize(
     "envelope",
     [
@@ -261,6 +331,36 @@ def test_dora_dispatch_returns_accepted_before_early_action_event() -> None:
 
     binding = DoraToolEndpointBinding(_action_handler(action), event_sink=publish)
     request = _action_request()
+
+    outputs = asyncio.run(
+        binding.dispatch_input(tool_envelope_to_message(request).to_arrow())
+    )
+    messages = [
+        tool_message_to_envelope(ToolMessage.from_arrow(output)) for output in published
+    ]
+
+    assert outputs == ()
+    assert [message.message_type for message in messages] == [
+        "tool.invoke.response",
+        "tool.event",
+    ]
+    assert isinstance(invoke_response_from_payload(messages[0].payload), ToolAccepted)
+    assert event_from_payload(messages[1].payload) == ToolEvent(
+        type="progress",
+        data={"fraction": 0.5},
+    )
+    assert messages[1].sequence == 0
+
+
+def test_dora_dispatch_returns_accepted_before_early_session_event() -> None:
+    session = DoraSession(emit_early=True)
+    published: list[pa.RecordBatch] = []
+
+    async def publish(batch: pa.RecordBatch) -> None:
+        published.append(batch)
+
+    binding = DoraToolEndpointBinding(_session_handler(session), event_sink=publish)
+    request = _session_request()
 
     outputs = asyncio.run(
         binding.dispatch_input(tool_envelope_to_message(request).to_arrow())

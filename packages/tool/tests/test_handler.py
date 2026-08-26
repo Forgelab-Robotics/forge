@@ -853,6 +853,461 @@ def test_action_status_rejects_backward_phase_transition() -> None:
     assert error_from_payload(response.payload).code == "FORGE_ENDPOINT_INVALID_TRANSITION"
 
 
+class RecordingSession(FakeSession):
+    def __init__(
+        self,
+        *,
+        events: tuple[ToolEvent, ...] = (),
+        status: ToolExecutionStatus | None = None,
+        result: ToolResultResponse | None = None,
+    ) -> None:
+        self.events = events
+        self.current_status = status or ToolExecutionStatus(phase="running")
+        self.current_result = result or ToolResultResponse(status="pending")
+        self.start_calls = 0
+        self.stop_calls = 0
+        self.emitter: ToolEventEmitter | None = None
+
+    async def start(
+        self,
+        request: ToolRequest,
+        context: ToolContext,
+        events: ToolEventEmitter,
+    ) -> ToolAccepted:
+        self.start_calls += 1
+        self.emitter = events
+        for event in self.events:
+            await events.emit(event)
+        return ToolAccepted(details={"service": "policy"})
+
+    async def stop(
+        self,
+        key: ToolExecutionKey,
+        reason: str | None = None,
+    ) -> ToolControlResponse:
+        self.stop_calls += 1
+        return ToolControlResponse(
+            command="stop",
+            status="accepted",
+            details={"reason": reason},
+        )
+
+    async def status(self, key: ToolExecutionKey) -> ToolExecutionStatus:
+        return self.current_status
+
+    async def result(self, key: ToolExecutionKey) -> ToolResultResponse:
+        return self.current_result
+
+
+def _session_handler(
+    session: RecordingSession,
+    *,
+    max_early_events: int = 32,
+    max_concurrency: int = 1,
+    max_retained_executions: int = 1_024,
+) -> ToolEndpointHandler:
+    return ToolEndpointHandler(
+        _descriptor(
+            ToolOperationDescriptor(
+                name="serve",
+                semantics="session",
+                stoppable=True,
+                status_supported=True,
+                max_concurrency=max_concurrency,
+            ),
+            endpoint_id="policy.runner",
+        ),
+        endpoint_instance_id="instance-1",
+        operations={"serve": session},
+        max_early_events=max_early_events,
+        max_retained_executions=max_retained_executions,
+    )
+
+
+def _session_context(
+    *,
+    invocation_id: str = "invocation-1",
+    attempt_id: str = "attempt-1",
+) -> ToolContext:
+    context = _context(endpoint_id="policy.runner", operation="serve")
+    return ToolContext(
+        execution_key=ToolExecutionKey(invocation_id, attempt_id),
+        tool_id=context.tool_id,
+        implementation_id=context.implementation_id,
+        endpoint_id=context.endpoint_id,
+        operation=context.operation,
+    )
+
+
+def _session_request(
+    *,
+    request_id: str = "request-1",
+    invocation_id: str = "invocation-1",
+) -> ToolEnvelope:
+    return make_invoke_request_envelope(
+        ToolRequest(arguments={}),
+        _session_context(invocation_id=invocation_id),
+        request_id=request_id,
+        endpoint_instance_id="instance-1",
+    )
+
+
+def test_session_dispatch_orders_accepted_before_buffered_events() -> None:
+    session = RecordingSession(
+        events=(
+            ToolEvent(type="progress", data={"fraction": 0.25}),
+            ToolEvent(type="heartbeat"),
+        )
+    )
+    handler = _session_handler(session)
+    request = _session_request()
+
+    messages = asyncio.run(handler.dispatch(request))
+
+    assert [message.message_type for message in messages] == [
+        "tool.invoke.response",
+        "tool.event",
+        "tool.event",
+    ]
+    assert invoke_response_from_payload(messages[0].payload) == ToolAccepted(
+        details={"service": "policy"}
+    )
+    assert [message.sequence for message in messages[1:]] == [0, 1]
+    assert [event_from_payload(message.payload) for message in messages[1:]] == [
+        ToolEvent(type="progress", data={"fraction": 0.25}),
+        ToolEvent(type="heartbeat"),
+    ]
+
+
+def test_duplicate_session_execution_key_does_not_restart_provider() -> None:
+    session = RecordingSession()
+    handler = _session_handler(session)
+    first = _session_request(request_id="request-1")
+    duplicate = _session_request(request_id="request-2")
+
+    first_response = asyncio.run(handler.dispatch(first))[0]
+    duplicate_response = asyncio.run(handler.dispatch(duplicate))[0]
+
+    assert session.start_calls == 1
+    assert invoke_response_from_payload(first_response.payload) == ToolAccepted(
+        details={"service": "policy"}
+    )
+    assert invoke_response_from_payload(duplicate_response.payload) == ToolAccepted(
+        details={"service": "policy"}
+    )
+    validate_response_correlation(duplicate, duplicate_response)
+
+
+def test_concurrent_duplicate_session_waits_without_restarting_provider() -> None:
+    class DelayedSession(RecordingSession):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def start(
+            self,
+            request: ToolRequest,
+            context: ToolContext,
+            events: ToolEventEmitter,
+        ) -> ToolAccepted:
+            self.start_calls += 1
+            self.started.set()
+            await self.release.wait()
+            return ToolAccepted(details={"service": "policy"})
+
+    async def scenario() -> tuple[ToolEnvelope, ToolEnvelope, int]:
+        session = DelayedSession()
+        handler = _session_handler(session)
+        first = asyncio.create_task(
+            handler.dispatch(_session_request(request_id="request-1"))
+        )
+        await session.started.wait()
+        duplicate = asyncio.create_task(
+            handler.dispatch(_session_request(request_id="request-2"))
+        )
+        await asyncio.sleep(0)
+        session.release.set()
+        return (await first)[0], (await duplicate)[0], session.start_calls
+
+    first, duplicate, start_calls = asyncio.run(scenario())
+
+    assert start_calls == 1
+    assert invoke_response_from_payload(first.payload) == invoke_response_from_payload(
+        duplicate.payload
+    )
+
+
+def test_session_early_event_buffer_overflow_becomes_unknown_without_retry() -> None:
+    session = RecordingSession(
+        events=(
+            ToolEvent(type="heartbeat"),
+            ToolEvent(type="heartbeat"),
+        )
+    )
+    handler = _session_handler(session, max_early_events=1)
+
+    first = asyncio.run(handler.dispatch(_session_request(request_id="request-1")))[0]
+    duplicate = asyncio.run(
+        handler.dispatch(_session_request(request_id="request-2"))
+    )[0]
+
+    outcome = invoke_response_from_payload(first.payload)
+    assert isinstance(outcome, ToolResult)
+    assert outcome.status == "unknown"
+    assert outcome.error is not None
+    assert outcome.error.code == "FORGE_ENDPOINT_OUTCOME_UNKNOWN"
+    assert invoke_response_from_payload(duplicate.payload) == outcome
+    assert session.start_calls == 1
+
+
+def test_session_terminal_event_requires_and_retains_matching_result() -> None:
+    result = ToolResult(status="stopped", outputs={"uptime_s": 12.5})
+    session = RecordingSession(
+        events=(ToolEvent(type="stopped"),),
+        status=ToolExecutionStatus(phase="stopped"),
+        result=ToolResultResponse(status="available", result=result),
+    )
+    handler = _session_handler(session)
+
+    messages = asyncio.run(handler.dispatch(_session_request()))
+    result_request = make_result_request_envelope(
+        _session_context(),
+        request_id="result-1",
+        endpoint_instance_id="instance-1",
+    )
+    result_response = asyncio.run(handler.handle_result(result_request))
+
+    assert messages[1].message_type == "tool.event"
+    assert result_response_from_payload(result_response.payload) == ToolResultResponse(
+        status="available",
+        result=result,
+    )
+    assert session.emitter is not None
+    with pytest.raises(ToolProtocolError, match="after terminal"):
+        asyncio.run(session.emitter.emit(ToolEvent(type="heartbeat")))
+
+
+def test_session_status_result_and_stop_dispatch_provider_models() -> None:
+    result = ToolResult(status="stopped", outputs={"uptime_s": 12.5})
+    session = RecordingSession()
+    handler = _session_handler(session)
+    asyncio.run(handler.dispatch(_session_request()))
+
+    status_request = make_status_request_envelope(
+        _session_context(),
+        request_id="status-1",
+        endpoint_instance_id="instance-1",
+    )
+    result_request = make_result_request_envelope(
+        _session_context(),
+        request_id="result-1",
+        endpoint_instance_id="instance-1",
+    )
+    control_request = make_control_request_envelope(
+        "stop",
+        _session_context(),
+        request_id="control-1",
+        endpoint_instance_id="instance-1",
+        reason="operator request",
+    )
+
+    status_response = asyncio.run(handler.handle_status(status_request))
+    result_response = asyncio.run(handler.handle_result(result_request))
+    control_response = asyncio.run(handler.handle_control(control_request))
+
+    assert status_response_from_payload(status_response.payload) == ToolExecutionStatus(
+        phase="running"
+    )
+    assert result_response_from_payload(result_response.payload) == ToolResultResponse(
+        status="pending"
+    )
+    assert control_response_from_payload(control_response.payload) == ToolControlResponse(
+        command="stop",
+        status="accepted",
+        details={"reason": "operator request"},
+    )
+    assert session.stop_calls == 1
+
+    session.current_status = ToolExecutionStatus(phase="stopped")
+    session.current_result = ToolResultResponse(status="available", result=result)
+    terminal_status = asyncio.run(handler.handle_status(status_request))
+    assert status_response_from_payload(terminal_status.payload).phase == "stopped"
+    assert session.emitter is not None
+    with pytest.raises(ToolProtocolError, match="after terminal"):
+        asyncio.run(session.emitter.emit(ToolEvent(type="progress")))
+
+
+def test_stopped_session_start_converges_unknown_and_wakes_duplicate() -> None:
+    class StoppedStartSession(RecordingSession):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.never = asyncio.Event()
+
+        async def start(
+            self,
+            request: ToolRequest,
+            context: ToolContext,
+            events: ToolEventEmitter,
+        ) -> ToolAccepted:
+            self.start_calls += 1
+            self.emitter = events
+            self.started.set()
+            await self.never.wait()
+            return ToolAccepted()
+
+    async def scenario() -> tuple[ToolEnvelope, int]:
+        session = StoppedStartSession()
+        handler = _session_handler(session)
+        first = asyncio.create_task(
+            handler.dispatch(_session_request(request_id="request-1"))
+        )
+        await session.started.wait()
+        duplicate = asyncio.create_task(
+            handler.dispatch(_session_request(request_id="request-2"))
+        )
+        await asyncio.sleep(0)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        return (await asyncio.wait_for(duplicate, timeout=1))[0], session.start_calls
+
+    duplicate, start_calls = asyncio.run(scenario())
+
+    outcome = invoke_response_from_payload(duplicate.payload)
+    assert isinstance(outcome, ToolResult)
+    assert outcome.status == "unknown"
+    assert start_calls == 1
+
+
+def test_session_max_concurrency_rejects_then_terminal_releases_once() -> None:
+    session = RecordingSession()
+    handler = _session_handler(session, max_concurrency=1)
+
+    first = asyncio.run(
+        handler.dispatch(_session_request(request_id="first", invocation_id="first"))
+    )[0]
+    blocked = asyncio.run(
+        handler.dispatch(_session_request(request_id="blocked", invocation_id="second"))
+    )[0]
+
+    assert isinstance(invoke_response_from_payload(first.payload), ToolAccepted)
+    capacity = invoke_response_from_payload(blocked.payload)
+    assert isinstance(capacity, ToolError)
+    assert capacity.code == "FORGE_ENDPOINT_CAPACITY"
+    assert session.start_calls == 1
+
+    session.current_status = ToolExecutionStatus(phase="stopped")
+    session.current_result = ToolResultResponse(
+        status="available",
+        result=ToolResult(status="stopped"),
+    )
+    terminal_request = make_status_request_envelope(
+        _session_context(invocation_id="first"),
+        request_id="terminal",
+        endpoint_instance_id="instance-1",
+    )
+    asyncio.run(handler.handle_status(terminal_request))
+    # Repeating terminal observation must not release a second permit.
+    asyncio.run(handler.handle_status(terminal_request))
+
+    session.current_status = ToolExecutionStatus(phase="running")
+    session.current_result = ToolResultResponse(status="pending")
+    admitted = asyncio.run(
+        handler.dispatch(_session_request(request_id="retry", invocation_id="second"))
+    )[0]
+    assert isinstance(invoke_response_from_payload(admitted.payload), ToolAccepted)
+    assert session.start_calls == 2
+
+
+def test_session_execution_retention_is_bounded_and_evicts_completed_records() -> None:
+    class RejectingSession(RecordingSession):
+        async def start(
+            self,
+            request: ToolRequest,
+            context: ToolContext,
+            events: ToolEventEmitter,
+        ) -> ToolAccepted:
+            self.start_calls += 1
+            raise ToolEndpointError(
+                ToolError(code="BUSY", message="not admitted", retryable=True)
+            )
+
+    session = RejectingSession()
+    handler = _session_handler(session, max_retained_executions=2)
+
+    for index in range(3):
+        response = asyncio.run(
+            handler.dispatch(
+                _session_request(
+                    request_id=f"request-{index}",
+                    invocation_id=f"invocation-{index}",
+                )
+            )
+        )[0]
+        assert isinstance(invoke_response_from_payload(response.payload), ToolError)
+
+    asyncio.run(
+        handler.dispatch(
+            _session_request(request_id="request-retry", invocation_id="invocation-0")
+        )
+    )
+    assert session.start_calls == 4
+
+
+def test_session_status_rejects_backward_phase_transition() -> None:
+    session = RecordingSession()
+    handler = _session_handler(session)
+    asyncio.run(handler.dispatch(_session_request()))
+    status_request = make_status_request_envelope(
+        _session_context(),
+        request_id="status",
+        endpoint_instance_id="instance-1",
+    )
+
+    asyncio.run(handler.handle_status(status_request))
+    session.current_status = ToolExecutionStatus(phase="accepted")
+    response = asyncio.run(handler.handle_status(status_request))
+
+    assert response.message_type == "tool.error"
+    assert error_from_payload(response.payload).code == "FORGE_ENDPOINT_INVALID_TRANSITION"
+
+
+def test_control_commands_are_semantics_scoped() -> None:
+    action = RecordingAction()
+    action_handler = _action_handler(action)
+    asyncio.run(action_handler.dispatch(_action_request()))
+    stop_request = make_control_request_envelope(
+        "stop",
+        _action_context(),
+        request_id="stop-1",
+        endpoint_instance_id="instance-1",
+    )
+    response = asyncio.run(action_handler.handle_control(stop_request))
+    assert control_response_from_payload(response.payload) == ToolControlResponse(
+        command="stop",
+        status="unsupported",
+    )
+    assert action.cancel_calls == 0
+
+    session = RecordingSession()
+    session_handler = _session_handler(session)
+    asyncio.run(session_handler.dispatch(_session_request()))
+    cancel_request = make_control_request_envelope(
+        "cancel",
+        _session_context(),
+        request_id="cancel-1",
+        endpoint_instance_id="instance-1",
+    )
+    response = asyncio.run(session_handler.handle_control(cancel_request))
+    assert control_response_from_payload(response.payload) == ToolControlResponse(
+        command="cancel",
+        status="unsupported",
+    )
+    assert session.stop_calls == 0
+
+
 def test_query_handler_requires_an_invoke_request() -> None:
     handler = ToolEndpointHandler(
         _descriptor(),

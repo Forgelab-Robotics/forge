@@ -333,13 +333,14 @@ class DoraToolEndpointBinding:
             for operation in self._handler.descriptor.operations
             if operation.name == request.operation
         )
-        action_invoke = (
+        start_invoke = (
             request.message_type == "tool.invoke.request"
-            and operation_descriptor.semantics == "action"
+            and operation_descriptor.semantics in ("action", "session")
         )
-        if action_invoke and self._event_sink is None:
+        if start_invoke and self._event_sink is None:
             raise RuntimeError(
-                "Action dispatch requires an asynchronous event_sink publisher"
+                "Action or Session dispatch requires an asynchronous event_sink "
+                "publisher"
             )
 
         publish_ready = asyncio.Event()
@@ -350,17 +351,17 @@ class DoraToolEndpointBinding:
             await publish_ready.wait()
             if publish_failure:
                 raise RuntimeError(
-                    "Action response publication failed; event was not published"
+                    "Response publication failed; event was not published"
                 ) from publish_failure[0]
             if self._event_sink is None:
-                raise RuntimeError("Action event publisher is unavailable")
+                raise RuntimeError("Event publisher is unavailable")
             async with publish_lock:
                 await self._event_sink(self._event_to_arrow(event))
 
         try:
             messages = await self._handler.dispatch(
                 request,
-                event_sink=emit_event if action_invoke else None,
+                event_sink=emit_event if start_invoke else None,
             )
         except Exception:  # noqa: BLE001 - trusted requests must receive a response.
             logger.exception(
@@ -374,7 +375,7 @@ class DoraToolEndpointBinding:
                 request.operation,
             )
             messages = (_correlated_internal_error(request),)
-        if not action_invoke:
+        if not start_invoke:
             return tuple(
                 self._event_to_arrow(message)
                 if message.message_type == "tool.event"
@@ -383,7 +384,7 @@ class DoraToolEndpointBinding:
             )
 
         if self._event_sink is None:
-            raise RuntimeError("Action event publisher is unavailable")
+            raise RuntimeError("Event publisher is unavailable")
         response_batch = self._response_to_arrow(messages[0], request)
         try:
             async with publish_lock:
@@ -409,7 +410,8 @@ class DoraToolEndpointBinding:
         )
         if operation_descriptor.semantics != "query":
             raise NotImplementedError(
-                "handle_input is Query-only; Action operations must use dispatch_input"
+                "handle_input is Query-only; Action or Session operations must use "
+                "dispatch_input"
             )
         try:
             _validate_envelope_size(request, self._max_request_bytes)
