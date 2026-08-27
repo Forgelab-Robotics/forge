@@ -4,6 +4,42 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
+## forge-tool 1.0.0 - 2026-08-27
+
+Protected tag: `forge-tool-v1.0.0`
+
+- Promote the Tool protocol line to its first stable major: the `forge.tool.endpoint/v1alpha1` wire contract, Query/Action/Session dispatch, and semantics-scoped control (`cancel` for Action, `stop` for Session) are the supported surface.
+- Preserve an established terminal result when `start()` raises after terminal progression, and reply with the preserved result instead of a rejection or `unknown` (ported from the master tool line during the master->dev merge).
+- Track the forge-msgs 1.3.0 line merged from master: the `forge_msgs.ToolMessage` carrier and sensor messages (IMU, point cloud buffer) ship with this release.
+
+## forge-tool 0.2.0 - 2026-08-27
+
+Protected tag: `forge-tool-v0.2.0`
+
+- Add the dependency-free `forge-tool` Python package family.
+- Define endpoint descriptors, attempt-scoped `ToolExecutionKey`, authoritative terminal results, structured control/error/status/event models, and async Query/Action/Session Endpoint protocols.
+- Add the generic ToolEndpoint v1alpha1 invoke/status/result/control/event message family, strict deterministic UTF-8 JSON codec, typed payload adapters, endpoint instance identity, event sequence, and descriptor registration conversion.
+- Define ToolEndpoint as a provider-side SPI/Wire boundary for embedding a binding/handler in concrete Dora business nodes; identity/correlation, lifecycle, terminal-result, and endpoint-sequence value rules remain protocol semantics, while P0 provides no stateful replay, deduplication, retention, retry, or exactly-once execution guarantee.
+- Build normal execution responses directly from their originating request envelope so endpoint nodes do not need to retain a complete invoke context solely for correlation.
+- Add correlated `endpoint.registry.response` management acknowledgements with strict `EndpointRegistryResponse` lease/revision/error invariants, request-derived factories, and management response correlation validation; require `request_id` for register, unregister, and Registry response while forbidding it on unsolicited endpoint health status.
+- Simplify endpoint management to periodic `endpoint.register` announce/upsert/lease renewal plus `endpoint.unregister` and `endpoint.registry.response`; remove `endpoint.heartbeat` and its factory API.
+- Allow every `tool.*` logical envelope to omit `endpoint_instance_id` before provider routing, including correlated invoke responses/errors when Gateway selection fails; require it on every `endpoint.*` message, keep `None` response correlation exact, and make the cross-language Arrow carrier column nullable accordingly.
+- Align Registry semantics with the current Gateway: a static configured/trusted route authorizes `endpoint_id` and owns at most one current instance; descriptor-equal same-instance register renews without a revision, a new instance atomically replaces current with one revision, same-instance descriptor changes are rejected, matching unregister and expiry remove current with one revision, absent unregister is effect-idempotently accepted, and a stale instance cannot remove current.
+- Define `registry_revision` only as a process-local availability-state revision reported after the current decision; Gateway restart begins empty and periodic register restores availability.
+- Document the current Query-only Gateway scope: it routes invoke and correlates only terminal response/`tool.error`; `endpoint.status` and `tool.event` remain protocol/model messages but are not accepted or routed. Status validation is deferred to future availability/health needs, and event correlation to future Action/Session needs.
+- Document the existing simple experimental HTTP Query discovery/invoke bridge and Dora logical caller vertical bridge, plus the completed concrete YOLO Dora provider-node embedding and first real Query vertical; additional providers, a general runner, the complete caller-facing Tool Runtime API, stable Dora caller contract, Action/Session, SSE, and MCP remain future work.
+- Narrow execution guarantees to identity and correlation: `request_id` identifies one exchange, while `invocation_id + attempt_id` identifies one execution attempt. P0 provides no replay/dedup/exactly-once behavior and does not automatically retry Query; Action/retry and any bounded stateful deduplication remain future requirement-driven design.
+- Declare this v1alpha1 contract the first atomic tagged/public Tool release contract; earlier untagged prototypes are incompatible and mixed Python/Rust/C++/Gateway/provider deployments are unsupported.
+- Add a transport-independent Query-first `ToolEndpointHandler` with exact descriptor-to-implementation mapping validation, endpoint-instance route checks, correlated terminal results, and structured endpoint rejection handling; it owns no Dora node or execution state.
+- Add an optional `forge_tool.dora` in-memory Arrow carrier binding that bridges one `forge_msgs.ToolMessage` input to the logical Query handler and returns a response `RecordBatch` without owning a Dora node, event loop, or metadata; it bounds raw carriers, raw payload JSON, accepted logical requests, and responses, reserves correlated-error headroom, rejects IPC bytes for upstream bounded decode, and keeps the base `forge-tool` install dependency-free.
+- Keep message-specific logical payload validation in `forge-tool`; the cross-language `forge_msgs.ToolMessage` is its Arrow transport carrier.
+- Keep the complete caller-facing Tool Runtime API, stable caller contracts, Gateway implementation, concrete provider-node Dora I/O wiring, ToolSpec, and concrete endpoint adapters outside this initial protocol package; the completed external YOLO provider wiring and current Gateway Query bridges do not change the package boundary, and a future general runner is optional rather than the only integration path.
+
+- Implement Session dispatch in `ToolEndpointHandler`: Session operations share the Action start path (per-operation admission, duplicate suppression, bounded early-event buffering, terminal-result barriers, and `unknown` convergence), and Action and Session share status, result, and control dispatch.
+- Scope control dispatch by semantics: `cancel` is admitted only for Action operations and `stop` only for Session operations, with other control requests rejected as unsupported.
+- Generalize the bound-provider typing from `ActionToolEndpoint` to `ActionToolEndpoint | SessionToolEndpoint` across the event emitter, start-invoke, and result paths.
+- Route Action and Session invoke messages through the `forge_tool.dora` asynchronous event-sink path while keeping `handle_invoke` and `handle_input` Query-only.
+
 ## forge-msgs 1.3.0 - 2026-08-24
 
 Protected tag: `forge-msgs-v1.3.0`

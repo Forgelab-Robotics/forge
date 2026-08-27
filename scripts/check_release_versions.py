@@ -46,7 +46,7 @@ EXPECTED_INTERNAL_REQUIREMENTS = {
         "forge-msgs>=1.0.0,<2",
         "forge-policy>=1.0.0,<2",
         "forge-robot>=1.0.0,<2",
-        "forge-tool>=0.1.0,<0.2",
+        "forge-tool>=1.0.0,<2",
     },
     Path("packages/policy/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},
     Path("packages/robot/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},

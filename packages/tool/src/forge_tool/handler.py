@@ -103,7 +103,7 @@ class _ActionEventEmitter:
         self,
         handler: ToolEndpointHandler,
         record: _ExecutionRecord,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         *,
         sink: ToolEventSink | None,
         max_early_events: int,
@@ -121,7 +121,7 @@ class _ActionEventEmitter:
         self._terminal_pending = False
 
     async def emit(self, event: ToolEvent) -> None:
-        """Validate, sequence, and expose one event for the bound Action attempt."""
+        """Validate, sequence, and expose one event for the bound execution attempt."""
         if not isinstance(event, ToolEvent):
             raise TypeError("event must be a ToolEvent")
 
@@ -130,7 +130,7 @@ class _ActionEventEmitter:
             if self._closed or self._terminal_pending:
                 raise ToolProtocolError(
                     "FORGE_ENDPOINT_EVENT_AFTER_TERMINAL",
-                    "an Action event was emitted after terminal event progression closed",
+                    "an event was emitted after terminal event progression closed",
                 )
             if terminal_phase is not None:
                 self._terminal_pending = True
@@ -153,7 +153,7 @@ class _ActionEventEmitter:
                 raise ToolProtocolError(
                     "FORGE_ENDPOINT_EARLY_EVENT_BUFFER_OVERFLOW",
                     (
-                        "Action emitted more than "
+                        "Tool endpoint emitted more than "
                         f"{self._max_early_events} events before acceptance"
                     ),
                 )
@@ -172,7 +172,8 @@ class _ActionEventEmitter:
                 return
             if self._sink is None:
                 raise RuntimeError(
-                    "Action emitted after acceptance without an asynchronous event sink"
+                    "Tool endpoint emitted after acceptance without an asynchronous "
+                    "event sink"
                 )
             # Keep the emitter lock across the asynchronous sink so concurrent emitters
             # cannot physically publish a later sequence first.
@@ -220,11 +221,12 @@ def _validate_implementation(
 
 
 class ToolEndpointHandler:
-    """Bind endpoint implementations and dispatch Query/Action execution messages.
+    """Bind endpoint implementations and dispatch Query/Action/Session execution messages.
 
-    Action transport state is deliberately module-private. Provider methods remain the
-    authority for business status, result, and control decisions. Session execution is
-    intentionally deferred.
+    Action and Session transport state is deliberately module-private. Provider methods
+    remain the authority for business status, result, and control decisions. Control
+    dispatch is semantics-scoped: cancel is only admitted for Action operations and
+    stop only for Session operations.
     """
 
     __slots__ = (
@@ -429,7 +431,7 @@ class ToolEndpointHandler:
         record.permit_held = False
         active = self._active_by_operation[record.operation]
         if active <= 0:
-            raise RuntimeError("Action admission permit count became negative")
+            raise RuntimeError("Execution admission permit count became negative")
         self._active_by_operation[record.operation] = active - 1
 
     @staticmethod
@@ -530,12 +532,12 @@ class ToolEndpointHandler:
         self,
         key: ToolExecutionKey,
         operation: str,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         status: ToolExecutionStatus,
     ) -> ToolResult:
         response = await endpoint.result(key)
         if not isinstance(response, ToolResultResponse):
-            raise TypeError("ActionToolEndpoint.result() must return a ToolResultResponse")
+            raise TypeError("Tool endpoint result() must return a ToolResultResponse")
         if response.status != "available" or response.result is None:
             raise ToolProtocolError(
                 "FORGE_ENDPOINT_TERMINAL_RESULT_UNAVAILABLE",
@@ -547,12 +549,12 @@ class ToolEndpointHandler:
     async def _establish_terminal_from_event(
         self,
         key: ToolExecutionKey,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         phase: str,
     ) -> None:
         response = await endpoint.result(key)
         if not isinstance(response, ToolResultResponse):
-            raise TypeError("ActionToolEndpoint.result() must return a ToolResultResponse")
+            raise TypeError("Tool endpoint result() must return a ToolResultResponse")
         if response.status != "available" or response.result is None:
             raise ToolProtocolError(
                 "FORGE_ENDPOINT_TERMINAL_RESULT_UNAVAILABLE",
@@ -566,7 +568,7 @@ class ToolEndpointHandler:
         async with self._lock:
             record = self._executions.get(key)
             if record is None:
-                raise RuntimeError("Action event has no execution record")
+                raise RuntimeError("Tool event has no execution record")
             operation = record.operation
         await self._record_terminal(
             key,
@@ -591,7 +593,7 @@ class ToolEndpointHandler:
             raise TypeError("QueryToolEndpoint.query() must return a ToolResult")
         return (make_invoke_response_envelope(result, request),)
 
-    async def _handle_action_invoke(
+    async def _handle_start_invoke(
         self,
         request: ToolEnvelope,
         operation_name: str,
@@ -599,7 +601,10 @@ class ToolEndpointHandler:
     ) -> tuple[ToolEnvelope, ...]:
         endpoint_request, context = invoke_request_from_envelope(request)
         key = context.execution_key
-        endpoint = cast(ActionToolEndpoint, self._implementations[operation_name])
+        endpoint = cast(
+            ActionToolEndpoint | SessionToolEndpoint,
+            self._implementations[operation_name],
+        )
 
         async with self._lock:
             record = self._executions.get(key)
@@ -661,7 +666,7 @@ class ToolEndpointHandler:
         if duplicate:
             await record.ready.wait()
             if record.outcome is None:
-                raise RuntimeError("Action execution record became ready without an outcome")
+                raise RuntimeError("Execution record became ready without an outcome")
             return (make_invoke_response_envelope(record.outcome, request),)
 
         emitter = _ActionEventEmitter(
@@ -675,7 +680,7 @@ class ToolEndpointHandler:
         try:
             accepted = await endpoint.start(endpoint_request, context, emitter)
             if not isinstance(accepted, ToolAccepted):
-                raise TypeError("ActionToolEndpoint.start() must return a ToolAccepted")
+                raise TypeError("Tool endpoint start() must return a ToolAccepted")
         except ToolEndpointError as error:
             await emitter.reject()
             async with self._lock:
@@ -688,11 +693,11 @@ class ToolEndpointHandler:
                 record.ready.set()
             return (make_invoke_response_envelope(outcome, request),)
         except asyncio.CancelledError:
-            await asyncio.shield(self._resolve_failed_action_start(record, emitter))
+            await asyncio.shield(self._finish_unknown(record, emitter))
             raise
         except Exception:
-            outcome = await self._resolve_failed_action_start(record, emitter)
-            return (make_invoke_response_envelope(outcome, request),)
+            unknown = await self._finish_unknown(record, emitter)
+            return (make_invoke_response_envelope(unknown, request),)
 
         async with self._lock:
             if record.result is not None:
@@ -709,7 +714,7 @@ class ToolEndpointHandler:
         early_events = await emitter.accept()
         return (make_invoke_response_envelope(outcome, request), *early_events)
 
-    async def _resolve_failed_action_start(
+    async def _finish_unknown(
         self,
         record: _ExecutionRecord,
         emitter: _ActionEventEmitter,
@@ -720,13 +725,12 @@ class ToolEndpointHandler:
                 record.outcome = record.result
                 record.ready.set()
                 return record.result
-
             unknown = ToolResult(
                 status="unknown",
                 error=ToolError(
                     code="FORGE_ENDPOINT_OUTCOME_UNKNOWN",
                     message=(
-                        "Action start failed after dispatch; the execution outcome "
+                        "Start failed after dispatch; the execution outcome "
                         "cannot be recovered"
                     ),
                     retryable=False,
@@ -740,7 +744,7 @@ class ToolEndpointHandler:
             record.result = unknown
             self._release_permit_locked(record)
             record.ready.set()
-            return unknown
+        return unknown
 
     async def handle_invoke(
         self,
@@ -751,30 +755,31 @@ class ToolEndpointHandler:
         operation_name = cast(str, request.operation)
         if self._operation_descriptors[operation_name].semantics != "query":
             raise NotImplementedError(
-                "handle_invoke is Query-only; Action operations must use dispatch"
+                "handle_invoke is Query-only; Action or Session operations must use "
+                "dispatch"
             )
         messages = await self.dispatch(request)
         return messages[0]
 
     async def handle_status(self, request: ToolEnvelope) -> ToolEnvelope:
-        """Dispatch one Action status lookup to the authoritative provider."""
+        """Dispatch one Action/Session status lookup to the authoritative provider."""
         messages = await self.dispatch(request)
         return messages[0]
 
     async def handle_result(self, request: ToolEnvelope) -> ToolEnvelope:
-        """Dispatch one Action result lookup to the authoritative provider."""
+        """Dispatch one Action/Session result lookup to the authoritative provider."""
         messages = await self.dispatch(request)
         return messages[0]
 
     async def handle_control(self, request: ToolEnvelope) -> ToolEnvelope:
-        """Dispatch one Action control request to the authoritative provider."""
+        """Dispatch one Action/Session control request to the authoritative provider."""
         messages = await self.dispatch(request)
         return messages[0]
 
     async def _handle_status(
         self,
         request: ToolEnvelope,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         key: ToolExecutionKey,
     ) -> ToolEnvelope:
         record = self._executions.get(key)
@@ -786,7 +791,7 @@ class ToolEndpointHandler:
             return make_status_response_envelope(record.status, request)
         status = await endpoint.status(key)
         if not isinstance(status, ToolExecutionStatus):
-            raise TypeError("ActionToolEndpoint.status() must return a ToolExecutionStatus")
+            raise TypeError("Tool endpoint status() must return a ToolExecutionStatus")
         if status.phase in _TERMINAL_PHASES:
             await self._require_terminal_result(
                 key,
@@ -801,7 +806,7 @@ class ToolEndpointHandler:
     async def _handle_result(
         self,
         request: ToolEnvelope,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         key: ToolExecutionKey,
     ) -> ToolEnvelope:
         record = self._executions.get(key)
@@ -812,12 +817,12 @@ class ToolEndpointHandler:
             )
         response = await endpoint.result(key)
         if not isinstance(response, ToolResultResponse):
-            raise TypeError("ActionToolEndpoint.result() must return a ToolResultResponse")
+            raise TypeError("Tool endpoint result() must return a ToolResultResponse")
         if response.status == "available":
             status = await endpoint.status(key)
             if not isinstance(status, ToolExecutionStatus):
                 raise TypeError(
-                    "ActionToolEndpoint.status() must return a ToolExecutionStatus"
+                    "Tool endpoint status() must return a ToolExecutionStatus"
                 )
             await self._record_terminal(
                 key,
@@ -830,24 +835,28 @@ class ToolEndpointHandler:
     async def _handle_control(
         self,
         request: ToolEnvelope,
-        endpoint: ActionToolEndpoint,
+        endpoint: ActionToolEndpoint | SessionToolEndpoint,
         key: ToolExecutionKey,
     ) -> ToolEnvelope:
         command, reason = control_request_from_payload(request.payload)
-        if command != "cancel":
-            response = ToolControlResponse(command=command, status="unsupported")
+        semantics = self._operation_descriptors[cast(str, request.operation)].semantics
+        if command == "cancel" and semantics == "action":
+            response = await cast(ActionToolEndpoint, endpoint).cancel(key, reason)
+        elif command == "stop" and semantics == "session":
+            response = await cast(SessionToolEndpoint, endpoint).stop(key, reason)
         else:
-            response = await endpoint.cancel(key, reason)
-            if not isinstance(response, ToolControlResponse):
-                raise TypeError(
-                    "ActionToolEndpoint.cancel() must return a ToolControlResponse"
-                )
-            if response.command != command:
-                raise ToolProtocolError(
-                    "FORGE_PROTOCOL_CORRELATION_MISMATCH",
-                    "provider control response command does not match request",
-                    path="payload.response.command",
-                )
+            response = ToolControlResponse(command=command, status="unsupported")
+            return make_control_response_envelope(response, request)
+        if not isinstance(response, ToolControlResponse):
+            raise TypeError(
+                f"Tool endpoint {command}() must return a ToolControlResponse"
+            )
+        if response.command != command:
+            raise ToolProtocolError(
+                "FORGE_PROTOCOL_CORRELATION_MISMATCH",
+                "provider control response command does not match request",
+                path="payload.response.command",
+            )
         return make_control_response_envelope(response, request)
 
     async def dispatch(
@@ -861,11 +870,6 @@ class ToolEndpointHandler:
 
         operation_name = cast(str, request.operation)
         operation_descriptor = self._operation_descriptors[operation_name]
-        if operation_descriptor.semantics == "session":
-            raise NotImplementedError(
-                f"ToolEndpointHandler does not yet handle session operation "
-                f"{operation_name!r}"
-            )
 
         try:
             validate_message_envelope(request)
@@ -875,19 +879,22 @@ class ToolEndpointHandler:
         if request.message_type == "tool.invoke.request":
             if operation_descriptor.semantics == "query":
                 return await self._handle_query_invoke(request, operation_name)
-            return await self._handle_action_invoke(
+            return await self._handle_start_invoke(
                 request,
                 operation_name,
                 event_sink,
             )
-        if operation_descriptor.semantics != "action":
+        if operation_descriptor.semantics not in ("action", "session"):
             raise ToolProtocolError(
                 "FORGE_PROTOCOL_UNSUPPORTED_OPERATION",
                 "Query operations do not support status, result, or control requests",
                 path="operation",
             )
 
-        endpoint = cast(ActionToolEndpoint, self._implementations[operation_name])
+        endpoint = cast(
+            ActionToolEndpoint | SessionToolEndpoint,
+            self._implementations[operation_name],
+        )
         key = self._execution_key(request)
         try:
             if request.message_type == "tool.status.request":
