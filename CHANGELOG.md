@@ -4,6 +4,14 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
+## forge-tool 1.0.0 - 2026-08-27
+
+Protected tag: `forge-tool-v1.0.0`
+
+- Promote the Tool protocol line to its first stable major: the `forge.tool.endpoint/v1alpha1` wire contract, Query/Action/Session dispatch, and semantics-scoped control (`cancel` for Action, `stop` for Session) are the supported surface.
+- Preserve an established terminal result when `start()` raises after terminal progression, and reply with the preserved result instead of a rejection or `unknown` (ported from the master tool line during the master->dev merge).
+- Track the forge-msgs 1.3.0 line merged from master: the `forge_msgs.ToolMessage` carrier and sensor messages (IMU, point cloud buffer) ship with this release.
+
 ## forge-tool 0.2.0 - 2026-08-27
 
 Protected tag: `forge-tool-v0.2.0`
