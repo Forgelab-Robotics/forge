@@ -6,4 +6,4 @@ members = ["crates/*"]
 license = "Apache-2.0"
 authors = ["X-ERA"]
 edition = "2024"
-repository = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git"
+repository = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git"

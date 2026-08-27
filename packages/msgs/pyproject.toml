@@ -19,6 +19,11 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.0.0"]
 
+[project.urls]
+Repository = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge"
+Changelog = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/blob/master/CHANGELOG.md"
+Issues = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge/-/issues"
+
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"

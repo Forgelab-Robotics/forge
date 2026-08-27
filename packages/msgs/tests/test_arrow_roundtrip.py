@@ -1022,6 +1022,289 @@ def test_segmentation_reader_accepts_legacy_payload_without_score() -> None:
     assert canonical.schema.names[-1] == "score"
 
 
+def _replace_point_cloud_column(
+    batch: pa.RecordBatch, name: str, column: pa.Array
+) -> pa.RecordBatch:
+    columns = list(batch.columns)
+    columns[batch.schema.get_field_index(name)] = column
+    return pa.RecordBatch.from_arrays(columns, names=batch.schema.names)
+
+
+def test_point_cloud_uses_canonical_arrow_schema() -> None:
+    expected = pa.schema(
+        [
+            pa.field("width", pa.uint32(), nullable=False),
+            pa.field("height", pa.uint32(), nullable=False),
+            pa.field("is_dense", pa.bool_(), nullable=False),
+            pa.field("x", pa.list_(pa.float32()), nullable=False),
+            pa.field("y", pa.list_(pa.float32()), nullable=False),
+            pa.field("z", pa.list_(pa.float32()), nullable=False),
+            pa.field("intensity", pa.list_(pa.float32()), nullable=False),
+            pa.field("red", pa.list_(pa.uint8()), nullable=False),
+            pa.field("green", pa.list_(pa.uint8()), nullable=False),
+            pa.field("blue", pa.list_(pa.uint8()), nullable=False),
+        ]
+    )
+
+    batch = PointCloud(x=[], y=[], z=[]).to_arrow()
+
+    assert batch.schema == expected
+
+
+def test_point_cloud_reader_accepts_reordered_fields_and_extras() -> None:
+    cloud = PointCloud(x=[1.0], y=[2.0], z=[3.0])
+    canonical = cloud.to_arrow()
+    required_names = list(reversed(canonical.schema.names))
+    payload = pa.RecordBatch.from_arrays(
+        [pa.array(["ignored"])] + [canonical[name] for name in required_names],
+        names=["extra"] + required_names,
+    )
+
+    assert PointCloud.from_arrow(payload) == cloud
+
+
+def test_point_cloud_reader_rejects_missing_required_field() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = canonical.select(
+        [name for name in canonical.schema.names if name != "intensity"]
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud RecordBatch is missing required fields: intensity"
+    )
+
+
+def test_point_cloud_reader_rejects_duplicate_required_field() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = pa.RecordBatch.from_arrays(
+        [*canonical.columns, canonical["x"]],
+        names=[*canonical.schema.names, "x"],
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud RecordBatch field x must appear exactly once, got 2"
+    )
+
+
+@pytest.mark.parametrize("row_count", [0, 2])
+def test_point_cloud_reader_requires_exactly_one_row(row_count: int) -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    if row_count == 0:
+        payload = canonical.slice(0, 0)
+    else:
+        payload = pa.RecordBatch.from_arrays(
+            [pa.concat_arrays([column, column]) for column in canonical.columns],
+            schema=canonical.schema,
+        )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        f"PointCloud RecordBatch must contain exactly one row, got {row_count}"
+    )
+
+
+def test_point_cloud_reader_rejects_multiple_ipc_batches() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, canonical.schema) as writer:
+        writer.write_batch(canonical)
+        writer.write_batch(canonical)
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(sink.getvalue().to_pybytes())
+
+    assert str(exc_info.value) == (
+        "PointCloud IPC stream must contain exactly one RecordBatch"
+    )
+
+
+def test_point_cloud_reader_accepts_single_row_table_with_leading_empty_chunks() -> None:
+    cloud = PointCloud(x=[1.0], y=[2.0], z=[3.0])
+    canonical = cloud.to_arrow()
+    payload = pa.Table.from_arrays(
+        [
+            pa.chunked_array([column.slice(0, 0), column])
+            for column in canonical.columns
+        ],
+        schema=canonical.schema,
+    )
+
+    assert all(column.num_chunks == 2 for column in payload.columns)
+    assert PointCloud.from_arrow(payload) == cloud
+
+
+def test_point_cloud_reader_rejects_chunked_table_with_multiple_rows() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = pa.Table.from_batches([canonical, canonical])
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud RecordBatch must contain exactly one row, got 2"
+    )
+
+
+def test_point_cloud_reader_rejects_null_struct_parent_row() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = pa.StructArray.from_arrays(
+        canonical.columns,
+        fields=list(canonical.schema),
+        mask=pa.array([True]),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == "PointCloud StructArray row must not be null"
+
+
+def test_point_cloud_reader_rejects_wrong_scalar_type() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "width",
+        pa.array([1], type=pa.int64()),
+    )
+
+    with pytest.raises(TypeError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field width must have type uint32, got int64"
+    )
+
+
+def test_point_cloud_reader_rejects_null_scalar_cell() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "width",
+        pa.array([None], type=pa.uint32()),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field width cell must not be null"
+    )
+
+
+@pytest.mark.parametrize(
+    "list_type",
+    [
+        pytest.param(
+            pa.list_(pa.field("item", pa.float32(), nullable=False)),
+            id="non-null-child",
+        ),
+        pytest.param(
+            pa.list_(pa.field("value", pa.float32(), nullable=True)),
+            id="different-child-name",
+        ),
+    ],
+)
+def test_point_cloud_reader_accepts_list_child_field_variations(
+    list_type: pa.ListType,
+) -> None:
+    cloud = PointCloud(x=[1.0], y=[2.0], z=[3.0])
+    payload = _replace_point_cloud_column(
+        cloud.to_arrow(),
+        "x",
+        pa.array([[1.0]], type=list_type),
+    )
+
+    assert PointCloud.from_arrow(payload) == cloud
+
+
+def test_point_cloud_reader_rejects_wrong_list_type() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "x",
+        pa.array([[1.0]], type=pa.list_(pa.float64())),
+    )
+
+    with pytest.raises(TypeError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field x must have type list<item: float>, "
+        "got list<item: double>"
+    )
+
+
+def test_point_cloud_reader_rejects_large_list() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "x",
+        pa.array([[1.0]], type=pa.large_list(pa.float32())),
+    )
+
+    with pytest.raises(TypeError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field x must have type list<item: float>, "
+        "got large_list<item: float>"
+    )
+
+
+def test_point_cloud_reader_rejects_null_list_cell() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "x",
+        pa.array([None], type=pa.list_(pa.float32())),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field x list cell must not be null"
+    )
+
+
+def test_point_cloud_reader_rejects_null_list_item() -> None:
+    canonical = PointCloud(x=[1.0], y=[2.0], z=[3.0]).to_arrow()
+    payload = _replace_point_cloud_column(
+        canonical,
+        "x",
+        pa.array([[None]], type=pa.list_(pa.float32())),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        PointCloud.from_arrow(payload)
+
+    assert str(exc_info.value) == (
+        "PointCloud Arrow field x list items must not be null"
+    )
+
+
+@pytest.mark.parametrize("field_name", ["x", "y", "z", "intensity"])
+def test_point_cloud_rejects_finite_float32_overflow(field_name: str) -> None:
+    fields = {
+        "x": [0.0],
+        "y": [0.0],
+        "z": [0.0],
+        "intensity": [0.0],
+    }
+    fields[field_name][0] = float.fromhex("0x1p+128")
+
+    with pytest.raises(ValueError, match=rf"{field_name}.*float32"):
+        PointCloud(**fields)
+
+
 def test_point_cloud_roundtrip_and_dense_validation() -> None:
     cloud = PointCloud(
         width=2,
