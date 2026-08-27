@@ -1,8 +1,9 @@
 # Contributing to Forge
 
-Thank you for your interest in contributing to Forge. The repository is
-preparing the Forge 1.0 stable contract, so focused changes, compatibility
-analysis, and cross-language tests are especially important.
+Thank you for your interest in contributing to Forge. The repository maintains
+stable 1.x package families while developing the Tool alpha family, so focused
+changes, compatibility analysis, and cross-language tests are especially
+important.
 
 ## Development Setup
 
@@ -26,7 +27,7 @@ Before opening a pull request, run:
 python scripts/check_release_versions.py
 uv run ruff check .
 uv run python scripts/check_forge_msgs_schema.py
-uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests
+uv run pytest packages/msgs/tests packages/policy/tests packages/robot/tests packages/kinematics/tests packages/tool/tests
 cargo test --workspace --locked
 ```
 

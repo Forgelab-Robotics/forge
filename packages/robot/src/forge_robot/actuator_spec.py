@@ -147,4 +147,3 @@ def clip_and_validate_position_command(
 ) -> JointCommand:
     """位置命令裁剪包装。"""
     return clip_and_validate_command(command, specs)
-

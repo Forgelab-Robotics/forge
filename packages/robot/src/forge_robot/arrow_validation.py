@@ -26,7 +26,9 @@ def _read_name_list(batch: pa.RecordBatch) -> list[str]:
     return [str(name) for name in names]
 
 
-def _validate_vector_lengths(batch: pa.RecordBatch, names: list[str], fields: tuple[str, ...]) -> None:
+def _validate_vector_lengths(
+    batch: pa.RecordBatch, names: list[str], fields: tuple[str, ...]
+) -> None:
     for field in fields:
         try:
             values = batch[field][0].as_py()
@@ -92,7 +94,9 @@ def validate_robot_control_arrow(
         raise RobotArrowSchemaError(f"缺少必需列 {sorted(missing_columns)}")
 
     names = _read_name_list(batch)
-    _validate_vector_lengths(batch, names, ("position", "velocity", "effort", "kp", "kd"))
+    _validate_vector_lengths(
+        batch, names, ("position", "velocity", "effort", "kp", "kd")
+    )
     _validate_command_mode(batch)
 
     if strict_extra_columns:

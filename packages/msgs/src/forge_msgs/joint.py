@@ -20,7 +20,9 @@ def _validate_names(name: list[str]) -> None:
         raise ValueError("name items must be unique")
 
 
-def _validate_vector_length(field_name: str, values: list[float], names: list[str]) -> None:
+def _validate_vector_length(
+    field_name: str, values: list[float], names: list[str]
+) -> None:
     if values and len(values) != len(names):
         raise ValueError(
             f"{field_name} must be empty or have the same length as name "
@@ -33,7 +35,9 @@ def _field_values(batch: pa.RecordBatch, field_name: str) -> list[float]:
     return [float(v) for v in (values or [])]
 
 
-def _to_ordered_np(names: list[str], values: list[float], order: list[str]) -> np.ndarray:
+def _to_ordered_np(
+    names: list[str], values: list[float], order: list[str]
+) -> np.ndarray:
     by_name = dict(zip(names, values, strict=False))
     return np.array([by_name.get(name, 0.0) for name in order], dtype=np.float64)
 

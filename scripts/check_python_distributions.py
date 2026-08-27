@@ -22,7 +22,10 @@ PACKAGE_DIRS = {
     "robot": Path("packages/robot"),
     "policy": Path("packages/policy"),
     "kinematics": Path("packages/kinematics"),
+    "tool": Path("packages/tool"),
 }
+_TOOL_EXTRAS = {"dora"}
+_TOOL_REQUIREMENTS = {"forge-msgs>=1.1.0,<2 ; extra == 'dora'"}
 
 
 class DistributionCheckError(RuntimeError):
@@ -130,6 +133,18 @@ def _check_metadata(
         raise DistributionCheckError(
             f"{archive_name}: metadata must declare License-File: LICENSE"
         )
+    if name == "forge-tool":
+        extras = set(metadata.get_all("Provides-Extra", []))
+        requirements = set(metadata.get_all("Requires-Dist", []))
+        if extras != _TOOL_EXTRAS:
+            raise DistributionCheckError(
+                f"{archive_name}: forge-tool extras must equal {sorted(_TOOL_EXTRAS)}"
+            )
+        if requirements != _TOOL_REQUIREMENTS:
+            raise DistributionCheckError(
+                f"{archive_name}: forge-tool requirements must equal "
+                f"{sorted(_TOOL_REQUIREMENTS)}"
+            )
 
 
 def _check_wheel(wheel: Path, name: str, version: str, expected_license: bytes) -> None:

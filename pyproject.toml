@@ -13,6 +13,7 @@ dependencies = [
     "forge-msgs>=1.0.0,<2",
     "forge-policy>=1.0.0,<2",
     "forge-robot>=1.0.0,<2",
+    "forge-tool>=0.1.0,<0.2",
 ]
 
 [dependency-groups]
@@ -32,6 +33,7 @@ members = [
     "packages/policy",
     "packages/robot",
     "packages/kinematics",
+    "packages/tool",
 ]
 
 [tool.uv.sources]
@@ -40,6 +42,7 @@ forge-msgs = { workspace = true }
 forge-policy = { workspace = true }
 forge-robot = { workspace = true }
 forge-kinematics = { workspace = true }
+forge-tool = { workspace = true }
 
 [tool.ruff.lint.per-file-ignores]
 "packages/*/tests/*.py" = ["E402"]

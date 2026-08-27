@@ -95,7 +95,9 @@ class AudioChunk(BaseModel):
         elif frame.ndim == 2:
             frame_count, channels = frame.shape
         else:
-            raise ValueError(f"audio expects shape (frames,) or (frames, channels), got {frame.shape}")
+            raise ValueError(
+                f"audio expects shape (frames,) or (frames, channels), got {frame.shape}"
+            )
         contiguous = np.ascontiguousarray(frame, dtype=expected_dtype)
         return cls(
             sample_rate=sample_rate,
@@ -118,7 +120,9 @@ class AudioChunk(BaseModel):
         )
 
     @classmethod
-    def from_arrow(cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes) -> "AudioChunk":
+    def from_arrow(
+        cls, data: pa.RecordBatch | pa.Table | pa.StructArray | bytes
+    ) -> "AudioChunk":
         batch = ensure_record_batch(data)
         if batch.num_rows == 0:
             raise ValueError("AudioChunk RecordBatch must contain one row")

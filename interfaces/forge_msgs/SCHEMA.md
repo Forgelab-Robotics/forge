@@ -18,6 +18,7 @@ these interfaces.
 - `interaction.v1.yaml` defines human interaction and teleoperation messages.
 - `perception.v1.yaml` defines perception result messages.
 - `sensor.v1.yaml` defines raw sensor payloads.
+- `tool.v1.yaml` defines the Forge ToolEndpoint protocol carrier.
 
 Domain schemas evolve independently. Adding a new message to a domain does not
 change the wire contract of existing messages.
@@ -35,12 +36,14 @@ change the wire contract of existing messages.
 
 ## Implementation Coverage
 
-- Python implements the full v1 schema, including `TeleopObservation`.
-- Rust implements the shared message set used across domains, excluding the
-  Python-only `TeleopObservation`.
-- C++ implements the same shared message set as Rust in `cpp/forge_msgs`, with
-  `ToRecordBatch` / `FromRecordBatch` APIs and Arrow IPC stream helpers for
-  Python/C++ compatibility tests.
+- Python implements the full v1 schema, including `TeleopObservation` and
+  `ToolMessage`.
+- Rust implements the shared message set used across domains, including
+  `ToolMessage` but excluding the Python-only `TeleopObservation`.
+- C++ implements the same shared message set as Rust in `cpp/forge_msgs`,
+  including `ToolMessage`, with `ToRecordBatch` / `FromRecordBatch` APIs.
+- Bidirectional Arrow IPC compatibility for `ToolMessage` is covered between
+  Python and C++; no Rust/Python IPC coverage is claimed.
 
 ## Messages
 
@@ -392,6 +395,37 @@ Rules:
 
 - `text` must be a valid UTF-8 string.
 - Producers should omit empty outputs when there is no meaningful text.
+
+### ToolMessage
+
+Cross-language carrier for one Forge ToolEndpoint v1alpha1 logical message.
+`tool.v1.yaml` requires exactly one row and these ten Arrow columns in order:
+
+1. `protocol: utf8` (non-null)
+2. `message_type: utf8` (non-null)
+3. `request_id: utf8` (nullable)
+4. `invocation_id: utf8` (nullable)
+5. `attempt_id: utf8` (nullable)
+6. `endpoint_id: utf8` (non-null)
+7. `endpoint_instance_id: utf8` (nullable for `tool.*`; required for `endpoint.*`)
+8. `operation: utf8` (nullable)
+9. `sequence: int64` (nullable)
+10. `payload_json: utf8` (non-null)
+
+The nullable logical-envelope fields are always present as columns and use Arrow
+null when omitted; empty strings are not null sentinels. `endpoint_instance_id` may be
+omitted on any `tool.*` logical message before provider routing, but every `endpoint.*`
+message requires it. `payload_json` is the
+JSON encoding of the logical message payload object, not the full carrier
+envelope. It is a bounded strict JSON object: keys are unique, strings and keys
+contain valid Unicode scalar values, numbers are finite, integers fit
+`±(2^53-1)`, and nesting is at most 64 levels. The carrier has no observation
+timestamp; Dora event context supplies transport observation time. `forge_msgs`
+validates the carrier schema and generic correlation rules, while message-specific
+payload validation remains in `forge-tool`.
+
+Python, Rust, and C++ implement the carrier. Bidirectional Arrow IPC
+compatibility is covered between Python and C++.
 
 ### PolicyCommand
 

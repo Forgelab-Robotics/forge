@@ -17,3 +17,4 @@ schema_files:
   interaction: interaction.v1.yaml
   perception: perception.v1.yaml
   sensor: sensor.v1.yaml
+  tool: tool.v1.yaml

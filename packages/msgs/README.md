@@ -104,6 +104,31 @@ Single UTF-8 text payload for ASR transcripts, LLM responses, TTS input, and oth
 
 Producers should omit empty outputs when there is no meaningful text.
 
+### `ToolMessage`
+
+Cross-language single-row Arrow carrier for one Forge ToolEndpoint v1alpha1
+logical message. This is the first tagged/public Tool protocol contract; earlier
+untagged prototypes are incompatible, and Python/Rust/C++ bindings plus Gateway and
+provider must deploy atomically. Its exact ten-column order is `protocol`, `message_type`,
+`request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
+`endpoint_instance_id`, `operation`, `sequence`, and `payload_json`; all are
+`utf8` except nullable `sequence: int64`. `request_id`, `invocation_id`,
+`attempt_id`, `endpoint_instance_id`, `operation`, and `sequence` use Arrow null when
+omitted. `endpoint_instance_id` may be null on any `tool.*` message; every `endpoint.*`
+message, including `endpoint.status`, requires it.
+
+`payload_json` encodes the logical payload object rather than the full carrier
+envelope. It must be a bounded strict JSON object with unique keys, valid Unicode,
+finite numbers, interoperable integers, and at most 64 levels. The carrier has no
+observation timestamp; use Dora event context for transport observation time.
+`forge_msgs` validates the carrier and generic correlation rules, including
+`endpoint.registry.response`. Registration, unregister, and Registry response carriers
+require `request_id`; unsolicited endpoint status requires null and
+remains a health message rather than an ACK. Message-specific payload validation remains in
+`forge-tool`. Python, Rust, and C++
+implement the carrier, with bidirectional Python/C++ Arrow IPC compatibility
+coverage.
+
 ### Perception result sets
 
 The perception messages use parallel Arrow list columns in a single-row
