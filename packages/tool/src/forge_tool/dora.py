@@ -311,10 +311,10 @@ class DoraToolEndpointBinding:
     ) -> tuple[pa.RecordBatch, ...]:
         """Dispatch one execution request.
 
-        Action invoke requires ``event_sink``. The binding publishes its response and
-        buffered events through that same sink, awaiting the response publication before
-        opening the late-event barrier, and returns an empty tuple. Other request types
-        retain the response-first returned-tuple API.
+        Action or Session invoke requires ``event_sink``. The binding publishes its
+        response and buffered events through that same sink, awaiting the response
+        publication before opening the late-event barrier, and returns an empty tuple.
+        Other request types retain the response-first returned-tuple API.
         """
         request = self._request_from_arrow(value)
         try:

@@ -10,7 +10,7 @@ It provides:
 - async Query, Action, and Session ToolEndpoint SPI;
 - strict logical envelopes, typed payload codecs, complete factories, and correlation
   validators;
-- a transport-independent Query/Action `ToolEndpointHandler`; and
+- a transport-independent Query/Action/Session `ToolEndpointHandler`; and
 - an optional in-memory Arrow binding for embedding the handler in a Dora Operator or
   Adapter node.
 
@@ -23,19 +23,18 @@ persistent execution service.
 | --- | --- | --- | --- |
 | Models, descriptor, and SPI | Implemented | Implemented | Implemented |
 | Logical Wire messages | Implemented | Implemented | Implemented |
-| `ToolEndpointHandler` execution | Implemented | Implemented | **Not implemented** |
-| Optional Arrow/Dora binding | Implemented | Implemented | **Not implemented** |
+| `ToolEndpointHandler` execution | Implemented | Implemented | Implemented |
+| Optional Arrow/Dora binding | Implemented | Implemented | Implemented |
 
-“Session implemented” currently means its model, descriptor semantics, structural SPI,
-and generic Wire shapes exist. `ToolEndpointHandler.dispatch()` does not execute a
-Session operation yet.
+Action and Session operations share the handler's bounded execution lifecycle. Their
+control semantics remain distinct: Action admits `cancel`, while Session admits `stop`.
 
-The sibling Gateway integration is currently Query-only. Provider-side Action handling
-therefore does not imply a complete caller-to-provider Action system.
+The sibling Gateway integration is currently Query-only. Provider-side Action and Session
+handling therefore does not imply a complete caller-to-provider Action or Session system.
 
 ## Installation
 
-Python 3.12 or newer is required. Install Tool `0.1.0` from PyPI:
+Python 3.12 or newer is required. Install the current Tool release from PyPI:
 
 ```bash
 pip install forge-tool
@@ -137,12 +136,13 @@ Use `ToolEndpointError(ToolError(...))` only to reject a request **before** exec
 accepted or side effects begin. Once execution has begun, represent a Query failure as a
 terminal `ToolResult(status="failed", error=...)`.
 
-## Action endpoints
+## Action and Session endpoints
 
-An Action normally admits work with `ToolAccepted`, then exposes authoritative status and
-result, optional cancellation, and low-rate events. It may instead return an initial
-terminal `ToolResult` when completion was established during `start()`, including terminal
-`unknown` when dispatch may have begun but acceptance cannot be established.
+An Action or Session normally admits work with `ToolAccepted`, then exposes authoritative
+status, result, semantics-scoped control, and low-rate events. Action uses optional
+cancellation; Session uses optional stopping. Either may instead return an initial terminal
+`ToolResult` when completion was established during `start()`, including terminal `unknown`
+when dispatch may have begun but acceptance cannot be established.
 
 ```python
 from forge_tool import (
@@ -238,12 +238,12 @@ acknowledged publication barrier.
 
 The provider remains authoritative for business status, result, and control decisions.
 
-### Action handler guarantees
+### Action and Session handler guarantees
 
 The current Python handler provides provider-side lifecycle and logical-ordering guarantees:
 
 - descriptor operation names and implementation mapping must match exactly;
-- `max_concurrency` is enforced per Action operation;
+- `max_concurrency` is enforced per Action or Session operation;
 - the invoke response is first in the returned tuple, before events buffered during
   `start()`;
 - an asynchronous event sink preserves sequence order, while its transport integration
@@ -262,22 +262,22 @@ process-local and bounded; eviction or restart ends duplicate protection. Duplic
 requests are keyed by `invocation_id + attempt_id` and are not compared by arguments or
 context fingerprint.
 
-The handler currently enforces descriptor `max_concurrency` only for Action admission.
-It also validates but does not enforce `ToolContext.deadline_ms`; timeout ownership
+The handler enforces descriptor `max_concurrency` for Action and Session admission.
+It validates but does not enforce `ToolContext.deadline_ms`; timeout ownership
 belongs to the provider or future Runtime/Gateway policy.
 
 ## Handler entry points
 
 | API | Supported behavior |
 | --- | --- |
-| `handle_invoke(request)` | Legacy single-response Query invoke only. Rejects Action without starting it. |
-| `dispatch(request, event_sink=...)` | Query invoke and Action invoke/status/result/control. Response is first in the returned tuple. Session is not implemented. |
-| `handle_status(request)` | Convenience wrapper for Action status dispatch. |
-| `handle_result(request)` | Convenience wrapper for Action result dispatch. |
-| `handle_control(request)` | Convenience wrapper for Action control dispatch. |
+| `handle_invoke(request)` | Legacy single-response Query invoke only. Rejects Action or Session without starting it. |
+| `dispatch(request, event_sink=...)` | Query invoke plus Action/Session invoke, status, result, and control. Response is first in the returned tuple. |
+| `handle_status(request)` | Convenience wrapper for Action/Session status dispatch. |
+| `handle_result(request)` | Convenience wrapper for Action/Session result dispatch. |
+| `handle_control(request)` | Convenience wrapper for Action/Session control dispatch. |
 
-Action uses `cancel`; `stop` is returned as `unsupported`. Session will use `stop` when
-its handler path is implemented.
+Action admits `cancel`, and Session admits `stop`; a control command that does not match
+the operation semantics returns `unsupported`.
 
 ## Optional Arrow/Dora binding
 
@@ -313,16 +313,16 @@ async def handle_query_input(input_arrow_value):
 ```
 
 `handle_input()` preserves the Query-only single-response API and returns one
-`RecordBatch`. It rejects an Action before calling `start()`.
+`RecordBatch`. It rejects an Action or Session before calling `start()`.
 
-### Action
+### Action and Session
 
 ```python
-async def handle_action_input(action_input_arrow_value) -> None:
-    await binding.dispatch_input(action_input_arrow_value)
+async def handle_stateful_input(input_arrow_value) -> None:
+    await binding.dispatch_input(input_arrow_value)
 ```
 
-For an Action invoke, the configured async `event_sink` is the acknowledged publisher
+For an Action or Session invoke, the configured async `event_sink` is the acknowledged publisher
 for **both** the invoke response and subsequent events. The binding waits for physical
 response publication before opening the event gate, serializes events in sequence order,
 and returns `()` after publication.
@@ -349,7 +349,7 @@ A common source of integration bugs is assuming one layer validates everything.
 | `forge_msgs.ToolMessage` | Exact Arrow schema, one row, generic identity/nullability rules, strict object-valued `payload_json`. |
 | `ToolEnvelope` | Protocol/message type and generic logical header matrix; JSON-compatible payload object. |
 | `validate_message_envelope`, codec, and factories | Message-specific closed payload schema and complete logical construction. |
-| `ToolEndpointHandler` | Concrete provider route, descriptor operation semantics, SPI dispatch, and Action lifecycle. |
+| `ToolEndpointHandler` | Concrete provider route, descriptor operation semantics, SPI dispatch, and Action/Session lifecycle. |
 | `DoraToolEndpointBinding` | Carrier/raw payload/logical size boundaries and bounded correlated error conversion after route trust. |
 
 Outbound conversion validates the typed payload. Inbound carrier conversion first
@@ -370,8 +370,8 @@ These are implementation defaults, not cross-language Wire constants.
 | Logical encoded message | 1 MiB (`1_048_576` bytes) |
 | Accepted binding request | logical maximum minus 512 bytes of correlated-error headroom |
 | In-memory Arrow carrier | logical maximum plus 64 KiB of framing overhead |
-| Early Action events | 32 events |
-| Retained Action execution records | 1,024 records |
+| Early Action/Session events | 32 events |
+| Retained Action/Session execution records | 1,024 records |
 | JSON nesting | 64 levels |
 | Interoperable JSON integer | `±(2^53-1)` |
 
@@ -413,9 +413,9 @@ Explicitly import from `forge_tool.dora`:
 
 ## Protocol documentation
 
-- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/README.md)
-- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/ARCHITECTURE.md)
-- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/interfaces/forge_tool/PROTOCOL.md)
+- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/README.md)
+- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/ARCHITECTURE.md)
+- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/PROTOCOL.md)
 - [Canonical `ToolMessage` Arrow schema](https://github.com/Forgelab-Robotics/forge/blob/forge-msgs-v1.2.0/interfaces/forge_msgs/tool.v1.yaml)
 
 ## Development
@@ -428,4 +428,4 @@ uv run pytest packages/tool/tests
 
 ## License
 
-Apache-2.0. See the release [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v0.1.0/LICENSE).
+Apache-2.0. See the release [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/LICENSE).
