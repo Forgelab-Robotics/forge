@@ -152,4 +152,112 @@ messages:
       - is_dense=false does not require the cloud to contain an invalid point.
       - High-level constructors may infer unorganized clouds with height=1, width equal to the point count, and is_dense from finite XYZ values; serialized Arrow payloads still include width, height, and is_dense columns.
       - The coordinate frame is supplied by Dora metadata or node configuration, and timing comes from the Dora event context.
-      - PointCloud v1 is the normalized Forge representation; any future raw packed representation must use a separately named and versioned message.
+      - PointCloud v1 is the normalized Forge representation; layout-preserving decoded point records use PointCloudBuffer.
+
+  PointCloudBuffer:
+    purpose: Layout-preserving buffer of decoded Cartesian point records with dynamic fixed-width attributes and explicit point and row strides.
+    row_count: single
+    fields:
+      width:
+        arrow: uint32
+        required: true
+      height:
+        arrow: uint32
+        required: true
+      is_dense:
+        arrow: bool
+        required: true
+      byte_order:
+        arrow: utf8
+        required: true
+        allowed_values:
+          - little_endian
+          - big_endian
+      point_stride:
+        arrow: uint32
+        required: true
+        description: Full byte stride between adjacent point records, including point padding.
+      row_stride:
+        arrow: uint64
+        required: true
+        description: Full byte stride between adjacent organized rows, including row padding.
+      fields:
+        arrow: "list<struct<name: utf8, offset: uint32, datatype: utf8, count: uint32>>"
+        required: true
+        empty_allowed: false
+      data:
+        arrow: large_binary
+        required: true
+    validation:
+      - The serialized RecordBatch must contain exactly one row.
+      - Required scalar, list, struct, and binary cells must not be null, and list and struct children must not be null.
+      - height must be greater than 0. If width is 0, height must be 1, row_stride must be 0, and data must be empty.
+      - point_stride must be greater than 0, including for an empty cloud because it describes the declared record layout.
+      - width * height, width * point_stride, row_stride * height, and every field end offset must use checked arithmetic.
+      - row_stride must be at least width * point_stride and data length must equal row_stride * height.
+      - Field names must be non-empty and unique; count must be greater than 0.
+      - datatype must be one of int8, uint8, int16, uint16, int32, uint32, int64, uint64, float32, or float64.
+      - For every field, offset + datatype_size * count must not exceed point_stride.
+      - Declared field byte ranges must not overlap. Point and row padding are allowed.
+      - Exactly one scalar x, y, and z field must be present. They must all use float32 or all use float64 and coordinates use meters.
+      - If is_dense is true, every decoded x, y, and z component must be finite.
+    notes:
+      - Canonical writers use the declared top-level field order, mark every top-level field non-nullable, and sort field descriptors by offset and then name. The fields list item metadata is nullable and its struct children are non-nullable, while actual null list items or struct children are invalid. Readers resolve top-level fields by name, require exact physical Arrow types, and may accept reordered or additional top-level fields.
+      - Unorganized clouds use height=1 and width equal to the point count. Organized records use row-major order with byte offset row * row_stride + column * point_stride.
+      - Canonical writers use little_endian. Readers use byte_order explicitly and must not assume native byte order or aligned field offsets.
+      - PointCloudBuffer contains decoded Cartesian point records, not raw device packets. It does not imply whether points are calibrated, filtered, deskewed, transformed, or registered; the producer and consumer endpoint contract defines that processing stage.
+      - intensity is an optional producer-defined scalar field whose quantity and scale must be documented by the producer.
+      - time_offset_ns is the recommended name for an optional scalar uint32 offset relative to the Dora source event time. ring is the recommended name for an optional scalar uint16 laser channel index. These fields are conventions, not required fields.
+      - Device-specific fixed-width fields such as reflectivity, line, tag, return_type, or ambient may be retained as additional descriptors.
+      - Use normalized PointCloud when dynamic layout, per-point timing, and additional attributes no longer need to be preserved across the node boundary.
+
+  Imu:
+    purpose: SI-unit inertial measurement sample with optional orientation, optional covariance matrices, and optional temperature.
+    row_count: single
+    fields:
+      orientation:
+        arrow: "struct<qx: float64, qy: float64, qz: float64, qw: float64>"
+        required: false
+        nullable: true
+      angular_velocity:
+        arrow: "struct<x: float64, y: float64, z: float64>"
+        required: true
+        unit: radian_per_second
+      linear_acceleration:
+        arrow: "struct<x: float64, y: float64, z: float64>"
+        required: true
+        unit: meter_per_second_squared
+      orientation_covariance:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 9_or_empty
+      angular_velocity_covariance:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 9_or_empty
+      linear_acceleration_covariance:
+        arrow: list<float64>
+        required: true
+        empty_allowed: true
+        length: 9_or_empty
+      temperature_celsius:
+        arrow: float64
+        required: false
+        nullable: true
+        unit: degree_celsius
+    validation:
+      - The serialized RecordBatch must contain exactly one row.
+      - angular_velocity and linear_acceleration structs and all of their children must not be null and must contain finite values.
+      - orientation is null when unavailable. When present, all children must be non-null and finite, and qx, qy, qz, and qw must not all be zero.
+      - Implementations must not silently normalize quaternion values.
+      - Each covariance list must be empty when unavailable or contain exactly 9 finite float64 values in row-major order. Its diagonal values must be non-negative.
+      - orientation_covariance must be empty when orientation is null.
+      - temperature_celsius is null when unavailable and finite when present.
+    notes:
+      - Canonical covariance list item metadata is nullable, while actual null covariance items are invalid. Orientation and vector struct children are non-nullable.
+      - Orientation uses named qx, qy, qz, and qw components so adapters must explicitly convert vendor array order. Euler roll, pitch, and yaw are intentionally omitted because they are derivable and may disagree with the quaternion.
+      - Orientation covariance is a 3x3 local small-angle covariance over rotations about X, Y, and Z, not a 4x4 quaternion covariance. Angular-velocity and linear-acceleration covariance axes are X, Y, and Z.
+      - Covariance positive-semidefiniteness is not validated by the wire message beyond finite values and non-negative diagonal entries.
+      - Timing comes from the Dora event context. Sensor frame, mounting calibration, gravity convention, and device identity live in Dora metadata, stable node configuration, or the adapter layer.

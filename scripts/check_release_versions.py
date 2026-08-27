@@ -54,7 +54,7 @@ EXPECTED_INTERNAL_REQUIREMENTS = {
 }
 EXPECTED_OPTIONAL_INTERNAL_REQUIREMENTS = {
     Path("packages/tool/pyproject.toml"): {
-        "dora": {"forge-msgs>=1.1.0,<2"},
+        "dora": {"forge-msgs>=1.2.0,<2"},
     },
 }
 UV_PACKAGE_FAMILIES = {

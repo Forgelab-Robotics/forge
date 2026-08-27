@@ -106,23 +106,25 @@ Producers should omit empty outputs when there is no meaningful text.
 
 ### `ToolMessage`
 
-Cross-language single-row Arrow carrier for one Forge ToolEndpoint v1alpha1
-logical message. This is the first tagged/public Tool protocol contract; earlier
-untagged prototypes are incompatible, and Python/Rust/C++ bindings plus Gateway and
-provider must deploy atomically. Its exact ten-column order is `protocol`, `message_type`,
+Cross-language single-row Arrow carrier for one `forge.tool.endpoint/v1alpha1` logical
+message. Msgs `1.2.0` introduces the carrier; the first tagged/public `forge-tool`
+package release using this protocol is `0.1.0`. Earlier untagged prototypes are
+incompatible, and Python/Rust/C++ bindings plus Gateway and provider must deploy
+atomically. Its exact ten-column order is `protocol`, `message_type`,
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
 `endpoint_instance_id`, `operation`, `sequence`, and `payload_json`; all are
 `utf8` except nullable `sequence: int64`. `request_id`, `invocation_id`,
 `attempt_id`, `endpoint_instance_id`, `operation`, and `sequence` use Arrow null when
-omitted. `endpoint_instance_id` may be null on any `tool.*` message; every `endpoint.*`
-message, including `endpoint.status`, requires it.
+omitted. `endpoint_instance_id` is structurally nullable on pre-routing `tool.*` messages,
+but a provider-originated `tool.event` must supply its concrete instance; every
+`endpoint.*` message, including `endpoint.status`, requires it.
 
 `payload_json` encodes the logical payload object rather than the full carrier
 envelope. It must be a bounded strict JSON object with unique keys, valid Unicode,
 finite numbers, interoperable integers, and at most 64 levels. The carrier has no
 observation timestamp; use Dora event context for transport observation time.
-`forge_msgs` validates the carrier and generic correlation rules, including
-`endpoint.registry.response`. Registration, unregister, and Registry response carriers
+`forge_msgs` validates the carrier and generic header/identity matrix, including the
+`endpoint.registry.response` message class. Registration, unregister, and Registry response carriers
 require `request_id`; unsolicited endpoint status requires null and
 remains a health message rather than an ACK. Message-specific payload validation remains in
 `forge-tool`. Python, Rust, and C++
@@ -214,6 +216,60 @@ default `copy="always"` whenever immutability cannot be guaranteed. Buffer
 sharing applies only to the local NumPy/PyArrow boundary; it does not imply that
 Dora IPC, networking, recording, or downstream layout conversion is end-to-end
 zero-copy.
+
+### `PointCloudBuffer`
+
+`PointCloudBuffer` is the decoded-sensor counterpart to normalized `PointCloud`.
+It preserves a fixed-stride point-record buffer across a node boundary, including
+field names, numeric datatypes, byte offsets, point/row padding, byte order, and
+additional fields such as per-point time or laser channel. It is not an
+undecoded device packet and does not imply a specific calibration, deskew,
+filter, transform, or registration stage.
+
+Every buffer contains scalar meter-valued `x`, `y`, and `z` fields of the same
+`float32` or `float64` datatype. Other fixed-width numeric fields are optional.
+Writers canonicalize Arrow payloads to little-endian bytes; readers can consume
+both byte orders and reject overlapping or out-of-bounds descriptors. The only
+empty shape is `width=0`, `height=1`, `row_stride=0`, and empty data while the
+point stride and descriptors continue to declare the record layout.
+
+`PointCloudBufferView` validates the Arrow payload, retains its buffer owner, and
+returns read-only NumPy arrays with strides derived from `row_stride`,
+`point_stride`, field offset, and element size:
+
+```python
+from forge_msgs import PointCloudBufferView
+
+view = PointCloudBufferView.from_arrow(event["value"])
+x = view.field("x")
+if view.has_field("time_offset_ns"):
+    time_offset_ns = view.field("time_offset_ns")
+```
+
+Scalar unorganized fields have shape `(width,)`; organized fields have shape
+`(height, width)`, and `count>1` adds a trailing dimension. These arrays can be
+non-contiguous, non-native-endian, and unaligned. The view does not silently
+copy or normalize them. Use `np.ascontiguousarray()` explicitly when an algorithm
+requires native contiguous columns. `PointCloudBuffer.from_arrow()` instead
+materializes an owned `bytes` snapshot.
+
+Use `PointCloudBuffer` only while dynamic record layout or per-point attributes
+must cross a node boundary. Publish existing `PointCloud` after preprocessing
+when only normalized XYZ/intensity/RGB data remains relevant.
+
+### `Imu`
+
+`Imu` carries one SI-unit inertial sample with required angular velocity in
+rad/s and linear acceleration in m/s². Orientation is a nullable struct with
+named `qx/qy/qz/qw` components, forcing adapters to convert vendor array order
+explicitly. The message does not include redundant roll/pitch/yaw values and
+never silently normalizes a quaternion.
+
+Each covariance is either an empty list when unavailable or a row-major 3x3
+`float64` matrix with a non-negative diagonal. A missing orientation uses Arrow
+null and requires an empty orientation covariance; optional temperature also
+uses Arrow null rather than NaN or a numeric sentinel. Timing and sensor frame
+remain in Dora event context and stable node configuration.
 
 ## Motion Messages
 

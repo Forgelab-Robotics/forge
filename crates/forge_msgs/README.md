@@ -14,7 +14,8 @@ The crate currently exports:
 - `JointState` and `JointCommand`
 - `LocomotionCommand`
 - `Image` and `CompressedImage`
-- `PointCloud`
+- normalized `PointCloud` and layout-preserving `PointCloudBuffer`
+- `Imu`
 - `Detection2DSet` and `Detection3DSet`
 - `SegmentationMaskSet`
 - `Pose` and `PoseSet`
@@ -24,15 +25,26 @@ The crate currently exports:
 
 Each message type is designed for single-row Arrow `RecordBatch` interchange.
 
-`ToolMessage`, defined by `tool.v1.yaml`, is the first tagged/public Tool protocol
-contract; earlier untagged prototypes are incompatible, and Python/Rust/C++ bindings
-plus Gateway and provider must deploy atomically. It is implemented in Python, Rust,
+`PointCloudBuffer` transports decoded Cartesian point records whose dynamic
+fixed-width fields and strides still matter across a node boundary. Its borrowed
+`PointCloudBufferView` performs checked, endian-aware scalar and fixed-array
+element access without assuming aligned storage. Once only normalized
+XYZ/intensity/RGB values remain relevant, use `PointCloud` instead. `Imu` carries
+required SI-unit angular velocity and linear acceleration, nullable named-XYZW
+orientation and temperature, and empty-or-3x3 covariance lists without numeric
+sentinels.
+
+`ToolMessage`, defined by `tool.v1.yaml`, is introduced in Msgs `1.2.0` for
+`forge.tool.endpoint/v1alpha1`; the first tagged/public `forge-tool` package release using
+this protocol is `0.1.0`. Earlier untagged prototypes are incompatible, and
+Python/Rust/C++ bindings plus Gateway and provider must deploy atomically. It is implemented in Python, Rust,
 and C++ as an exact ten-column carrier ordered as `protocol`, `message_type`,
 `request_id`, `invocation_id`, `attempt_id`, `endpoint_id`,
 `endpoint_instance_id`, `operation`, `sequence`, and `payload_json`. All columns
 are `utf8` except nullable `sequence: int64`; optional values use Arrow null.
-`endpoint_instance_id` may be null on any `tool.*` message; every `endpoint.*` message,
-including `endpoint.status`, requires it.
+`endpoint_instance_id` is structurally nullable on pre-routing `tool.*` messages, but a
+provider-originated `tool.event` must supply its concrete instance; every `endpoint.*`
+message, including `endpoint.status`, requires it.
 `payload_json` is a bounded strict JSON object with unique keys, valid Unicode,
 finite numbers, interoperable integers, and at most 64 levels. Message-specific
 validation remains in `forge-tool`. The known management types include

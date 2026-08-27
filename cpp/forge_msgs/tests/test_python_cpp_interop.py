@@ -117,6 +117,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 77
+
     import numpy as np
     import pyarrow as pa
     from forge_msgs import (

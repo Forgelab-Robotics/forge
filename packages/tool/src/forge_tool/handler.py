@@ -684,10 +684,14 @@ class ToolEndpointHandler:
         except ToolEndpointError as error:
             await emitter.reject()
             async with self._lock:
-                record.outcome = error.error
-                self._release_permit_locked(record)
+                if record.result is None:
+                    outcome = error.error
+                    self._release_permit_locked(record)
+                else:
+                    outcome = record.result
+                record.outcome = outcome
                 record.ready.set()
-            return (make_invoke_response_envelope(error.error, request),)
+            return (make_invoke_response_envelope(outcome, request),)
         except asyncio.CancelledError:
             await asyncio.shield(self._finish_unknown(record, emitter))
             raise
@@ -716,18 +720,22 @@ class ToolEndpointHandler:
         emitter: _ActionEventEmitter,
     ) -> ToolResult:
         await emitter.reject()
-        unknown = ToolResult(
-            status="unknown",
-            error=ToolError(
-                code="FORGE_ENDPOINT_OUTCOME_UNKNOWN",
-                message=(
-                    "Start failed after dispatch; the execution outcome "
-                    "cannot be recovered"
-                ),
-                retryable=False,
-            ),
-        )
         async with self._lock:
+            if record.result is not None:
+                record.outcome = record.result
+                record.ready.set()
+                return record.result
+            unknown = ToolResult(
+                status="unknown",
+                error=ToolError(
+                    code="FORGE_ENDPOINT_OUTCOME_UNKNOWN",
+                    message=(
+                        "Start failed after dispatch; the execution outcome "
+                        "cannot be recovered"
+                    ),
+                    retryable=False,
+                ),
+            )
             record.outcome = unknown
             record.status = ToolExecutionStatus(
                 phase="unknown",

@@ -25,7 +25,7 @@ PACKAGE_DIRS = {
     "tool": Path("packages/tool"),
 }
 _TOOL_EXTRAS = {"dora"}
-_TOOL_REQUIREMENTS = {"forge-msgs>=1.1.0,<2 ; extra == 'dora'"}
+_TOOL_REQUIREMENTS = {"forge-msgs>=1.2.0,<2 ; extra == 'dora'"}
 
 
 class DistributionCheckError(RuntimeError):

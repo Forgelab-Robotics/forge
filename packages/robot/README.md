@@ -1,6 +1,6 @@
 # forge_robot
 
-Common robot driver protocol and node runner helpers for Forge robots.
+Common robot driver protocol and Adapter-node runner helpers for Forge robots.
 
 - **RobotDriver**: `typing.Protocol` with `connect`, `disconnect`, `get_state`, and `set_command`.
 - **LocomotionRobotDriver**: optional protocol for drivers that accept `forge_msgs.LocomotionCommand`.
@@ -10,7 +10,7 @@ Common robot driver protocol and node runner helpers for Forge robots.
 
 Message payloads use `forge_msgs.JointState`, `forge_msgs.JointCommand`, and optional `forge_msgs.LocomotionCommand`.
 
-The standard Dora node loop uses fixed input semantics:
+The standard Dora Robot Adapter node loop uses fixed input semantics:
 
 - input `tick` to publish `state`
 - input `action` or `action/<source>` as a sparse low-level `JointCommand`; drivers update only joints listed in `name` and retain targets for omitted joints. Namespaced inputs allow disjoint arm and gripper controller streams, while overlapping writers still require explicit arbitration

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(forge_msgs_cpp VERSION 1.1.0 LANGUAGES CXX)
+project(forge_msgs_cpp VERSION 1.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,8 +17,10 @@ add_library(forge_msgs_cpp
   src/control.cpp
   src/geometry.cpp
   src/forge_msgs.cpp
+  src/imu.cpp
   src/motion.cpp
   src/perception.cpp
+  src/point_cloud_buffer.cpp
   src/sensor.cpp
   src/text.cpp
   src/tool.cpp
@@ -86,6 +88,10 @@ if(FORGE_MSGS_CPP_BUILD_TESTS)
   target_link_libraries(forge_msgs_cpp_tests PRIVATE forge_msgs_cpp)
   add_test(NAME forge_msgs_cpp_tests COMMAND forge_msgs_cpp_tests)
 
+  add_executable(forge_msgs_sensor_tests tests/sensor_messages_tests.cpp)
+  target_link_libraries(forge_msgs_sensor_tests PRIVATE forge_msgs_cpp)
+  add_test(NAME forge_msgs_sensor_tests COMMAND forge_msgs_sensor_tests)
+
   add_executable(forge_msgs_ipc_fixture tests/ipc_fixture.cpp)
   target_link_libraries(forge_msgs_ipc_fixture PRIVATE forge_msgs_cpp)
 
@@ -98,6 +104,15 @@ if(FORGE_MSGS_CPP_BUILD_TESTS)
         --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
     )
     set_tests_properties(forge_msgs_python_cpp_interop PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+      NAME forge_msgs_sensor_python_cpp_interop
+      COMMAND Python3::Interpreter
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_python_cpp_interop.py
+        --driver $<TARGET_FILE:forge_msgs_ipc_fixture>
+        --pythonpath ${CMAKE_CURRENT_SOURCE_DIR}/../../packages/msgs/src
+    )
+    set_tests_properties(forge_msgs_sensor_python_cpp_interop PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(
       NAME forge_msgs_motion_python_cpp_interop
