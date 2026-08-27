@@ -4,7 +4,17 @@ Forge package families are versioned independently. Implementations of the same 
 
 ## Unreleased
 
-### Tool 0.1.0
+### Msgs 1.1.0
+
+- Add `tool.v1.yaml` and `forge_msgs.ToolMessage` alongside `PolicyCommand` and `PolicyCommandStatus` in the canonical cross-language schema and the Python, Rust, and C++ carrier implementations.
+- Define an exact ten-column, single-row Arrow carrier whose optional columns use null, whose `payload_json` contains the logical payload object, and which has no observation timestamp; Python `from_arrow()` additionally supports a caller-configured pre-validation raw payload byte limit.
+- Add `endpoint.registry.response` to Python, Rust, and C++ `ToolMessage` carriers and enforce the management exchange `request_id` matrix across all three implementations.
+- Add bidirectional Python/C++ Arrow IPC compatibility coverage for the carrier; Rust provides Arrow `RecordBatch` conversion without a claimed Rust/Python IPC interop test.
+- Require C++20 for `forge_msgs_cpp` and propagate that requirement to CMake consumers with `cxx_std_20`.
+
+## forge-tool 0.2.0 - 2026-08-27
+
+Protected tag: `forge-tool-v0.2.0`
 
 - Add the dependency-free `forge-tool` Python package family.
 - Define endpoint descriptors, attempt-scoped `ToolExecutionKey`, authoritative terminal results, structured control/error/status/event models, and async Query/Action/Session Endpoint protocols.
@@ -25,13 +35,10 @@ Forge package families are versioned independently. Implementations of the same 
 - Keep message-specific logical payload validation in `forge-tool`; the cross-language `forge_msgs.ToolMessage` is its Arrow transport carrier.
 - Keep the complete caller-facing Tool Runtime API, stable caller contracts, Gateway implementation, concrete provider-node Dora I/O wiring, ToolSpec, and concrete endpoint adapters outside this initial protocol package; the completed external YOLO provider wiring and current Gateway Query bridges do not change the package boundary, and a future general runner is optional rather than the only integration path.
 
-### Msgs 1.1.0
-
-- Add `tool.v1.yaml` and `forge_msgs.ToolMessage` alongside `PolicyCommand` and `PolicyCommandStatus` in the canonical cross-language schema and the Python, Rust, and C++ carrier implementations.
-- Define an exact ten-column, single-row Arrow carrier whose optional columns use null, whose `payload_json` contains the logical payload object, and which has no observation timestamp; Python `from_arrow()` additionally supports a caller-configured pre-validation raw payload byte limit.
-- Add `endpoint.registry.response` to Python, Rust, and C++ `ToolMessage` carriers and enforce the management exchange `request_id` matrix across all three implementations.
-- Add bidirectional Python/C++ Arrow IPC compatibility coverage for the carrier; Rust provides Arrow `RecordBatch` conversion without a claimed Rust/Python IPC interop test.
-- Require C++20 for `forge_msgs_cpp` and propagate that requirement to CMake consumers with `cxx_std_20`.
+- Implement Session dispatch in `ToolEndpointHandler`: Session operations share the Action start path (per-operation admission, duplicate suppression, bounded early-event buffering, terminal-result barriers, and `unknown` convergence), and Action and Session share status, result, and control dispatch.
+- Scope control dispatch by semantics: `cancel` is admitted only for Action operations and `stop` only for Session operations, with other control requests rejected as unsupported.
+- Generalize the bound-provider typing from `ActionToolEndpoint` to `ActionToolEndpoint | SessionToolEndpoint` across the event emitter, start-invoke, and result paths.
+- Route Action and Session invoke messages through the `forge_tool.dora` asynchronous event-sink path while keeping `handle_invoke` and `handle_input` Query-only.
 
 ## forge-msgs 1.1.0 - 2026-08-22
 
