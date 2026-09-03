@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -8,12 +9,23 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "interfaces" / "forge_msgs"
-MANIFEST_PATH = SCHEMA_DIR / "forge_msgs.v1.yaml"
+VERSIONS_PATH = ROOT / "versions.toml"
 ALLOWED_IMPLEMENTATIONS = {"python", "rust", "cpp"}
 
 
 class SchemaError(ValueError):
     pass
+
+
+def _interface_version() -> int:
+    try:
+        with VERSIONS_PATH.open("rb") as handle:
+            value = tomllib.load(handle)["interfaces"]["msgs"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+        raise SchemaError(f"{VERSIONS_PATH}: failed to load Msgs interface version: {exc}") from exc
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise SchemaError(f"{VERSIONS_PATH}: interfaces.msgs must be a positive integer")
+    return value
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -72,19 +84,25 @@ def _validate_message(path: Path, name: str, message: Any) -> None:
 
 
 def validate() -> list[str]:
-    manifest = _load_yaml(MANIFEST_PATH)
+    interface_version = _interface_version()
+    manifest_path = SCHEMA_DIR / f"forge_msgs.v{interface_version}.yaml"
+    manifest = _load_yaml(manifest_path)
     version = manifest.get("version")
     package = manifest.get("package")
     if not isinstance(version, int) or version < 1:
-        raise SchemaError(f"{MANIFEST_PATH}: version must be a positive integer")
+        raise SchemaError(f"{manifest_path}: version must be a positive integer")
+    if version != interface_version:
+        raise SchemaError(
+            f"{manifest_path}: version must match versions.toml interfaces.msgs={interface_version}"
+        )
     if not isinstance(package, str) or not package:
-        raise SchemaError(f"{MANIFEST_PATH}: package must be a non-empty string")
+        raise SchemaError(f"{manifest_path}: package must be a non-empty string")
 
     schema_files = manifest.get("schema_files")
     if not isinstance(schema_files, dict) or not schema_files:
-        raise SchemaError(f"{MANIFEST_PATH}: schema_files must be a non-empty mapping")
+        raise SchemaError(f"{manifest_path}: schema_files must be a non-empty mapping")
     if "common" not in schema_files:
-        raise SchemaError(f"{MANIFEST_PATH}: schema_files must include common")
+        raise SchemaError(f"{manifest_path}: schema_files must include common")
 
     seen_messages: dict[str, Path] = {}
     loaded_files: set[Path] = set()
@@ -92,17 +110,17 @@ def validate() -> list[str]:
 
     for domain, filename in schema_files.items():
         if not isinstance(domain, str) or not domain:
-            raise SchemaError(f"{MANIFEST_PATH}: schema domain names must be non-empty")
+            raise SchemaError(f"{manifest_path}: schema domain names must be non-empty")
         if not isinstance(filename, str) or not filename:
-            raise SchemaError(f"{MANIFEST_PATH}: schema filenames must be non-empty")
+            raise SchemaError(f"{manifest_path}: schema filenames must be non-empty")
 
         path = SCHEMA_DIR / filename
         if path in loaded_files:
             raise SchemaError(
-                f"{MANIFEST_PATH}: schema file referenced twice: {filename}"
+                f"{manifest_path}: schema file referenced twice: {filename}"
             )
         if not path.is_file():
-            raise SchemaError(f"{MANIFEST_PATH}: missing schema file: {filename}")
+            raise SchemaError(f"{manifest_path}: missing schema file: {filename}")
         loaded_files.add(path)
 
         document = _load_yaml(path)
@@ -133,12 +151,12 @@ def validate() -> list[str]:
 
     unreferenced = sorted(
         path.name
-        for path in SCHEMA_DIR.glob("*.v1.yaml")
-        if path != MANIFEST_PATH and path not in loaded_files
+        for path in SCHEMA_DIR.glob(f"*.v{interface_version}.yaml")
+        if path != manifest_path and path not in loaded_files
     )
     if unreferenced:
         raise SchemaError(
-            f"{MANIFEST_PATH}: unreferenced v1 schema files: {unreferenced}"
+            f"{manifest_path}: unreferenced v{interface_version} schema files: {unreferenced}"
         )
 
     summaries.append(f"total: {len(seen_messages)} messages")

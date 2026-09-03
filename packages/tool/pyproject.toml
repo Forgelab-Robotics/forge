@@ -1,6 +1,6 @@
 [project]
 name = "forge-tool"
-version = "1.0.0"
+version = "2.0.0"
 description = "Typed endpoint contracts for Forge query, action, and session tools."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-dora = ["forge-msgs>=1.2.0,<2"]
+dora = ["forge-msgs>=2.0.0,<3"]
 
 [tool.uv.sources]
 forge-msgs = { workspace = true }

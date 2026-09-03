@@ -2,8 +2,11 @@ schema_version = 1
 
 [packages]
 common = "1.0.1"
-msgs = "1.3.0"
-robot = "1.0.1"
-policy = "1.0.1"
+msgs = "2.0.0"
+robot = "2.0.0"
+policy = "2.0.0"
 kinematics = "1.0.1"
-tool = "1.0.0"
+tool = "2.0.0"
+
+[interfaces]
+msgs = 1

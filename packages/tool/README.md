@@ -413,10 +413,10 @@ Explicitly import from `forge_tool.dora`:
 
 ## Protocol documentation
 
-- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/README.md)
-- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/ARCHITECTURE.md)
-- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/interfaces/forge_tool/PROTOCOL.md)
-- [Canonical `ToolMessage` Arrow schema](https://github.com/Forgelab-Robotics/forge/blob/forge-msgs-v1.2.0/interfaces/forge_msgs/tool.v1.yaml)
+- [Tool documentation index](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v2.0.0/interfaces/forge_tool/README.md)
+- [Architecture](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v2.0.0/interfaces/forge_tool/ARCHITECTURE.md)
+- [ToolEndpoint Wire protocol](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v2.0.0/interfaces/forge_tool/PROTOCOL.md)
+- [Canonical `ToolMessage` Arrow schema](https://github.com/Forgelab-Robotics/forge/blob/forge-msgs-v2.0.0/interfaces/forge_msgs/tool.v1.yaml)
 
 ## Development
 
@@ -428,4 +428,4 @@ uv run pytest packages/tool/tests
 
 ## License
 
-Apache-2.0. See the release [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v1.0.0/LICENSE).
+Apache-2.0. See the release [LICENSE](https://github.com/Forgelab-Robotics/forge/blob/forge-tool-v2.0.0/LICENSE).

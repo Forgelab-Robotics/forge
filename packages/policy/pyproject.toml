@@ -1,6 +1,6 @@
 [project]
 name = "forge-policy"
-version = "1.0.1"
+version = "2.0.0"
 description = "Reusable policy node protocol and Dora runner for Forge robotics applications."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,8 +10,8 @@ authors = [
     { name = "X-ERA" }
 ]
 dependencies = [
-    "dora-rs==0.4.1",
-    "forge-msgs>=1.0.0,<2",
+    "dora-rs==1.0.0",
+    "forge-msgs>=2.0.0,<3",
 ]
 
 [project.urls]

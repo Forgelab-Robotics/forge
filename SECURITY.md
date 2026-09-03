@@ -2,9 +2,9 @@
 
 ## Supported Versions
 
-Forge supports the latest release in each `1.x` package-family line. Security
+Forge supports the latest release in each package-family line. Security
 fixes are prepared on the development branch and released under protected
-family tags such as `forge-msgs-v1.0.0`. Historical generic repository-era tags
+family tags such as `forge-msgs-v2.0.0`. Historical generic repository-era tags
 are not part of these support lines.
 
 ## Reporting a Vulnerability

@@ -25,6 +25,8 @@ The crate currently exports:
 
 Each message type is designed for single-row Arrow `RecordBatch` interchange.
 
+Forge Msgs 2 uses Arrow 59 so its public Rust `RecordBatch` API aligns with Dora 1.0 nodes.
+
 `PointCloudBuffer` transports decoded Cartesian point records whose dynamic
 fixed-width fields and strides still matter across a node boundary. Its borrowed
 `PointCloudBufferView` performs checked, endian-aware scalar and fixed-array

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(forge_robot_cpp VERSION 1.0.1 LANGUAGES CXX)
+project(forge_robot_cpp VERSION 2.0.0 LANGUAGES CXX)
 
 find_package(Python3 COMPONENTS Interpreter)
 
@@ -28,14 +28,14 @@ set(FORGE_ROBOT_CPP_SOURCES
 
 if(FORGE_ROBOT_CPP_WITH_DORA)
   if(NOT (DORA_CXX_INCLUDE_DIR AND DORA_CXX_LIBRARY))
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Dora041Targets.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DoraTargets.cmake)
     set(DORA_CXX_INCLUDE_DIR ${dora_cxx_include_dir})
     set(DORA_CXX_LIBRARY dora_node_api_cxx)
     set(DORA_CXX_BRIDGE_SOURCE ${node_bridge})
   elseif(NOT DORA_CXX_BRIDGE_SOURCE)
     message(FATAL_ERROR
       "Pre-generated Dora CXX artifacts require DORA_CXX_BRIDGE_SOURCE. "
-      "Omit DORA_CXX_INCLUDE_DIR/DORA_CXX_LIBRARY to use the built-in Dora v0.4.1 helper."
+      "Omit DORA_CXX_INCLUDE_DIR/DORA_CXX_LIBRARY to use the built-in Dora v1.0.0 helper."
     )
   endif()
   list(APPEND FORGE_ROBOT_CPP_SOURCES src/node_runner.cpp)
