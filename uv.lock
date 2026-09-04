@@ -307,12 +307,12 @@ dev = [
 
 [[package]]
 name = "forge-common"
-version = "1.0.1"
+version = "2.0.0"
 source = { editable = "packages/common" }
 
 [[package]]
 name = "forge-kinematics"
-version = "1.0.1"
+version = "2.0.0"
 source = { editable = "packages/kinematics" }
 dependencies = [
     { name = "numpy" },

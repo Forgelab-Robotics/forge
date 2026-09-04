@@ -8,11 +8,11 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 
 ```toml
 [packages]
-common = "1.0.1"
+common = "2.0.0"
 msgs = "2.0.0"
 robot = "2.0.0"
 policy = "2.0.0"
-kinematics = "1.0.1"
+kinematics = "2.0.0"
 tool = "2.0.0"
 
 [interfaces]
@@ -20,6 +20,13 @@ msgs = 1
 ```
 
 The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Python distribution. Its project version is workspace tooling metadata and is not a package-family release version.
+
+## Release lines
+
+`master` is the current Forge 2.x development and release line. `stable/1.x` is the
+Dora 0.4-compatible maintenance line and accepts only critical, security, and release
+fixes. Develop changes on `master`; cherry-pick applicable fixes to `stable/1.x` rather
+than merging the newer major line into the older one.
 
 ## Family boundaries and tags
 
@@ -39,11 +46,11 @@ Do not use or move historical generic tags such as `v1.0.0`. They belong to an e
 The initial five `1.0.0` tags may point to the same clean commit. Tool's first release is `forge-tool-v0.1.0`. Later releases can be independent, for example:
 
 ```text
-forge-common-v1.0.1
+forge-common-v2.0.0
 forge-msgs-v2.0.0
 forge-robot-v2.0.0
 forge-policy-v2.0.0
-forge-kinematics-v1.0.2
+forge-kinematics-v2.0.0
 forge-tool-v2.0.0
 ```
 
@@ -54,7 +61,7 @@ Use the tag for the exact family being consumed:
 ```toml
 [tool.uv.sources]
 forge-msgs = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-msgs-v2.0.0", subdirectory = "packages/msgs" }
-forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v1.0.1", subdirectory = "packages/common" }
+forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v2.0.0", subdirectory = "packages/common" }
 ```
 
 A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from each protected tag. Protected release tags must never be moved.

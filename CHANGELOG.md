@@ -4,6 +4,20 @@ Forge package families are versioned independently. Python, Rust, and C++ implem
 
 ## Unreleased
 
+## forge-common 2.0.0 - 2026-09-04
+
+Protected tag: `forge-common-v2.0.0`
+
+- Align Common with the coordinated Forge 2.0 release train without changing its public utility APIs.
+- Preserve the Python, Rust, and C++ logging contracts from the 1.x line.
+
+## forge-kinematics 2.0.0 - 2026-09-04
+
+Protected tag: `forge-kinematics-v2.0.0`
+
+- Align Kinematics with the coordinated Forge 2.0 release train without changing its solver APIs or optional dependency model.
+- Preserve the Pinocchio-based FK, Jacobian, and IK behavior from the 1.x line.
+
 ## forge-policy 2.0.0 - 2026-09-03
 
 Protected tag: `forge-policy-v2.0.0`

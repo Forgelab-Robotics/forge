@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Immutable family tag to publish (for example, forge-common-v1.0.1)"
+        description: "Immutable family tag to publish (for example, forge-common-v2.0.0)"
         required: true
         type: string
 

@@ -43,7 +43,7 @@ EXPECTED_WORKSPACE_MEMBERS = {
 }
 EXPECTED_INTERNAL_REQUIREMENTS = {
     WORKSPACE_PROJECT: {
-        "forge-common>=1.0.0,<2",
+        "forge-common>=2.0.0,<3",
         "forge-msgs>=2.0.0,<3",
         "forge-policy>=2.0.0,<3",
         "forge-robot>=2.0.0,<3",

@@ -30,11 +30,13 @@ packages, for example a separate `forge_robots` repository.
 
 ## Status
 
-Forge tracks six independently versioned package families: Common, Msgs, Robot,
-Policy, Kinematics, and Tool. Current releases are Common `1.0.1`, Msgs `1.3.0`, Robot
-`1.0.1`, Policy `1.0.1`, Kinematics `1.0.1`, and Tool `0.1.0`. Implementations of one
-family across Python, Rust, C++, and the language-neutral interface remain synchronized;
-unrelated families may release at different rates.
+Forge tracks six package families: Common, Msgs, Robot, Policy, Kinematics, and Tool.
+The coordinated Dora 1.0 release train declares all six families as `2.0.0` while
+allowing later family-specific patch releases. Implementations of one family across
+Python, Rust, C++, and the language-neutral interface remain synchronized.
+
+`master` carries the latest Forge 2.x development line. `stable/1.x` preserves the
+Dora 0.4-compatible Forge 1.x line for critical fixes during downstream migration.
 
 Each release is identified by a protected family tag such as
 `forge-msgs-v2.0.0`; Tool releases use `forge-tool-v<semver>`. Historical generic tags
@@ -43,8 +45,8 @@ releases.
 
 The initial family releases define stable contracts for message schemas,
 serialization, shared utilities, kinematics, and robot/policy runners. Each
-family's `1.x` line remains backward compatible; breaking that family contract
-requires its next major version. See
+family's current major line remains backward compatible; breaking that family
+contract requires its next major version. See
 [`CHANGELOG.md`](CHANGELOG.md) for the release baselines and
 [`RELEASING.md`](RELEASING.md) for package-family boundaries, protected GitLab
 tags, and validation procedures.
@@ -194,7 +196,7 @@ include(FetchContent)
 FetchContent_Declare(
   forge_common
   GIT_REPOSITORY https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git
-  GIT_TAG forge-common-v1.0.1
+  GIT_TAG forge-common-v2.0.0
   SOURCE_SUBDIR cpp/forge_common
 )
 FetchContent_MakeAvailable(forge_common)
