@@ -16,7 +16,7 @@ The package is a model and solver library. It does not depend on ROS, Dora, robo
 - `PinocchioDlsSolver` performs one deterministic seed-based solve. It does not perform random restarts or silently accept approximate results.
 - `PinocchioBoundedLeastSquaresSolver` minimizes the same weighted pose residual with analytic Pinocchio Jacobians, per-joint box constraints, optional neutral/seed regularization, and a strict function-evaluation budget.
 
-Version 1 supports independent single-DoF revolute, continuous, and prismatic active joints. Floating, planar, mimic, collision-aware, and search IK are intentionally out of scope.
+The current release supports independent single-DoF revolute, continuous, and prismatic active joints. Floating, planar, mimic, collision-aware, and search IK are intentionally out of scope.
 
 ## Install
 

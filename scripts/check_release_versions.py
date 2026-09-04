@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSIONS_PATH = Path("versions.toml")
 WORKSPACE_PROJECT = Path("pyproject.toml")
 FAMILY_ORDER = ("common", "msgs", "robot", "policy", "kinematics", "tool")
+INTERFACE_ORDER = ("msgs",)
 PYTHON_PROJECTS = {
     "common": Path("packages/common/pyproject.toml"),
     "msgs": Path("packages/msgs/pyproject.toml"),
@@ -42,19 +43,19 @@ EXPECTED_WORKSPACE_MEMBERS = {
 }
 EXPECTED_INTERNAL_REQUIREMENTS = {
     WORKSPACE_PROJECT: {
-        "forge-common>=1.0.0,<2",
-        "forge-msgs>=1.0.0,<2",
-        "forge-policy>=1.0.0,<2",
-        "forge-robot>=1.0.0,<2",
-        "forge-tool>=1.0.0,<2",
+        "forge-common>=2.0.0,<3",
+        "forge-msgs>=2.0.0,<3",
+        "forge-policy>=2.0.0,<3",
+        "forge-robot>=2.0.0,<3",
+        "forge-tool>=2.0.0,<3",
     },
-    Path("packages/policy/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},
-    Path("packages/robot/pyproject.toml"): {"forge-msgs>=1.0.0,<2"},
+    Path("packages/policy/pyproject.toml"): {"forge-msgs>=2.0.0,<3"},
+    Path("packages/robot/pyproject.toml"): {"forge-msgs>=2.0.0,<3"},
     Path("packages/tool/pyproject.toml"): set(),
 }
 EXPECTED_OPTIONAL_INTERNAL_REQUIREMENTS = {
     Path("packages/tool/pyproject.toml"): {
-        "dora": {"forge-msgs>=1.2.0,<2"},
+        "dora": {"forge-msgs>=2.0.0,<3"},
     },
 }
 UV_PACKAGE_FAMILIES = {
@@ -141,6 +142,26 @@ def _load_family_versions() -> dict[str, str]:
         family: _strict_version(packages[family], f"{VERSIONS_PATH}: packages.{family}")
         for family in FAMILY_ORDER
     }
+
+
+def _load_interface_versions() -> dict[str, int]:
+    document = _load_toml(VERSIONS_PATH)
+    interfaces = _table(document, VERSIONS_PATH, "interfaces")
+    if set(interfaces) != set(INTERFACE_ORDER):
+        raise ReleaseVersionError(
+            f"{VERSIONS_PATH}: interfaces differ; "
+            f"expected {sorted(INTERFACE_ORDER)}, found {sorted(interfaces)}"
+        )
+
+    versions: dict[str, int] = {}
+    for interface in INTERFACE_ORDER:
+        value = interfaces[interface]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ReleaseVersionError(
+                f"{VERSIONS_PATH}: interfaces.{interface} must be a positive integer"
+            )
+        versions[interface] = value
+    return versions
 
 
 def _declared_version(path: Path, table: str) -> str:
@@ -367,9 +388,9 @@ def _check_cpp(findings: list[str], versions: dict[str, str]) -> None:
             )
 
 
-def _check_interface(findings: list[str], versions: dict[str, str]) -> None:
-    path = Path("interfaces/forge_msgs/forge_msgs.v1.yaml")
-    expected_major = versions["msgs"].split(".", 1)[0]
+def _check_interface(findings: list[str], interface_versions: dict[str, int]) -> None:
+    expected_major = str(interface_versions["msgs"])
+    path = Path(f"interfaces/forge_msgs/forge_msgs.v{expected_major}.yaml")
     try:
         text = _read_text(path)
     except ReleaseVersionError as exc:
@@ -380,7 +401,7 @@ def _check_interface(findings: list[str], versions: dict[str, str]) -> None:
         findings.append(f"{path}: missing integer version")
     elif match.group(1) != expected_major:
         findings.append(
-            f"{path}: Msgs major expected {expected_major}, found {match.group(1)}"
+            f"{path}: Msgs interface version expected {expected_major}, found {match.group(1)}"
         )
 
 
@@ -436,6 +457,7 @@ def main() -> int:
 
     try:
         versions = _load_family_versions()
+        interface_versions = _load_interface_versions()
     except ReleaseVersionError as exc:
         print(f"Forge family version validation failed:\n  - {exc}", file=sys.stderr)
         return 1
@@ -447,7 +469,7 @@ def main() -> int:
     _check_uv_lock(findings, versions, workspace_version)
     _check_cargo_lock(findings, versions)
     _check_cpp(findings, versions)
-    _check_interface(findings, versions)
+    _check_interface(findings, interface_versions)
     release_tag = _detected_ci_tag(arguments.tag)
     _check_release_tag(findings, versions, release_tag)
 
@@ -460,6 +482,8 @@ def main() -> int:
     print("Forge package-family versions are aligned:")
     for family in FAMILY_ORDER:
         print(f"  {family}: {versions[family]}")
+    for interface in INTERFACE_ORDER:
+        print(f"  {interface} interface: v{interface_versions[interface]}")
     print("  Workspace, internal requirements, uv lock, and Cargo lock: aligned")
     if release_tag is not None:
         print(f"  Release tag: {release_tag}")

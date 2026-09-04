@@ -1,9 +1,9 @@
 # Contributing to Forge
 
-Thank you for your interest in contributing to Forge. The repository maintains
-stable 1.x package families while developing the Tool alpha family, so focused
-changes, compatibility analysis, and cross-language tests are especially
-important.
+Thank you for your interest in contributing to Forge. `master` carries the current
+Forge 2.x line, while `stable/1.x` preserves the Dora 0.4-compatible Forge 1.x line
+for critical fixes. Focused changes, compatibility analysis, and cross-language
+tests are especially important.
 
 ## Development Setup
 

@@ -72,8 +72,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust for Dora C++ API
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust 1.95 for Dora C++ API
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95.0"
 
       - name: Set up C++ dependencies
         uses: mamba-org/setup-micromamba@v2
@@ -127,13 +129,13 @@ jobs:
         shell: bash -el {0}
         run: ctest --test-dir cpp/forge_robot/build --output-on-failure
 
-      - name: Configure C++ forge_robot Dora v0.4.1 runner
+      - name: Configure C++ forge_robot Dora 1.x runner (v1.0.1)
         shell: bash -el {0}
         run: >-
           cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora -G Ninja
           -DFORGE_ROBOT_CPP_WITH_DORA=ON
           -DFORGE_ROBOT_CPP_BUILD_TESTS=ON
 
-      - name: Compile C++ forge_robot Dora v0.4.1 runner
+      - name: Compile C++ forge_robot Dora 1.x runner (v1.0.1)
         shell: bash -el {0}
         run: cmake --build cpp/forge_robot/build-dora --target forge_robot_dora_runner_compile

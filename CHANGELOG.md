@@ -1,8 +1,49 @@
 # Changelog
 
-Forge package families are versioned independently. Implementations of the same logical family across Python, Rust, C++, and the language-neutral interface contract share one version and one protected GitLab tag.
+Forge package families are versioned independently. Python, Rust, and C++ implementations of the same logical family share one package version and protected GitLab tag; language-neutral interface versions are tracked separately.
 
 ## Unreleased
+
+## forge-common 2.0.0 - 2026-09-04
+
+Protected tag: `forge-common-v2.0.0`
+
+- Align Common with the coordinated Forge 2.0 release train without changing its public utility APIs.
+- Preserve the Python, Rust, and C++ logging contracts from the 1.x line.
+
+## forge-kinematics 2.0.0 - 2026-09-04
+
+Protected tag: `forge-kinematics-v2.0.0`
+
+- Align Kinematics with the coordinated Forge 2.0 release train without changing its solver APIs or optional dependency model.
+- Preserve the Pinocchio-based FK, Jacobian, and IK behavior from the 1.x line.
+
+## forge-policy 2.0.0 - 2026-09-03
+
+Protected tag: `forge-policy-v2.0.0`
+
+- Migrate the Python Dora runner dependency from `dora-rs 0.4.1` to the compatible Dora 1.x line (`>=1.0,<2`), currently locked and validated with 1.0.1.
+- Require the Forge Msgs 2 carrier line.
+
+## forge-robot 2.0.0 - 2026-09-03
+
+Protected tag: `forge-robot-v2.0.0`
+
+- Migrate the Python Dora runner dependency and optional C++ node bridge from Dora 0.4.1 to the compatible Dora 1.x line; Python is currently locked to 1.0.1 and the reproducible C++ source build is pinned to `v1.0.1`.
+- Require the Forge Msgs 2 carrier line while keeping the driver contract and node input/output semantics unchanged.
+
+## forge-msgs 2.0.0 - 2026-09-03
+
+Protected tag: `forge-msgs-v2.0.0`
+
+- Move the public Rust `RecordBatch` API from Arrow 54 to Arrow 59 for Dora 1.0 interoperability.
+- Preserve the cross-language `forge_msgs.v1` wire schema; the package major and wire-schema version are now tracked independently.
+
+## forge-tool 2.0.0 - 2026-09-03
+
+Protected tag: `forge-tool-v2.0.0`
+
+- Move the optional Dora carrier integration to the Forge Msgs 2 line.
 
 ## forge-tool 1.0.0 - 2026-08-27
 

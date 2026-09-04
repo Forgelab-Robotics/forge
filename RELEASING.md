@@ -8,15 +8,25 @@ Forge is a Monorepo with independently versioned logical package families. Imple
 
 ```toml
 [packages]
-common = "1.0.1"
-msgs = "1.3.0"
-robot = "1.0.1"
-policy = "1.0.1"
-kinematics = "1.0.1"
-tool = "0.1.0"
+common = "2.0.0"
+msgs = "2.0.0"
+robot = "2.0.0"
+policy = "2.0.0"
+kinematics = "2.0.0"
+tool = "2.0.0"
+
+[interfaces]
+msgs = 1
 ```
 
 The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Python distribution. Its project version is workspace tooling metadata and is not a package-family release version.
+
+## Release lines
+
+`master` is the current Forge 2.x development and release line. `stable/1.x` is the
+Dora 0.4-compatible maintenance line and accepts only critical, security, and release
+fixes. Develop changes on `master`; cherry-pick applicable fixes to `stable/1.x` rather
+than merging the newer major line into the older one.
 
 ## Family boundaries and tags
 
@@ -29,19 +39,19 @@ The root `pyproject.toml` is a virtual uv workspace, not a published `forge` Pyt
 | Kinematics | `packages/kinematics` | `forge-kinematics-v<semver>` |
 | Tool | `interfaces/forge_tool`, `packages/tool` | `forge-tool-v<semver>` |
 
-Do not create separate Python/Rust/C++ tags for one family. `forge-msgs-v1.0.0`, for example, identifies the v1 schema plus all three language implementations at the tagged commit.
+Do not create separate Python/Rust/C++ tags for one family. `forge-msgs-v2.0.0`, for example, identifies the Msgs 2 language implementations at the tagged commit. Package majors and wire-schema versions are tracked independently because a language API can break while the cross-language schema remains compatible.
 
 Do not use or move historical generic tags such as `v1.0.0`. They belong to an earlier repository layout. All new release tags must use a family namespace.
 
 The initial five `1.0.0` tags may point to the same clean commit. Tool's first release is `forge-tool-v0.1.0`. Later releases can be independent, for example:
 
 ```text
-forge-common-v1.0.1
-forge-msgs-v1.3.0
-forge-robot-v1.0.0
-forge-policy-v1.1.0
-forge-kinematics-v1.0.2
-forge-tool-v0.1.0
+forge-common-v2.0.0
+forge-msgs-v2.0.0
+forge-robot-v2.0.0
+forge-policy-v2.0.0
+forge-kinematics-v2.0.0
+forge-tool-v2.0.0
 ```
 
 ## Downstream dependencies
@@ -50,8 +60,8 @@ Use the tag for the exact family being consumed:
 
 ```toml
 [tool.uv.sources]
-forge-msgs = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-msgs-v1.0.1", subdirectory = "packages/msgs" }
-forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v1.0.1", subdirectory = "packages/common" }
+forge-msgs = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-msgs-v2.0.0", subdirectory = "packages/msgs" }
+forge-common = { git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", tag = "forge-common-v2.0.0", subdirectory = "packages/common" }
 ```
 
 A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from each protected tag. Protected release tags must never be moved.
@@ -66,17 +76,16 @@ A downstream `uv.lock` or `Cargo.lock` records the exact commit resolved from ea
 6. Run the version gate and relevant tests before review.
 
 When one family introduces a dependency whose minimum version is being released from
-the same revision, publish the dependency family first. For the coordinated Msgs 1.2.0
-and Tool 0.1.0 releases, `forge-msgs 1.2.0` must be available before publishing
-`forge-tool 0.1.0`, so `forge-tool[dora]` can resolve its `forge-msgs>=1.2.0,<2`
-requirement.
+the same revision, publish the dependency family first. For the coordinated 2.0 migration,
+`forge-msgs 2.0.0` must be available before publishing `forge-tool 2.0.0`,
+`forge-policy 2.0.0`, or `forge-robot 2.0.0`.
 
-`./scripts/check_release_versions.py` verifies family synchronization, workspace membership, internal Python requirements, uv/Cargo locks, and the Msgs interface major. In GitLab and GitHub tag pipelines it also reads `CI_COMMIT_TAG` or `GITHUB_REF_NAME` and rejects unknown families, non-SemVer tags, and tags whose version differs from `versions.toml`.
+`./scripts/check_release_versions.py` verifies family synchronization, workspace membership, internal Python requirements, uv/Cargo locks, and the independently declared Msgs interface version. In GitLab and GitHub tag pipelines it also reads `CI_COMMIT_TAG` or `GITHUB_REF_NAME` and rejects unknown families, non-SemVer tags, and tags whose version differs from `versions.toml`.
 
 A tag can be checked locally before creation:
 
 ```bash
-./scripts/check_release_versions.py --tag forge-msgs-v1.3.0
+./scripts/check_release_versions.py --tag forge-msgs-v2.0.0
 ```
 
 ## Release requirements
@@ -272,8 +281,8 @@ After review:
 
 When one release depends on another version from the same commit, do not batch-push the
 tags. Push and publish the dependency tag first, verify the exact package version from
-the public registry, and only then push the dependent tag. For Msgs 1.2.0 and Tool 0.1.0,
-publish `forge-msgs-v1.2.0` before `forge-tool-v0.1.0`.
+the public registry, and only then push the dependent tag. For the 2.0 migration, publish
+`forge-msgs-v2.0.0` before the Tool, Policy, and Robot 2.0 tags.
 
 The initial five `1.0.0` baseline tags have already been created:
 

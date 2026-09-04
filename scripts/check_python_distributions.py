@@ -25,7 +25,11 @@ PACKAGE_DIRS = {
     "tool": Path("packages/tool"),
 }
 _TOOL_EXTRAS = {"dora"}
-_TOOL_REQUIREMENTS = {"forge-msgs>=1.2.0,<2 ; extra == 'dora'"}
+_TOOL_REQUIREMENTS = {"forge-msgs>=2.0.0,<3 ; extra == 'dora'"}
+_RUNTIME_REQUIREMENTS = {
+    "forge-policy": {"dora-rs>=1.0,<2", "forge-msgs>=2.0.0,<3"},
+    "forge-robot": {"dora-rs>=1.0,<2", "forge-msgs>=2.0.0,<3"},
+}
 
 
 class DistributionCheckError(RuntimeError):
@@ -133,9 +137,15 @@ def _check_metadata(
         raise DistributionCheckError(
             f"{archive_name}: metadata must declare License-File: LICENSE"
         )
+    requirements = set(metadata.get_all("Requires-Dist", []))
+    expected_runtime = _RUNTIME_REQUIREMENTS.get(name)
+    if expected_runtime is not None and requirements != expected_runtime:
+        raise DistributionCheckError(
+            f"{archive_name}: {name} requirements must equal "
+            f"{sorted(expected_runtime)}"
+        )
     if name == "forge-tool":
         extras = set(metadata.get_all("Provides-Extra", []))
-        requirements = set(metadata.get_all("Requires-Dist", []))
         if extras != _TOOL_EXTRAS:
             raise DistributionCheckError(
                 f"{archive_name}: forge-tool extras must equal {sorted(_TOOL_EXTRAS)}"
