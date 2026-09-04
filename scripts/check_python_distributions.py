@@ -27,8 +27,8 @@ PACKAGE_DIRS = {
 _TOOL_EXTRAS = {"dora"}
 _TOOL_REQUIREMENTS = {"forge-msgs>=2.0.0,<3 ; extra == 'dora'"}
 _RUNTIME_REQUIREMENTS = {
-    "forge-policy": {"dora-rs==1.0.0", "forge-msgs>=2.0.0,<3"},
-    "forge-robot": {"dora-rs==1.0.0", "forge-msgs>=2.0.0,<3"},
+    "forge-policy": {"dora-rs>=1.0,<2", "forge-msgs>=2.0.0,<3"},
+    "forge-robot": {"dora-rs>=1.0,<2", "forge-msgs>=2.0.0,<3"},
 }
 
 

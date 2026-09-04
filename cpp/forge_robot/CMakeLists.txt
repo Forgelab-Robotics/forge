@@ -35,7 +35,7 @@ if(FORGE_ROBOT_CPP_WITH_DORA)
   elseif(NOT DORA_CXX_BRIDGE_SOURCE)
     message(FATAL_ERROR
       "Pre-generated Dora CXX artifacts require DORA_CXX_BRIDGE_SOURCE. "
-      "Omit DORA_CXX_INCLUDE_DIR/DORA_CXX_LIBRARY to use the built-in Dora v1.0.0 helper."
+      "Omit DORA_CXX_INCLUDE_DIR/DORA_CXX_LIBRARY to use the built-in Dora v1.0.1 helper."
     )
   endif()
   list(APPEND FORGE_ROBOT_CPP_SOURCES src/node_runner.cpp)

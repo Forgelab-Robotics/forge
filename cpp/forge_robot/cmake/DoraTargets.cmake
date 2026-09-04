@@ -1,4 +1,4 @@
-set(DORA_ROOT_DIR "" CACHE PATH "Path to the root of a local Dora v1.0.0 checkout")
+set(DORA_ROOT_DIR "" CACHE PATH "Path to the root of a local Dora 1.x checkout")
 
 set(dora_c_include_dir "${CMAKE_CURRENT_BINARY_DIR}/include/c")
 set(dora_cxx_include_dir "${CMAKE_CURRENT_BINARY_DIR}/include/cxx")
@@ -17,7 +17,7 @@ list(LENGTH node_bridge_headers node_bridge_header_count)
 list(LENGTH operator_bridge_sources operator_bridge_source_count)
 list(LENGTH operator_bridge_headers operator_bridge_header_count)
 if(node_bridge_source_count EQUAL 0 OR node_bridge_header_count EQUAL 0 OR operator_bridge_source_count EQUAL 0 OR operator_bridge_header_count EQUAL 0)
-  message(FATAL_ERROR "Could not find Dora v1.0.0 CXX bridge outputs in ${DORA_TARGET_DIR}")
+  message(FATAL_ERROR "Could not find Dora 1.x CXX bridge outputs in ${DORA_TARGET_DIR}")
 endif()
 
 list(GET node_bridge_sources 0 node_bridge_source)
@@ -68,8 +68,8 @@ if(DORA_ROOT_DIR)
 else()
   ExternalProject_Add(Dora
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/dora
-    URL https://codeload.github.com/dora-rs/dora/tar.gz/refs/tags/v1.0.0
-    URL_HASH SHA256=2e84db8afde1e2d6e73fd03e62a1fbe6e43442a408a098c12f30484e367ab183
+    URL https://codeload.github.com/dora-rs/dora/tar.gz/refs/tags/v1.0.1
+    URL_HASH SHA256=e71ee32868a06941db8d382b8538403127b08cf3383a62d146c13f23a032f6fe
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     BUILD_IN_SOURCE TRUE
     CONFIGURE_COMMAND ""

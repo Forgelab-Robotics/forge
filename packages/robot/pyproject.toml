@@ -10,7 +10,7 @@ authors = [
     { name = "X-ERA" }
 ]
 dependencies = [
-    "dora-rs==1.0.0",
+    "dora-rs>=1.0,<2",
     "forge-msgs>=2.0.0,<3",
 ]
 

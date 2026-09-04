@@ -129,13 +129,13 @@ jobs:
         shell: bash -el {0}
         run: ctest --test-dir cpp/forge_robot/build --output-on-failure
 
-      - name: Configure C++ forge_robot Dora v1.0.0 runner
+      - name: Configure C++ forge_robot Dora 1.x runner (v1.0.1)
         shell: bash -el {0}
         run: >-
           cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora -G Ninja
           -DFORGE_ROBOT_CPP_WITH_DORA=ON
           -DFORGE_ROBOT_CPP_BUILD_TESTS=ON
 
-      - name: Compile C++ forge_robot Dora v1.0.0 runner
+      - name: Compile C++ forge_robot Dora 1.x runner (v1.0.1)
         shell: bash -el {0}
         run: cmake --build cpp/forge_robot/build-dora --target forge_robot_dora_runner_compile

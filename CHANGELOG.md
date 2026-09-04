@@ -22,14 +22,14 @@ Protected tag: `forge-kinematics-v2.0.0`
 
 Protected tag: `forge-policy-v2.0.0`
 
-- Migrate the Python Dora runner dependency from `dora-rs 0.4.1` to `1.0.0`.
+- Migrate the Python Dora runner dependency from `dora-rs 0.4.1` to the compatible Dora 1.x line (`>=1.0,<2`), currently locked and validated with 1.0.1.
 - Require the Forge Msgs 2 carrier line.
 
 ## forge-robot 2.0.0 - 2026-09-03
 
 Protected tag: `forge-robot-v2.0.0`
 
-- Migrate the Python Dora runner dependency and optional C++ node bridge from Dora 0.4.1 to 1.0.0.
+- Migrate the Python Dora runner dependency and optional C++ node bridge from Dora 0.4.1 to the compatible Dora 1.x line; Python is currently locked to 1.0.1 and the reproducible C++ source build is pinned to `v1.0.1`.
 - Require the Forge Msgs 2 carrier line while keeping the driver contract and node input/output semantics unchanged.
 
 ## forge-msgs 2.0.0 - 2026-09-03

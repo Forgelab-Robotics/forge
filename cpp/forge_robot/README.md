@@ -33,9 +33,9 @@ The optional Dora runner mirrors the Python `forge_robot` node loop:
 
 The driver interfaces, clipping helpers, and Arrow validation do not depend on
 Dora headers. `RunDoraRobotNode()` is compiled only when
-`FORGE_ROBOT_CPP_WITH_DORA=ON`. The Dora C++ API is generated from Dora
-`v1.0.0` with CXX bridge sources, so the default build path is pinned to that
-tag instead of Dora `main`.
+`FORGE_ROBOT_CPP_WITH_DORA=ON`. The runner supports the Dora 1.x API line. For
+reproducibility, the default build generates CXX bridge sources from the
+SHA256-pinned Dora `v1.0.1` archive instead of Dora `main`.
 
 ## Build
 
@@ -47,7 +47,8 @@ cmake --build cpp/forge_robot/build
 ctest --test-dir cpp/forge_robot/build --output-on-failure
 ```
 
-Build and compile-link validate the Dora runner against Dora `v1.0.0`:
+Build and compile-link validate the Dora 1.x runner against the current pinned
+baseline, Dora `v1.0.1`:
 
 ```bash
 cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora \
@@ -56,15 +57,15 @@ cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora \
 cmake --build cpp/forge_robot/build-dora --target forge_robot_dora_runner_compile
 ```
 
-The command above downloads the SHA256-pinned Dora `v1.0.0` source archive and
+The command above downloads the SHA256-pinned Dora `v1.0.1` source archive and
 builds `dora-node-api-cxx` with Cargo. To avoid downloading during
-configure/build, provide a local Dora `v1.0.0` checkout:
+configure/build, provide a compatible local Dora 1.x checkout:
 
 ```bash
-git clone --branch v1.0.0 https://github.com/dora-rs/dora.git /path/to/dora-v1.0.0
+git clone --branch v1.0.1 https://github.com/dora-rs/dora.git /path/to/dora-v1.0.1
 cmake -S cpp/forge_robot -B cpp/forge_robot/build-dora \
   -DFORGE_ROBOT_CPP_WITH_DORA=ON \
-  -DDORA_ROOT_DIR=/path/to/dora-v1.0.0
+  -DDORA_ROOT_DIR=/path/to/dora-v1.0.1
 cmake --build cpp/forge_robot/build-dora --target forge_robot_dora_runner_compile
 ```
 
@@ -112,11 +113,12 @@ interfaces, safety clipping, or Arrow validation. This avoids pulling in
 Rust/Cargo and the Dora C++ API build.
 
 When enabling the Dora runner from a consumer project, pass
-`FORGE_ROBOT_CPP_WITH_DORA=ON`. The default path builds against Dora `v1.0.0`;
-pass `DORA_ROOT_DIR=/path/to/dora-v1.0.0` to use an existing local checkout.
+`FORGE_ROBOT_CPP_WITH_DORA=ON`. The default path builds against the pinned Dora
+`v1.0.1` baseline; pass `DORA_ROOT_DIR` to use another compatible Dora 1.x
+checkout.
 
 ```bash
 cmake -S . -B build \
   -DFORGE_ROBOT_CPP_WITH_DORA=ON \
-  -DDORA_ROOT_DIR=/path/to/dora-v1.0.0
+  -DDORA_ROOT_DIR=/path/to/dora-v1.0.1
 ```
